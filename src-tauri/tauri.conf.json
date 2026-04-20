@@ -12,9 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "cygnus-terminal",
-        "width": 800,
-        "height": 600
+        "title": "Cygnus Terminal",
+        "width": 1000,
+        "height": 650,
+        "minWidth": 600,
+        "minHeight": 400
       }
     ],
     "security": {
