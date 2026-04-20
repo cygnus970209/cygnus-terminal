@@ -1,5 +1,6 @@
-use crate::pty::PtyManager;
+use crate::pty::{PtyEvent, PtyManager};
 use crate::ssh::SshManager;
+use tauri::ipc::Channel;
 use tauri::{AppHandle, State};
 use uuid::Uuid;
 
@@ -7,11 +8,11 @@ use uuid::Uuid;
 
 #[tauri::command]
 pub fn create_pty_session(
-    app_handle: AppHandle,
+    on_event: Channel<PtyEvent>,
     pty_manager: State<'_, PtyManager>,
 ) -> Result<String, String> {
     let session_id = Uuid::new_v4().to_string();
-    pty_manager.create_session(&session_id, app_handle)?;
+    pty_manager.create_session(&session_id, on_event)?;
     Ok(session_id)
 }
 

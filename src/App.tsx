@@ -4,11 +4,17 @@ import Terminal from "./components/Terminal";
 import ConnectDialog, { SshConfig } from "./components/ConnectDialog";
 import "./App.css";
 
-let tabCounter = 0;
+let tabCounter = 1;
+
+const initialTab: Tab & { sshConfig?: SshConfig } = {
+  id: "tab-1",
+  title: "Local Shell",
+  type: "local",
+};
 
 function App() {
-  const [tabs, setTabs] = useState<(Tab & { sshConfig?: SshConfig })[]>([]);
-  const [activeTabId, setActiveTabId] = useState<string | null>(null);
+  const [tabs, setTabs] = useState<(Tab & { sshConfig?: SshConfig })[]>([initialTab]);
+  const [activeTabId, setActiveTabId] = useState<string | null>("tab-1");
   const [showConnectDialog, setShowConnectDialog] = useState(false);
 
   const createLocalTab = useCallback(() => {
@@ -51,14 +57,6 @@ function App() {
       prev.map((t) => (t.id === tabId ? { ...t, title } : t))
     );
   }, []);
-
-  // Auto-create first local tab
-  if (tabs.length === 0) {
-    const id = `tab-${++tabCounter}`;
-    const firstTab: Tab = { id, title: "Local Shell", type: "local" };
-    setTabs([firstTab]);
-    setActiveTabId(id);
-  }
 
   return (
     <div className="app">

@@ -3,7 +3,7 @@ use std::collections::HashMap;
 use std::io::{Read, Write};
 use std::sync::{Arc, Mutex};
 use std::thread;
-use tauri::{AppHandle, Emitter};
+use tauri::ipc::Channel;
 
 pub struct PtySession {
     writer: Box<dyn Write + Send>,
@@ -12,6 +12,13 @@ pub struct PtySession {
 
 pub struct PtyManager {
     sessions: Arc<Mutex<HashMap<String, PtySession>>>,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(tag = "type", content = "data")]
+pub enum PtyEvent {
+    Output(String),
+    Exit(()),
 }
 
 impl PtyManager {
@@ -24,8 +31,9 @@ impl PtyManager {
     pub fn create_session(
         &self,
         session_id: &str,
-        app_handle: AppHandle,
+        channel: Channel<PtyEvent>,
     ) -> Result<(), String> {
+        eprintln!("[PTY] Creating session: {}", session_id);
         let pty_system = native_pty_system();
 
         let pair = pty_system
@@ -38,12 +46,12 @@ impl PtyManager {
             .map_err(|e| format!("Failed to open PTY: {}", e))?;
 
         let shell = if cfg!(target_os = "windows") {
-            "powershell.exe"
+            "powershell.exe".to_string()
         } else {
-            std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string()).leak()
+            std::env::var("SHELL").unwrap_or_else(|_| "/bin/zsh".to_string())
         };
 
-        let mut cmd = CommandBuilder::new(shell);
+        let mut cmd = CommandBuilder::new(&shell);
         cmd.env("TERM", "xterm-256color");
 
         pair.slave
@@ -60,24 +68,25 @@ impl PtyManager {
             .take_writer()
             .map_err(|e| format!("Failed to take writer: {}", e))?;
 
-        let sid = session_id.to_string();
-        let event_name = format!("pty-output-{}", sid);
+        eprintln!("[PTY] Session created, spawning reader thread");
 
-        // Spawn a thread to read PTY output and emit events
+        // Spawn a thread to read PTY output and send via Channel
         thread::spawn(move || {
             let mut buf = [0u8; 4096];
             loop {
                 match reader.read(&mut buf) {
                     Ok(0) => {
-                        let _ = app_handle.emit(&format!("pty-exit-{}", sid), ());
+                        let _ = channel.send(PtyEvent::Exit(()));
                         break;
                     }
                     Ok(n) => {
                         let data = String::from_utf8_lossy(&buf[..n]).to_string();
-                        let _ = app_handle.emit(&event_name, &data);
+                        if channel.send(PtyEvent::Output(data)).is_err() {
+                            break;
+                        }
                     }
                     Err(_) => {
-                        let _ = app_handle.emit(&format!("pty-exit-{}", sid), ());
+                        let _ = channel.send(PtyEvent::Exit(()));
                         break;
                     }
                 }
