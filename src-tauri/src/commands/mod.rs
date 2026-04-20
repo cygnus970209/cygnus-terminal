@@ -1,7 +1,7 @@
 use crate::pty::{PtyEvent, PtyManager};
 use crate::ssh::SshManager;
 use tauri::ipc::Channel;
-use tauri::{AppHandle, State};
+use tauri::State;
 use uuid::Uuid;
 
 // ── Local PTY Commands ──
@@ -53,7 +53,7 @@ pub async fn create_ssh_session(
     auth_type: String,
     password: Option<String>,
     key_path: Option<String>,
-    app_handle: AppHandle,
+    on_event: Channel<PtyEvent>,
     ssh_manager: State<'_, SshManager>,
 ) -> Result<String, String> {
     let session_id = Uuid::new_v4().to_string();
@@ -66,7 +66,7 @@ pub async fn create_ssh_session(
             &auth_type,
             password.as_deref(),
             key_path.as_deref(),
-            app_handle,
+            on_event,
         )
         .await?;
     Ok(session_id)

@@ -5,8 +5,10 @@ use russh::{ChannelMsg, Disconnect};
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::sync::Arc;
-use tauri::{AppHandle, Emitter};
+use tauri::ipc::Channel;
 use tokio::sync::{mpsc, Mutex};
+
+use crate::pty::PtyEvent;
 
 struct SshHandler;
 
@@ -54,8 +56,10 @@ impl SshManager {
         auth_type: &str,
         password: Option<&str>,
         key_path: Option<&str>,
-        app_handle: AppHandle,
+        channel: Channel<PtyEvent>,
     ) -> Result<(), String> {
+        eprintln!("[SSH] Connecting to {}:{}", host, port);
+
         let config = Arc::new(client::Config {
             keepalive_interval: Some(std::time::Duration::from_secs(30)),
             ..Default::default()
@@ -66,6 +70,8 @@ impl SshManager {
         let mut handle = client::connect(config, (host, port), handler)
             .await
             .map_err(|e| format!("Connection failed: {}", e))?;
+
+        eprintln!("[SSH] Connected, authenticating as {}", username);
 
         // Authenticate
         let auth_result = match auth_type {
@@ -92,27 +98,26 @@ impl SshManager {
             return Err("Authentication failed".to_string());
         }
 
-        let mut channel = handle
+        eprintln!("[SSH] Authenticated, opening channel");
+
+        let mut ssh_channel = handle
             .channel_open_session()
             .await
             .map_err(|e| format!("Channel open failed: {}", e))?;
 
-        channel
+        ssh_channel
             .request_pty(false, "xterm-256color", 80, 24, 0, 0, &[])
             .await
             .map_err(|e| format!("PTY request failed: {}", e))?;
 
-        channel
+        ssh_channel
             .request_shell(false)
             .await
             .map_err(|e| format!("Shell request failed: {}", e))?;
 
-        let (cmd_tx, mut cmd_rx) = mpsc::channel::<SshCommand>(256);
+        eprintln!("[SSH] Shell opened, starting I/O loop");
 
-        let sid = session_id.to_string();
-        let event_name = format!("pty-output-{}", sid);
-        let exit_event = format!("pty-exit-{}", sid);
-        let app = app_handle.clone();
+        let (cmd_tx, mut cmd_rx) = mpsc::channel::<SshCommand>(256);
 
         // Single task owns the channel: handles both reads and write commands
         tokio::spawn(async move {
@@ -121,32 +126,36 @@ impl SshManager {
                     cmd = cmd_rx.recv() => {
                         match cmd {
                             Some(SshCommand::Data(data)) => {
-                                if channel.data(Cursor::new(data)).await.is_err() {
-                                    let _ = app.emit(&exit_event, ());
+                                if ssh_channel.data(Cursor::new(data)).await.is_err() {
+                                    let _ = channel.send(PtyEvent::Exit(()));
                                     break;
                                 }
                             }
                             Some(SshCommand::Resize(cols, rows)) => {
-                                let _ = channel.window_change(cols, rows, 0, 0).await;
+                                let _ = ssh_channel.window_change(cols, rows, 0, 0).await;
                             }
                             Some(SshCommand::Close) | None => {
-                                let _ = channel.eof().await;
+                                let _ = ssh_channel.eof().await;
                                 break;
                             }
                         }
                     }
-                    msg = channel.wait() => {
+                    msg = ssh_channel.wait() => {
                         match msg {
                             Some(ChannelMsg::Data { data }) => {
                                 let text = String::from_utf8_lossy(&data).to_string();
-                                let _ = app.emit(&event_name, &text);
+                                if channel.send(PtyEvent::Output(text)).is_err() {
+                                    break;
+                                }
                             }
                             Some(ChannelMsg::ExtendedData { data, .. }) => {
                                 let text = String::from_utf8_lossy(&data).to_string();
-                                let _ = app.emit(&event_name, &text);
+                                if channel.send(PtyEvent::Output(text)).is_err() {
+                                    break;
+                                }
                             }
                             Some(ChannelMsg::Eof) | Some(ChannelMsg::Close) | None => {
-                                let _ = app.emit(&exit_event, ());
+                                let _ = channel.send(PtyEvent::Exit(()));
                                 break;
                             }
                             _ => {}

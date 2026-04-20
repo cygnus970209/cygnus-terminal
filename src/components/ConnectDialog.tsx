@@ -23,8 +23,8 @@ export default function ConnectDialog({ onConnect, onCancel }: ConnectDialogProp
   const [password, setPassword] = useState("");
   const [keyPath, setKeyPath] = useState("");
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleSubmit = (e?: React.FormEvent | React.MouseEvent) => {
+    e?.preventDefault?.();
     if (!host || !username) return;
     onConnect({
       host,
@@ -114,7 +114,11 @@ export default function ConnectDialog({ onConnect, onCancel }: ConnectDialogProp
             <button type="button" className="dialog-btn dialog-btn-cancel" onClick={onCancel}>
               Cancel
             </button>
-            <button type="submit" className="dialog-btn dialog-btn-connect">
+            <button
+              type="button"
+              className="dialog-btn dialog-btn-connect"
+              onClick={handleSubmit as any}
+            >
               Connect
             </button>
           </div>

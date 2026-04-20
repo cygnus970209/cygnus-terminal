@@ -116,7 +116,6 @@ export default function Terminal({
 
         if (type === "ssh" && sshConfig) {
           xterm.write(`Connecting to ${sshConfig.host}:${sshConfig.port}...\r\n`);
-          // SSH still uses event-based approach for now
           sessionId = await invoke<string>("create_ssh_session", {
             host: sshConfig.host,
             port: sshConfig.port,
@@ -124,6 +123,7 @@ export default function Terminal({
             authType: sshConfig.authType,
             password: sshConfig.password || null,
             keyPath: sshConfig.keyPath || null,
+            onEvent,
           });
           onTitleChange?.(tabId, `${sshConfig.username}@${sshConfig.host}`);
         } else {
