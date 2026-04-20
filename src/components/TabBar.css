@@ -1,0 +1,116 @@
+.tabbar {
+  display: flex;
+  align-items: center;
+  height: 36px;
+  background: #181825;
+  border-bottom: 1px solid #313244;
+  user-select: none;
+  -webkit-app-region: drag;
+  padding-left: 78px; /* macOS traffic light buttons */
+}
+
+.tabbar-tabs {
+  display: flex;
+  flex: 1;
+  overflow-x: auto;
+  gap: 1px;
+  -webkit-app-region: no-drag;
+}
+
+.tabbar-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.tab {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  height: 36px;
+  min-width: 120px;
+  max-width: 200px;
+  background: #11111b;
+  color: #6c7086;
+  font-size: 12px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  border-right: 1px solid #181825;
+}
+
+.tab:hover {
+  background: #1e1e2e;
+  color: #a6adc8;
+}
+
+.tab-active {
+  background: #1e1e2e;
+  color: #cdd6f4;
+  border-bottom: 2px solid #89b4fa;
+}
+
+.tab-icon {
+  font-size: 10px;
+  flex-shrink: 0;
+}
+
+.tab-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.tab-close {
+  background: none;
+  border: none;
+  color: #6c7086;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 2px;
+  line-height: 1;
+  border-radius: 4px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.1s, background 0.1s;
+}
+
+.tab:hover .tab-close {
+  opacity: 1;
+}
+
+.tab-close:hover {
+  background: #45475a;
+  color: #f38ba8;
+}
+
+.tabbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 0 8px;
+  -webkit-app-region: no-drag;
+}
+
+.tabbar-btn {
+  background: none;
+  border: none;
+  color: #6c7086;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  transition: background 0.1s, color 0.1s;
+}
+
+.tabbar-btn:hover {
+  background: #313244;
+  color: #cdd6f4;
+}
+
+.tabbar-btn-ssh {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 8px;
+}
