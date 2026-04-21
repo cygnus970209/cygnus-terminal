@@ -1,9 +1,13 @@
 use std::sync::Arc;
 
 use crate::crypto::CryptoManager;
+use crate::db::command_bookmark::{CommandBookmark, CreateCommandBookmarkRequest};
+use crate::db::history::CommandHistoryEntry;
+use crate::db::path_bookmark::{CreatePathBookmarkRequest, PathBookmark};
 use crate::db::profile::{CreateProfileRequest, Profile, UpdateProfileRequest};
 use crate::db::Database;
 use crate::pty::{PtyEvent, PtyManager};
+use crate::sftp::{FileEntry, SftpManager};
 use crate::ssh::SshManager;
 use tauri::ipc::Channel;
 use tauri::State;
@@ -144,4 +148,188 @@ pub fn update_profile(
 #[tauri::command]
 pub fn delete_profile(id: i64, db: State<'_, Arc<Database>>) -> Result<(), String> {
     db.delete_profile(id)
+}
+
+// ── History Commands ──
+
+#[tauri::command]
+pub fn search_command_history(
+    profile_id: i64,
+    query: Option<String>,
+    limit: Option<u32>,
+    db: State<'_, Arc<Database>>,
+) -> Result<Vec<CommandHistoryEntry>, String> {
+    db.search_command_history(profile_id, query.as_deref(), limit.unwrap_or(100))
+}
+
+#[tauri::command]
+pub fn delete_command_history(
+    id: i64,
+    db: State<'_, Arc<Database>>,
+) -> Result<(), String> {
+    db.delete_command_history(id)
+}
+
+#[tauri::command]
+pub fn save_command_history(
+    profile_id: i64,
+    command: String,
+    db: State<'_, Arc<Database>>,
+) -> Result<(), String> {
+    db.add_command_history(profile_id, &command)
+}
+
+// ── Command Bookmark Commands ──
+
+#[tauri::command]
+pub fn create_command_bookmark(
+    req: CreateCommandBookmarkRequest,
+    db: State<'_, Arc<Database>>,
+) -> Result<CommandBookmark, String> {
+    db.create_command_bookmark(req)
+}
+
+#[tauri::command]
+pub fn list_command_bookmarks(
+    profile_id: i64,
+    db: State<'_, Arc<Database>>,
+) -> Result<Vec<CommandBookmark>, String> {
+    db.list_command_bookmarks(profile_id)
+}
+
+#[tauri::command]
+pub fn delete_command_bookmark(
+    id: i64,
+    db: State<'_, Arc<Database>>,
+) -> Result<(), String> {
+    db.delete_command_bookmark(id)
+}
+
+// ── Path Bookmark Commands ──
+
+#[tauri::command]
+pub fn create_path_bookmark(
+    req: CreatePathBookmarkRequest,
+    db: State<'_, Arc<Database>>,
+) -> Result<PathBookmark, String> {
+    db.create_path_bookmark(req)
+}
+
+#[tauri::command]
+pub fn list_path_bookmarks(
+    profile_id: i64,
+    db: State<'_, Arc<Database>>,
+) -> Result<Vec<PathBookmark>, String> {
+    db.list_path_bookmarks(profile_id)
+}
+
+#[tauri::command]
+pub fn delete_path_bookmark(
+    id: i64,
+    db: State<'_, Arc<Database>>,
+) -> Result<(), String> {
+    db.delete_path_bookmark(id)
+}
+
+// ── SFTP Commands ──
+
+#[tauri::command]
+pub async fn sftp_open(
+    session_id: String,
+    ssh_manager: State<'_, SshManager>,
+    sftp_manager: State<'_, SftpManager>,
+) -> Result<String, String> {
+    let sftp_session = ssh_manager.open_sftp_channel(&session_id).await?;
+    let sftp_id = format!("sftp-{}", session_id);
+    sftp_manager.open(&sftp_id, sftp_session).await?;
+    Ok(sftp_id)
+}
+
+#[tauri::command]
+pub async fn sftp_list_dir(
+    sftp_id: String,
+    path: String,
+    sftp_manager: State<'_, SftpManager>,
+) -> Result<Vec<FileEntry>, String> {
+    sftp_manager.list_dir(&sftp_id, &path).await
+}
+
+#[tauri::command]
+pub async fn sftp_get_home_dir(
+    sftp_id: String,
+    sftp_manager: State<'_, SftpManager>,
+) -> Result<String, String> {
+    sftp_manager.get_home_dir(&sftp_id).await
+}
+
+#[tauri::command]
+pub async fn sftp_download(
+    sftp_id: String,
+    remote_path: String,
+    local_path: String,
+    sftp_manager: State<'_, SftpManager>,
+) -> Result<(), String> {
+    let data = sftp_manager.read_file(&sftp_id, &remote_path).await?;
+    std::fs::write(&local_path, &data)
+        .map_err(|e| format!("Failed to write local file: {e}"))
+}
+
+#[tauri::command]
+pub async fn sftp_upload(
+    sftp_id: String,
+    remote_path: String,
+    local_path: String,
+    sftp_manager: State<'_, SftpManager>,
+) -> Result<(), String> {
+    let data = std::fs::read(&local_path)
+        .map_err(|e| format!("Failed to read local file: {e}"))?;
+    sftp_manager.write_file(&sftp_id, &remote_path, &data).await
+}
+
+#[tauri::command]
+pub async fn sftp_delete(
+    sftp_id: String,
+    path: String,
+    is_dir: bool,
+    sftp_manager: State<'_, SftpManager>,
+) -> Result<(), String> {
+    sftp_manager.delete(&sftp_id, &path, is_dir).await
+}
+
+#[tauri::command]
+pub async fn sftp_rename(
+    sftp_id: String,
+    old_path: String,
+    new_path: String,
+    sftp_manager: State<'_, SftpManager>,
+) -> Result<(), String> {
+    sftp_manager.rename(&sftp_id, &old_path, &new_path).await
+}
+
+#[tauri::command]
+pub async fn sftp_mkdir(
+    sftp_id: String,
+    path: String,
+    sftp_manager: State<'_, SftpManager>,
+) -> Result<(), String> {
+    sftp_manager.create_dir(&sftp_id, &path).await
+}
+
+#[tauri::command]
+pub async fn sftp_upload_bytes(
+    sftp_id: String,
+    remote_path: String,
+    data: Vec<u8>,
+    sftp_manager: State<'_, SftpManager>,
+) -> Result<(), String> {
+    sftp_manager.write_file(&sftp_id, &remote_path, &data).await
+}
+
+#[tauri::command]
+pub async fn sftp_close(
+    sftp_id: String,
+    sftp_manager: State<'_, SftpManager>,
+) -> Result<(), String> {
+    sftp_manager.close(&sftp_id).await;
+    Ok(())
 }

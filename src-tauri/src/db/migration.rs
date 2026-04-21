@@ -61,10 +61,27 @@ const MIGRATIONS: &[Migration] = &[
             CREATE INDEX idx_path_bookmarks_profile ON path_bookmarks(profile_id);
         ",
     },
+    Migration {
+        version: 2,
+        sql: "
+            -- 커맨드 북마크 (서버별)
+            CREATE TABLE command_bookmarks (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                profile_id  INTEGER NOT NULL,
+                command     TEXT NOT NULL,
+                label       TEXT,
+                sort_order  INTEGER NOT NULL DEFAULT 0,
+                created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (profile_id) REFERENCES profiles(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX idx_command_bookmarks_profile ON command_bookmarks(profile_id, sort_order);
+        ",
+    },
 ];
 
 impl Database {
-    pub(crate) fn run_migrations(&self) -> Result<(), String> {
+    pub fn run_migrations(&self) -> Result<(), String> {
         let conn = self.conn();
 
         // schema_version 테이블 생성 (없으면)

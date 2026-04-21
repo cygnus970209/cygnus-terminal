@@ -12,7 +12,7 @@ use crate::db::known_host::HostKeyStatus;
 use crate::db::Database;
 use crate::pty::PtyEvent;
 
-struct SshHandler {
+pub struct SshHandler {
     db: Arc<Database>,
     host: String,
     port: u16,
@@ -281,6 +281,31 @@ impl SshManager {
         } else {
             Err(format!("Session not found: {}", session_id))
         }
+    }
+
+    pub async fn open_sftp_channel(
+        &self,
+        session_id: &str,
+    ) -> Result<russh_sftp::client::SftpSession, String> {
+        let sessions = self.sessions.lock().await;
+        let session = sessions
+            .get(session_id)
+            .ok_or_else(|| format!("Session not found: {session_id}"))?;
+
+        let channel = session
+            .handle
+            .channel_open_session()
+            .await
+            .map_err(|e| format!("Failed to open SFTP channel: {e}"))?;
+
+        channel
+            .request_subsystem(true, "sftp")
+            .await
+            .map_err(|e| format!("Failed to request SFTP subsystem: {e}"))?;
+
+        russh_sftp::client::SftpSession::new(channel.into_stream())
+            .await
+            .map_err(|e| format!("Failed to init SFTP session: {e}"))
     }
 
     pub async fn close_session(&self, session_id: &str) -> Result<(), String> {

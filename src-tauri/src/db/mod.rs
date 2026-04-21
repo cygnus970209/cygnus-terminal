@@ -1,5 +1,8 @@
+pub mod command_bookmark;
+pub mod history;
 pub mod known_host;
 pub mod migration;
+pub mod path_bookmark;
 pub mod profile;
 
 use rusqlite::Connection;
@@ -37,8 +40,7 @@ impl Database {
         Ok(db)
     }
 
-    /// 테스트용 인메모리 데이터베이스 생성
-    #[cfg(test)]
+    #[doc(hidden)]
     pub fn new_in_memory() -> Result<Self, String> {
         let conn = Connection::open_in_memory()
             .map_err(|e| format!("Failed to open in-memory database: {e}"))?;

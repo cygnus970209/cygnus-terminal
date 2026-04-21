@@ -1,7 +1,8 @@
 mod commands;
-mod crypto;
-mod db;
+pub mod crypto;
+pub mod db;
 mod pty;
+pub mod sftp;
 mod ssh;
 
 use std::sync::Arc;
@@ -9,6 +10,7 @@ use std::sync::Arc;
 use crypto::CryptoManager;
 use db::Database;
 use pty::PtyManager;
+use sftp::SftpManager;
 use ssh::SshManager;
 use tauri::Manager;
 
@@ -29,6 +31,7 @@ pub fn run() {
             app.manage(database);
             app.manage(crypto);
             app.manage(ssh_manager);
+            app.manage(SftpManager::new());
             Ok(())
         })
         .manage(PtyManager::new())
@@ -46,6 +49,25 @@ pub fn run() {
             commands::get_profile,
             commands::update_profile,
             commands::delete_profile,
+            commands::search_command_history,
+            commands::save_command_history,
+            commands::delete_command_history,
+            commands::create_command_bookmark,
+            commands::list_command_bookmarks,
+            commands::delete_command_bookmark,
+            commands::create_path_bookmark,
+            commands::list_path_bookmarks,
+            commands::delete_path_bookmark,
+            commands::sftp_open,
+            commands::sftp_list_dir,
+            commands::sftp_get_home_dir,
+            commands::sftp_download,
+            commands::sftp_upload,
+            commands::sftp_delete,
+            commands::sftp_rename,
+            commands::sftp_mkdir,
+            commands::sftp_upload_bytes,
+            commands::sftp_close,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

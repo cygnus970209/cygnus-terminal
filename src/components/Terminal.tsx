@@ -13,6 +13,9 @@ interface TerminalProps {
   isActive: boolean;
   onSessionCreated?: (tabId: string, sessionId: string) => void;
   onTitleChange?: (tabId: string, title: string) => void;
+  onRegisterCapturePath?: (tabId: string, fn: () => Promise<string | null>) => void;
+  onRegisterBufferCheck?: (tabId: string, fn: () => boolean) => void;
+  onCdDetected?: () => void;
 }
 
 interface PtyEventOutput {
@@ -34,6 +37,9 @@ export default function Terminal({
   isActive,
   onSessionCreated,
   onTitleChange,
+  onRegisterCapturePath,
+  onRegisterBufferCheck,
+  onCdDetected,
 }: TerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
@@ -86,6 +92,14 @@ export default function Terminal({
         magenta: "#f5c2e7",
         cyan: "#94e2d5",
         white: "#bac2de",
+        brightBlack: "#585b70",
+        brightRed: "#f38ba8",
+        brightGreen: "#a6e3a1",
+        brightYellow: "#f9e2af",
+        brightBlue: "#89b4fa",
+        brightMagenta: "#f5c2e7",
+        brightCyan: "#94e2d5",
+        brightWhite: "#a6adc8",
       },
       allowProposedApi: true,
     });
@@ -136,12 +150,45 @@ export default function Terminal({
         sessionIdRef.current = sessionId;
         onSessionCreated?.(tabId, sessionId);
 
-        // Forward user input to PTY/SSH
+        // pwd 캡처 함수 등록
         const writeCmd = type === "ssh" ? "write_ssh" : "write_pty";
+        // alternate screen buffer 감지 (vi, nano, less, top 등)
+        const isAlternateBuffer = () => xterm.buffer.active.type === "alternate";
+        onRegisterBufferCheck?.(tabId, isAlternateBuffer);
+
+        onRegisterCapturePath?.(tabId, async () => {
+          if (!sessionIdRef.current || isAlternateBuffer()) return null;
+          const cursorBefore = xterm.buffer.active.cursorY + xterm.buffer.active.baseY;
+          await invoke(writeCmd, { sessionId: sessionIdRef.current, data: "pwd\r" });
+          await new Promise((r) => setTimeout(r, 500));
+          const outputLine = xterm.buffer.active.getLine(cursorBefore + 1);
+          if (!outputLine) return null;
+          const path = outputLine.translateToString(true).trim();
+          return path.startsWith("/") ? path : null;
+        });
+        const profileId = sshConfig?.profileId;
+
         xterm.onData((data) => {
-          if (sessionIdRef.current) {
-            invoke(writeCmd, { sessionId: sessionIdRef.current, data });
+          if (!sessionIdRef.current) return;
+
+          // 에디터/페이저 모드에서는 히스토리 캡처 스킵
+          if (profileId && !isAlternateBuffer() && (data === "\r" || data === "\n")) {
+            const buffer = xterm.buffer.active;
+            const line = buffer.getLine(buffer.cursorY + buffer.baseY);
+            if (line) {
+              const text = line.translateToString(true).trim();
+              const promptMatch = text.match(/[$#>]\s*(.+)/);
+              const cmd = promptMatch ? promptMatch[1].trim() : "";
+              if (cmd) {
+                invoke("save_command_history", { profileId, command: cmd });
+                if (cmd.match(/^cd\s|^cd$/)) {
+                  onCdDetected?.();
+                }
+              }
+            }
           }
+
+          invoke(writeCmd, { sessionId: sessionIdRef.current, data });
         });
 
         // Handle resize

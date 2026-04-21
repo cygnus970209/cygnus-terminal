@@ -64,8 +64,7 @@ impl CryptoManager {
         String::from_utf8(plaintext).map_err(|e| format!("Decrypted data is not valid UTF-8: {e}"))
     }
 
-    /// 테스트용: 랜덤 마스터 키로 생성
-    #[cfg(test)]
+    #[doc(hidden)]
     pub fn new_random() -> Self {
         let mut key = [0u8; KEY_SIZE];
         rand::thread_rng().fill_bytes(&mut key);

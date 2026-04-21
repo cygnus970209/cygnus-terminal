@@ -1,0 +1,304 @@
+.server-context {
+  position: relative;
+  border-top: 1px solid #313244;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.sc-tabs {
+  display: flex;
+  border-bottom: 1px solid #313244;
+  padding: 0 4px;
+}
+
+.sc-tab {
+  flex: 1;
+  background: none;
+  border: none;
+  color: #585b70;
+  font-size: 10px;
+  font-weight: 600;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  padding: 6px 4px;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.1s, border-color 0.1s;
+}
+
+.sc-tab:hover {
+  color: #a6adc8;
+}
+
+.sc-tab-active {
+  color: #89b4fa;
+  border-bottom-color: #89b4fa;
+}
+
+.sc-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.sc-search {
+  padding: 6px 8px;
+}
+
+.sc-search input {
+  width: 100%;
+  padding: 5px 8px;
+  background: #11111b;
+  border: 1px solid #313244;
+  border-radius: 4px;
+  color: #cdd6f4;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.sc-search input:focus {
+  border-color: #89b4fa;
+}
+
+.sc-header-row {
+  display: flex;
+  justify-content: flex-end;
+  padding: 4px 8px;
+}
+
+.sc-add-btn {
+  background: none;
+  border: none;
+  color: #89b4fa;
+  font-size: 11px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.1s;
+}
+
+.sc-add-btn:hover {
+  background: rgba(137, 180, 250, 0.1);
+}
+
+.sc-add-form {
+  padding: 0 8px 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sc-add-form input {
+  width: 100%;
+  padding: 5px 8px;
+  background: #11111b;
+  border: 1px solid #313244;
+  border-radius: 4px;
+  color: #cdd6f4;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.sc-add-form input:focus {
+  border-color: #89b4fa;
+}
+
+.sc-save-btn {
+  padding: 4px 10px;
+  background: #89b4fa;
+  border: none;
+  border-radius: 4px;
+  color: #1e1e2e;
+  font-size: 11px;
+  font-weight: 500;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  cursor: pointer;
+  align-self: flex-end;
+  transition: background 0.15s;
+}
+
+.sc-save-btn:hover {
+  background: #74c7ec;
+}
+
+.sc-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2px 0;
+}
+
+.sc-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.sc-list::-webkit-scrollbar-thumb {
+  background: #313244;
+  border-radius: 2px;
+}
+
+.sc-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.sc-item:hover {
+  background: #1e1e2e;
+}
+
+.sc-item-icon {
+  color: #585b70;
+  font-size: 10px;
+  flex-shrink: 0;
+  width: 14px;
+  text-align: center;
+}
+
+.sc-item-text {
+  color: #a6adc8;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sc-item-bookmark {
+  justify-content: space-between;
+}
+
+.sc-item-main {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.sc-item-info {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.sc-item-label {
+  color: #cdd6f4;
+  font-size: 11px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sc-delete-btn {
+  background: none;
+  border: none;
+  color: #585b70;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: 4px;
+  opacity: 0;
+  transition: opacity 0.1s, color 0.1s;
+  flex-shrink: 0;
+}
+
+.sc-item-bookmark:hover .sc-delete-btn,
+.sc-item-history:hover .sc-delete-btn {
+  opacity: 1;
+}
+
+.sc-item-history .sc-item-text {
+  flex: 1;
+}
+
+.sc-context-menu {
+  position: fixed;
+  background: #1e1e2e;
+  border: 1px solid #313244;
+  border-radius: 8px;
+  padding: 4px;
+  min-width: 140px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+  z-index: 200;
+}
+
+.sc-context-menu-item {
+  display: block;
+  width: 100%;
+  background: none;
+  border: none;
+  color: #cdd6f4;
+  font-size: 11px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  padding: 6px 10px;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: background 0.1s;
+}
+
+.sc-context-menu-item:hover {
+  background: #313244;
+}
+
+.sc-context-menu-item-danger {
+  color: #f38ba8;
+}
+
+.sc-context-menu-item-danger:hover {
+  background: rgba(243, 139, 168, 0.1);
+}
+
+.sc-toast {
+  position: absolute;
+  bottom: 8px;
+  left: 8px;
+  right: 8px;
+  padding: 6px 10px;
+  background: #313244;
+  border: 1px solid #45475a;
+  border-radius: 6px;
+  color: #cdd6f4;
+  font-size: 11px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  text-align: center;
+  animation: sc-toast-in 0.15s ease-out;
+  z-index: 100;
+}
+
+@keyframes sc-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.sc-delete-btn:hover {
+  color: #f38ba8;
+}
+
+.sc-empty {
+  color: #585b70;
+  font-size: 11px;
+  text-align: center;
+  padding: 16px 8px;
+  line-height: 1.6;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
