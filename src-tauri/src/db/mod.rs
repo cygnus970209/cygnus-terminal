@@ -5,6 +5,7 @@ pub mod known_host;
 pub mod migration;
 pub mod path_bookmark;
 pub mod profile;
+pub mod snippet;
 
 use rusqlite::Connection;
 use std::path::PathBuf;

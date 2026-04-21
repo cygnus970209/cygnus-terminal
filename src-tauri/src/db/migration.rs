@@ -78,6 +78,36 @@ const MIGRATIONS: &[Migration] = &[
             CREATE INDEX idx_command_bookmarks_profile ON command_bookmarks(profile_id, sort_order);
         ",
     },
+    Migration {
+        version: 3,
+        sql: "
+            -- Jump Host 설정 (JSON으로 저장)
+            ALTER TABLE profiles ADD COLUMN jump_host TEXT;
+        ",
+    },
+    Migration {
+        version: 4,
+        sql: "
+            -- 글로벌 스니펫 라이브러리
+            CREATE TABLE snippets (
+                id          INTEGER PRIMARY KEY AUTOINCREMENT,
+                title       TEXT NOT NULL,
+                command     TEXT NOT NULL,
+                category    TEXT NOT NULL DEFAULT '',
+                description TEXT,
+                created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+                updated_at  TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+
+            CREATE INDEX idx_snippets_category ON snippets(category, title);
+        ",
+    },
+    Migration {
+        version: 5,
+        sql: "
+            ALTER TABLE profiles ADD COLUMN agent_forward INTEGER NOT NULL DEFAULT 0;
+        ",
+    },
 ];
 
 impl Database {
