@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, Channel } from "@tauri-apps/api/core";
 import { save, open as openDialog } from "@tauri-apps/plugin-dialog";
 import TransferPanel from "./TransferPanel";
 import "./SftpView.css";
@@ -119,6 +119,37 @@ export default function SftpView({ sessionId, onPopoutWindow }: SftpViewProps) {
       showToast(`Failed: ${err}`);
     }
     setContextMenu(null);
+  }, [sftpId]);
+
+  const handleOpenInEditor = useCallback(async (entry: FileEntry) => {
+    if (!sftpId || entry.is_dir) return;
+    try {
+      type WatchEvent =
+        | { type: "Uploading"; data: string }
+        | { type: "Uploaded"; data: string }
+        | { type: "Error"; data: string };
+
+      const onEvent = new Channel<WatchEvent>();
+      onEvent.onmessage = (event) => {
+        if (event.type === "Uploading") {
+          showToast(`Auto-uploading ${event.data}...`);
+        } else if (event.type === "Uploaded") {
+          showToast(`Uploaded: ${event.data}`);
+        } else if (event.type === "Error") {
+          showToast(`Error: ${event.data}`);
+        }
+      };
+
+      showToast(`Opening ${entry.name} in editor...`);
+      await invoke("open_in_editor", {
+        sftpId,
+        remotePath: entry.path,
+        onEvent,
+      });
+      showToast(`${entry.name} opened. Save to auto-upload.`);
+    } catch (err) {
+      showToast(`Failed: ${err}`);
+    }
   }, [sftpId]);
 
   const handleUpload = useCallback(async () => {
@@ -301,7 +332,7 @@ export default function SftpView({ sessionId, onPopoutWindow }: SftpViewProps) {
                   selectedEntry?.path === entry.path ? "sftp-row-selected" : ""
                 }`}
                 onClick={() => setSelectedEntry(entry)}
-                onDoubleClick={() => entry.is_dir ? navigateTo(entry.path) : handleDownload(entry)}
+                onDoubleClick={() => entry.is_dir ? navigateTo(entry.path) : handleOpenInEditor(entry)}
                 onContextMenu={(e) => {
                   e.preventDefault();
                   setContextMenu({ x: e.clientX, y: e.clientY, entry });
@@ -407,9 +438,14 @@ export default function SftpView({ sessionId, onPopoutWindow }: SftpViewProps) {
             </button>
           )}
           {!contextMenu.entry.is_dir && (
-            <button className="sftp-ctx-item" onClick={() => handleDownload(contextMenu.entry)}>
-              Download
-            </button>
+            <>
+              <button className="sftp-ctx-item" onClick={() => { handleOpenInEditor(contextMenu.entry); setContextMenu(null); }}>
+                Edit
+              </button>
+              <button className="sftp-ctx-item" onClick={() => handleDownload(contextMenu.entry)}>
+                Download
+              </button>
+            </>
           )}
           <button className="sftp-ctx-item" onClick={() => handleRename(contextMenu.entry)}>
             Rename

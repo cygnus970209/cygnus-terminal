@@ -8,6 +8,7 @@ pub mod sftp;
 pub mod ssh;
 pub mod tail;
 pub mod transfer;
+pub mod watcher;
 
 use std::sync::Arc;
 
@@ -20,6 +21,7 @@ use sftp::SftpManager;
 use ssh::SshManager;
 use tail::TailManager;
 use transfer::TransferManager;
+use watcher::FileWatcherManager;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::{Emitter, Manager};
 
@@ -58,6 +60,7 @@ pub fn run() {
             app.manage(ForwardManager::new());
             app.manage(TailManager::new());
             app.manage(TransferManager::new());
+            app.manage(FileWatcherManager::new());
             Ok(())
         })
         .manage(PtyManager::new())
@@ -110,6 +113,8 @@ pub fn run() {
             commands::delete_snippet,
             commands::tail_start,
             commands::tail_stop,
+            commands::open_in_editor,
+            commands::stop_file_watch,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -179,6 +179,10 @@ impl SftpManager {
         Ok(metadata.size.unwrap_or(0))
     }
 
+    pub fn clone_sessions(&self) -> Arc<Mutex<HashMap<String, SftpSession>>> {
+        Arc::clone(&self.sessions)
+    }
+
     pub async fn close(&self, sftp_id: &str) {
         let mut sessions = self.sessions.lock().await;
         if let Some(sftp) = sessions.remove(sftp_id) {

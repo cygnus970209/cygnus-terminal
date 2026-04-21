@@ -3,6 +3,7 @@ use crate::monitor::{MonitorManager, ServerStats};
 use crate::sftp::{FileEntry, SftpManager};
 use crate::ssh::SshManager;
 use crate::tail::{TailEvent, TailManager};
+use crate::watcher::{FileWatcherManager, WatchEvent};
 use tauri::ipc::Channel;
 use tauri::State;
 
@@ -216,4 +217,28 @@ pub async fn tail_stop(
     tail_manager: State<'_, TailManager>,
 ) -> Result<(), String> {
     tail_manager.stop(&tail_id).await
+}
+
+// ── File Watcher (Edit & Auto-Upload) ──
+
+#[tauri::command]
+pub async fn open_in_editor(
+    sftp_id: String,
+    remote_path: String,
+    on_event: Channel<WatchEvent>,
+    sftp_manager: State<'_, SftpManager>,
+    watcher_manager: State<'_, FileWatcherManager>,
+) -> Result<String, String> {
+    watcher_manager
+        .open_in_editor(&sftp_id, &remote_path, &sftp_manager, on_event)
+        .await
+}
+
+#[tauri::command]
+pub async fn stop_file_watch(
+    watch_id: String,
+    watcher_manager: State<'_, FileWatcherManager>,
+) -> Result<(), String> {
+    watcher_manager.stop_watch(&watch_id).await;
+    Ok(())
 }
