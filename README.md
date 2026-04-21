@@ -140,12 +140,11 @@ src-tauri/                    # Rust backend
 
 ## Roadmap
 
-- [x] Phase 1: SSH Terminal + Profile Management + Server Memory
-- [x] Phase 2: SFTP + Monitoring + Port Forwarding + Export/Import
-- [x] Phase 3: Jump Host + Snippets + Log Viewer + Agent Forwarding
-- [ ] Auto-update via GitHub Releases
-- [ ] AI Assistant (error analysis, natural language commands)
-- [ ] Background port forwarding (persist across sessions)
+- [ ] UI/UX improvements
+- [ ] AI Assistant (error log analysis, natural language to commands)
+- [ ] SFTP enhancements (drag between servers, directory sync)
+- [ ] Telnet protocol support
+- [ ] Serial port (COM/TTY) support
 
 ## License
 
