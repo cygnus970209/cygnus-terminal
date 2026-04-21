@@ -87,6 +87,8 @@ pub fn run() {
             commands::create_path_bookmark,
             commands::list_path_bookmarks,
             commands::delete_path_bookmark,
+            commands::get_local_home_dir,
+            commands::list_local_dir,
             commands::sftp_open,
             commands::sftp_list_dir,
             commands::sftp_get_home_dir,

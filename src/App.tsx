@@ -88,9 +88,25 @@ function App() {
     setEditProfile(null);
   }, []);
 
-  const openSftpTab = useCallback((sshTabId: string, sshTabTitle: string) => {
+  const [sftpSessions, setSftpSessions] = useState<Record<string, { sftpId: string; homePath: string }>>({});
+
+  const openSftpTab = useCallback(async (sshTabId: string, sshTabTitle: string) => {
     const sftpTabId = `sftp-${sshTabId}`;
-    // 이미 열려있으면 활성화만
+    const sshSessionId = sessionMap[sshTabId];
+    if (!sshSessionId) return;
+
+    // SFTP 세션이 없으면 열기
+    if (!sftpSessions[sshSessionId]) {
+      try {
+        const sftpId = await invoke<string>("sftp_open", { sessionId: sshSessionId });
+        const homePath = await invoke<string>("sftp_get_home_dir", { sftpId });
+        setSftpSessions((prev) => ({ ...prev, [sshSessionId]: { sftpId, homePath } }));
+      } catch (err) {
+        console.error("Failed to open SFTP:", err);
+        return;
+      }
+    }
+
     setTabs((prev) => {
       if (prev.find((t) => t.id === sftpTabId)) return prev;
       return [...prev, {
@@ -101,7 +117,7 @@ function App() {
       }];
     });
     setActiveTabId(sftpTabId);
-  }, []);
+  }, [sessionMap, sftpSessions]);
 
   const closeTab = useCallback(
     (id: string) => {
@@ -276,13 +292,20 @@ function App() {
           {activeTabId === "snippets" && (
             <SnippetsView onExecute={handleExecuteCommand} />
           )}
-          {activeTab?.type === "sftp" && activeTab.linkedSessionId && sessionMap[activeTab.linkedSessionId] && (
+          {activeTab?.type === "sftp" && activeTab.linkedSessionId && sessionMap[activeTab.linkedSessionId] && sftpSessions[sessionMap[activeTab.linkedSessionId]] && (
             <SftpView
               sessionId={sessionMap[activeTab.linkedSessionId]}
+              sftpId={sftpSessions[sessionMap[activeTab.linkedSessionId]].sftpId}
+              homePath={sftpSessions[sessionMap[activeTab.linkedSessionId]].homePath}
               availableSessions={
                 tabs
-                  .filter((t) => t.type === "ssh" && sessionMap[t.id])
-                  .map((t) => ({ id: sessionMap[t.id], label: t.title }))
+                  .filter((t) => t.type === "ssh" && sessionMap[t.id] && sftpSessions[sessionMap[t.id]])
+                  .map((t) => ({
+                    id: sessionMap[t.id],
+                    sftpId: sftpSessions[sessionMap[t.id]]?.sftpId || "",
+                    label: t.title,
+                    homePath: sftpSessions[sessionMap[t.id]]?.homePath || "/",
+                  }))
               }
             />
           )}

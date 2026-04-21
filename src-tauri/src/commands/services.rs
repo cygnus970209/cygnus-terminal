@@ -7,6 +7,55 @@ use crate::watcher::{FileWatcherManager, WatchEvent};
 use tauri::ipc::Channel;
 use tauri::State;
 
+// ── Local Files ──
+
+#[tauri::command]
+pub fn get_local_home_dir() -> Result<String, String> {
+    dirs::home_dir()
+        .map(|p| p.to_string_lossy().to_string())
+        .ok_or_else(|| "Home directory not found".to_string())
+}
+
+#[tauri::command]
+pub fn list_local_dir(path: String) -> Result<Vec<FileEntry>, String> {
+    let entries = std::fs::read_dir(&path)
+        .map_err(|e| format!("Failed to read directory: {e}"))?;
+
+    let mut result = Vec::new();
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_string();
+        if name.starts_with('.') {
+            continue; // 숨김 파일 제외
+        }
+        let metadata = entry.metadata().map_err(|e| format!("{e}"))?;
+        let file_path = entry.path().to_string_lossy().to_string();
+        let is_dir = metadata.is_dir();
+        let size = if is_dir { 0 } else { metadata.len() };
+        let modified = metadata
+            .modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map(|d| d.as_secs());
+
+        result.push(FileEntry {
+            name,
+            path: file_path,
+            is_dir,
+            size,
+            modified,
+            permissions: None,
+        });
+    }
+
+    result.sort_by(|a, b| {
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+
+    Ok(result)
+}
+
 // ── SFTP ──
 
 #[tauri::command]
