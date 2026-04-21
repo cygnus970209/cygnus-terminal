@@ -8,9 +8,21 @@ use std::sync::Arc;
 use tauri::ipc::Channel;
 use tokio::sync::{mpsc, Mutex};
 
+use serde::Deserialize;
+
 use crate::db::known_host::HostKeyStatus;
 use crate::db::Database;
 use crate::pty::PtyEvent;
+
+#[derive(Debug, Clone, Deserialize)]
+pub struct JumpHostConfig {
+    pub host: String,
+    pub port: u16,
+    pub username: String,
+    pub auth_type: String,
+    pub password: Option<String>,
+    pub key_path: Option<String>,
+}
 
 pub struct SshHandler {
     db: Arc<Database>,
@@ -89,20 +101,8 @@ impl SshManager {
         }
     }
 
-    pub async fn connect(
-        &self,
-        session_id: &str,
-        host: &str,
-        port: u16,
-        username: &str,
-        auth_type: &str,
-        password: Option<&str>,
-        key_path: Option<&str>,
-        channel: Channel<PtyEvent>,
-    ) -> Result<(), String> {
-        eprintln!("[SSH] Connecting to {}:{}", host, port);
-
-        let config = Arc::new(client::Config {
+    fn make_config() -> Arc<client::Config> {
+        Arc::new(client::Config {
             keepalive_interval: Some(std::time::Duration::from_secs(30)),
             preferred: russh::Preferred {
                 key: Cow::Borrowed(&[
@@ -126,26 +126,20 @@ impl SshManager {
                 ..russh::Preferred::DEFAULT
             },
             ..Default::default()
-        });
+        })
+    }
 
-        let handler = SshHandler {
-            db: Arc::clone(&self.db),
-            host: host.to_string(),
-            port,
-        };
-
-        let mut handle = client::connect(config, (host, port), handler)
-            .await
-            .map_err(|e| format!("Connection failed: {}", e))?;
-
-        eprintln!("[SSH] Connected, authenticating as {}", username);
-
-        // Authenticate
+    async fn authenticate(
+        handle: &mut client::Handle<SshHandler>,
+        username: &str,
+        auth_type: &str,
+        password: Option<&str>,
+        key_path: Option<&str>,
+    ) -> Result<(), String> {
         let auth_result = match auth_type {
             "key" => {
                 let key_path = key_path.ok_or("Key path required")?;
                 let expanded = shellexpand::tilde(key_path).to_string();
-                eprintln!("[SSH] Loading key from: {}", expanded);
                 let key_pair = russh::keys::load_secret_key(&expanded, None)
                     .map_err(|e| format!("Failed to load key '{}': {}", expanded, e))?;
                 let hash_alg = if key_pair.algorithm().is_rsa() {
@@ -153,9 +147,7 @@ impl SshManager {
                 } else {
                     None
                 };
-                let key_with_alg =
-                    PrivateKeyWithHashAlg::new(Arc::new(key_pair), hash_alg);
-                eprintln!("[SSH] Key algorithm: {:?}", key_with_alg.algorithm());
+                let key_with_alg = PrivateKeyWithHashAlg::new(Arc::new(key_pair), hash_alg);
                 handle
                     .authenticate_publickey(username, key_with_alg)
                     .await
@@ -173,6 +165,83 @@ impl SshManager {
         if !auth_result.success() {
             return Err("Authentication failed".to_string());
         }
+        Ok(())
+    }
+
+    pub async fn connect(
+        &self,
+        session_id: &str,
+        host: &str,
+        port: u16,
+        username: &str,
+        auth_type: &str,
+        password: Option<&str>,
+        key_path: Option<&str>,
+        jump_host: Option<JumpHostConfig>,
+        agent_forward: bool,
+        channel: Channel<PtyEvent>,
+    ) -> Result<(), String> {
+        let config = Self::make_config();
+
+        // Jump Host 경유 또는 직접 연결
+        let mut handle = if let Some(ref jump) = jump_host {
+            eprintln!("[SSH] Connecting via jump host {}:{}", jump.host, jump.port);
+
+            // 1. Jump Host에 연결
+            let jump_handler = SshHandler {
+                db: Arc::clone(&self.db),
+                host: jump.host.clone(),
+                port: jump.port,
+            };
+            let mut jump_handle =
+                client::connect(config.clone(), (&*jump.host, jump.port), jump_handler)
+                    .await
+                    .map_err(|e| format!("Jump host connection failed: {}", e))?;
+
+            // 2. Jump Host 인증
+            Self::authenticate(
+                &mut jump_handle,
+                &jump.username,
+                &jump.auth_type,
+                jump.password.as_deref(),
+                jump.key_path.as_deref(),
+            )
+            .await
+            .map_err(|e| format!("Jump host auth failed: {}", e))?;
+
+            eprintln!("[SSH] Jump host authenticated, tunneling to {}:{}", host, port);
+
+            // 3. Jump Host를 통해 최종 서버로 터널 생성
+            let tunnel_channel = jump_handle
+                .channel_open_direct_tcpip(host, port as u32, "127.0.0.1", 0)
+                .await
+                .map_err(|e| format!("Tunnel creation failed: {}", e))?;
+
+            let stream = tunnel_channel.into_stream();
+
+            // 4. 터널 위에서 최종 서버에 SSH 연결
+            let target_handler = SshHandler {
+                db: Arc::clone(&self.db),
+                host: host.to_string(),
+                port,
+            };
+            client::connect_stream(config, stream, target_handler)
+                .await
+                .map_err(|e| format!("Connection through tunnel failed: {}", e))?
+        } else {
+            eprintln!("[SSH] Connecting to {}:{}", host, port);
+            let handler = SshHandler {
+                db: Arc::clone(&self.db),
+                host: host.to_string(),
+                port,
+            };
+            client::connect(config, (host, port), handler)
+                .await
+                .map_err(|e| format!("Connection failed: {}", e))?
+        };
+
+        eprintln!("[SSH] Connected, authenticating as {}", username);
+        Self::authenticate(&mut handle, username, auth_type, password, key_path).await?;
 
         eprintln!("[SSH] Authenticated, opening channel");
 
@@ -180,6 +249,14 @@ impl SshManager {
             .channel_open_session()
             .await
             .map_err(|e| format!("Channel open failed: {}", e))?;
+
+        if agent_forward {
+            ssh_channel
+                .agent_forward(true)
+                .await
+                .map_err(|e| format!("Agent forward request failed: {}", e))?;
+            eprintln!("[SSH] Agent forwarding enabled");
+        }
 
         ssh_channel
             .request_pty(false, "xterm-256color", 80, 24, 0, 0, &[])

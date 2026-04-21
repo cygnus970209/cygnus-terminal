@@ -137,6 +137,8 @@ export default function Terminal({
             authType: sshConfig.authType,
             password: sshConfig.password || null,
             keyPath: sshConfig.keyPath || null,
+            jumpHost: sshConfig.jumpHost || null,
+            agentForward: sshConfig.agentForward || false,
             onEvent,
           });
           onTitleChange?.(tabId, `${sshConfig.username}@${sshConfig.host}`);

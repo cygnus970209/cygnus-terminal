@@ -4,6 +4,15 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { Profile } from "./Sidebar";
 import "./ConnectDialog.css";
 
+export interface JumpHostConfig {
+  host: string;
+  port: number;
+  username: string;
+  auth_type: "password" | "key";
+  password?: string;
+  key_path?: string;
+}
+
 export interface SshConfig {
   host: string;
   port: number;
@@ -12,6 +21,8 @@ export interface SshConfig {
   password?: string;
   keyPath?: string;
   profileId?: number;
+  jumpHost?: JumpHostConfig;
+  agentForward?: boolean;
 }
 
 interface ConnectDialogProps {
@@ -36,6 +47,14 @@ export default function ConnectDialog({
   const [keyPath, setKeyPath] = useState("");
   const [groupName, setGroupName] = useState("");
   const [saveProfile, setSaveProfile] = useState(true);
+  const [useJumpHost, setUseJumpHost] = useState(false);
+  const [jumpHost, setJumpHost] = useState("");
+  const [jumpPort, setJumpPort] = useState("22");
+  const [jumpUsername, setJumpUsername] = useState("");
+  const [jumpAuthType, setJumpAuthType] = useState<"password" | "key">("password");
+  const [jumpPassword, setJumpPassword] = useState("");
+  const [jumpKeyPath, setJumpKeyPath] = useState("");
+  const [agentForward, setAgentForward] = useState(false);
 
   const isEdit = !!editProfile;
 
@@ -50,11 +69,51 @@ export default function ConnectDialog({
       setGroupName(editProfile.group_name || "");
       setPassword("");
       setSaveProfile(true);
+      setAgentForward(editProfile.agent_forward || false);
+      if (editProfile.jump_host) {
+        try {
+          const jh = JSON.parse(editProfile.jump_host);
+          setUseJumpHost(true);
+          setJumpHost(jh.host || "");
+          setJumpPort(String(jh.port || 22));
+          setJumpUsername(jh.username || "");
+          setJumpAuthType(jh.auth_type || "password");
+          setJumpKeyPath(jh.key_path || "");
+        } catch { /* ignore */ }
+      } else {
+        setUseJumpHost(false);
+      }
     }
   }, [editProfile]);
 
+  const buildJumpHostJson = (): string | undefined => {
+    if (!useJumpHost || !jumpHost) return undefined;
+    return JSON.stringify({
+      host: jumpHost,
+      port: parseInt(jumpPort) || 22,
+      username: jumpUsername,
+      auth_type: jumpAuthType,
+      password: jumpAuthType === "password" ? jumpPassword : undefined,
+      key_path: jumpAuthType === "key" ? jumpKeyPath : undefined,
+    });
+  };
+
+  const buildJumpHostConfig = (): JumpHostConfig | undefined => {
+    if (!useJumpHost || !jumpHost) return undefined;
+    return {
+      host: jumpHost,
+      port: parseInt(jumpPort) || 22,
+      username: jumpUsername,
+      auth_type: jumpAuthType,
+      password: jumpAuthType === "password" ? jumpPassword : undefined,
+      key_path: jumpAuthType === "key" ? jumpKeyPath : undefined,
+    };
+  };
+
   const handleSave = async (): Promise<Profile | null> => {
     if (!saveProfile) return null;
+
+    const jumpHostJson = buildJumpHostJson();
 
     try {
       if (isEdit && editProfile) {
@@ -69,6 +128,8 @@ export default function ConnectDialog({
             password: authType === "password" && password ? password : undefined,
             key_path: authType === "key" ? keyPath : undefined,
             group_name: groupName || undefined,
+            jump_host: jumpHostJson ?? null,
+            agent_forward: agentForward,
           },
         });
         onSaved?.();
@@ -84,6 +145,8 @@ export default function ConnectDialog({
             password: authType === "password" ? password : undefined,
             key_path: authType === "key" ? keyPath : undefined,
             group_name: groupName || undefined,
+            jump_host: jumpHostJson,
+            agent_forward: agentForward,
           },
         });
         onSaved?.();
@@ -108,6 +171,8 @@ export default function ConnectDialog({
       authType,
       password: authType === "password" ? password : undefined,
       keyPath: authType === "key" ? keyPath : undefined,
+      jumpHost: buildJumpHostConfig(),
+      agentForward,
     });
   };
 
@@ -230,6 +295,99 @@ export default function ConnectDialog({
               placeholder="Production"
             />
           </div>
+          <div className="dialog-row">
+            <label className="dialog-checkbox">
+              <input
+                type="checkbox"
+                checked={useJumpHost}
+                onChange={(e) => setUseJumpHost(e.target.checked)}
+              />
+              Use Jump Host (ProxyJump)
+            </label>
+          </div>
+          <div className="dialog-row">
+            <label className="dialog-checkbox">
+              <input
+                type="checkbox"
+                checked={agentForward}
+                onChange={(e) => setAgentForward(e.target.checked)}
+              />
+              SSH Agent Forwarding
+            </label>
+          </div>
+          {useJumpHost && (
+            <div className="dialog-jump-host">
+              <div className="dialog-row-pair">
+                <div className="dialog-row" style={{ flex: 1 }}>
+                  <label>Jump Host</label>
+                  <input
+                    type="text"
+                    value={jumpHost}
+                    onChange={(e) => setJumpHost(e.target.value)}
+                    placeholder="bastion.example.com"
+                  />
+                </div>
+                <div className="dialog-row" style={{ width: 80 }}>
+                  <label>Port</label>
+                  <input
+                    type="text"
+                    value={jumpPort}
+                    onChange={(e) => setJumpPort(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="dialog-row">
+                <label>Username</label>
+                <input
+                  type="text"
+                  value={jumpUsername}
+                  onChange={(e) => setJumpUsername(e.target.value)}
+                  placeholder="admin"
+                />
+              </div>
+              <div className="dialog-row">
+                <label>Auth</label>
+                <div className="dialog-radio-group">
+                  <label className="dialog-radio">
+                    <input
+                      type="radio"
+                      checked={jumpAuthType === "password"}
+                      onChange={() => setJumpAuthType("password")}
+                    />
+                    Password
+                  </label>
+                  <label className="dialog-radio">
+                    <input
+                      type="radio"
+                      checked={jumpAuthType === "key"}
+                      onChange={() => setJumpAuthType("key")}
+                    />
+                    Key
+                  </label>
+                </div>
+              </div>
+              {jumpAuthType === "password" ? (
+                <div className="dialog-row">
+                  <label>Password</label>
+                  <input
+                    type="password"
+                    value={jumpPassword}
+                    onChange={(e) => setJumpPassword(e.target.value)}
+                  />
+                </div>
+              ) : (
+                <div className="dialog-row">
+                  <label>Key Path</label>
+                  <input
+                    type="text"
+                    value={jumpKeyPath}
+                    onChange={(e) => setJumpKeyPath(e.target.value)}
+                    placeholder="~/.ssh/id_rsa"
+                  />
+                </div>
+              )}
+            </div>
+          )}
           {!isEdit && (
             <div className="dialog-row">
               <label className="dialog-checkbox">

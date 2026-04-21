@@ -3,7 +3,7 @@ import "./TabBar.css";
 export interface Tab {
   id: string;
   title: string;
-  type: "local" | "ssh" | "connections";
+  type: "local" | "ssh" | "connections" | "snippets";
 }
 
 interface TabBarProps {
@@ -19,6 +19,7 @@ interface TabBarProps {
 function tabIcon(type: Tab["type"]) {
   switch (type) {
     case "connections": return "☰";
+    case "snippets": return "{ }";
     case "ssh": return "⬡";
     default: return "▸";
   }
@@ -44,7 +45,7 @@ export default function TabBar({
           >
             <span className="tab-icon">{tabIcon(tab.type)}</span>
             <span className="tab-title">{tab.title}</span>
-            {tab.type !== "connections" && (
+            {tab.type !== "connections" && tab.type !== "snippets" && (
               <button
                 className="tab-close"
                 onClick={(e) => {

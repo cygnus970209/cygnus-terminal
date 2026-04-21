@@ -9,6 +9,8 @@ import ServerContext from "./components/ServerContext";
 import FileTree from "./components/FileTree";
 import ResizablePanel from "./components/ResizablePanel";
 import MonitorBar from "./components/MonitorBar";
+import SnippetsView from "./components/SnippetsView";
+import LogViewer from "./components/LogViewer";
 import ConnectDialog, { SshConfig } from "./components/ConnectDialog";
 import SettingsDialog from "./components/SettingsDialog";
 import "./App.css";
@@ -21,6 +23,12 @@ const connectionsTab: Tab = {
   type: "connections",
 };
 
+const snippetsTab: Tab = {
+  id: "snippets",
+  title: "Snippets",
+  type: "snippets" as any,
+};
+
 const initialLocalTab: Tab & { sshConfig?: SshConfig } = {
   id: "tab-1",
   title: "Local Shell",
@@ -30,6 +38,7 @@ const initialLocalTab: Tab & { sshConfig?: SshConfig } = {
 function App() {
   const [tabs, setTabs] = useState<(Tab & { sshConfig?: SshConfig })[]>([
     connectionsTab,
+    snippetsTab,
     initialLocalTab,
   ]);
   const [activeTabId, setActiveTabId] = useState<string | null>("tab-1");
@@ -45,6 +54,7 @@ function App() {
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [monitorVisible, setMonitorVisible] = useState(true);
+  const [logViewerVisible, setLogViewerVisible] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
 
   // macOS 메뉴 "Preferences" 이벤트 수신
@@ -79,7 +89,7 @@ function App() {
 
   const closeTab = useCallback(
     (id: string) => {
-      if (id === "connections") return;
+      if (id === "connections" || id === "snippets") return;
       setTabs((prev) => {
         const next = prev.filter((t) => t.id !== id);
         if (activeTabId === id) {
@@ -135,6 +145,8 @@ function App() {
           password: fullProfile.password ?? undefined,
           keyPath: fullProfile.key_path ?? undefined,
           profileId: fullProfile.id,
+          jumpHost: fullProfile.jump_host ? JSON.parse(fullProfile.jump_host) : undefined,
+          agentForward: fullProfile.agent_forward || false,
         });
       } catch (err) {
         console.error("Failed to load profile:", err);
@@ -245,8 +257,11 @@ function App() {
               reloadKey={profileReloadKey}
             />
           )}
-          <div style={{ display: activeTabId === "connections" ? "none" : "contents" }}>
-            {tabs.filter((t) => t.type !== "connections").map((tab) => (
+          {activeTabId === "snippets" && (
+            <SnippetsView onExecute={handleExecuteCommand} />
+          )}
+          <div style={{ display: activeTabId === "connections" || activeTabId === "snippets" ? "none" : "contents" }}>
+            {tabs.filter((t) => t.type !== "connections" && t.type !== "snippets").map((tab) => (
               <Terminal
                 key={tab.id}
                 tabId={tab.id}
@@ -289,11 +304,19 @@ function App() {
           </ResizablePanel>
         )}
       </div>
+      {activeTabId && activeTab?.type === "ssh" && sessionMap[activeTabId] && logViewerVisible && (
+        <LogViewer
+          sessionId={sessionMap[activeTabId]}
+          onClose={() => setLogViewerVisible(false)}
+        />
+      )}
       {activeTabId && activeTab?.type === "ssh" && sessionMap[activeTabId] && (
         <MonitorBar
           sessionId={sessionMap[activeTabId]}
           visible={monitorVisible}
           onToggle={() => setMonitorVisible((v) => !v)}
+          onToggleLogs={() => setLogViewerVisible((v) => !v)}
+          logViewerActive={logViewerVisible}
         />
       )}
       {showConnectDialog && (

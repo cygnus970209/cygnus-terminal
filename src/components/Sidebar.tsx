@@ -13,6 +13,8 @@ export interface Profile {
   key_path?: string;
   group_name: string;
   sort_order: number;
+  jump_host?: string;
+  agent_forward?: boolean;
   created_at: string;
   updated_at: string;
 }

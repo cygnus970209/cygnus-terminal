@@ -6,12 +6,14 @@ use crate::db::export::ExportData;
 use crate::db::history::CommandHistoryEntry;
 use crate::db::path_bookmark::{CreatePathBookmarkRequest, PathBookmark};
 use crate::db::profile::{CreateProfileRequest, Profile, UpdateProfileRequest};
+use crate::db::snippet::{CreateSnippetRequest, Snippet, UpdateSnippetRequest};
 use crate::db::Database;
 use crate::pty::{PtyEvent, PtyManager};
 use crate::forward::{ForwardManager, PortForward};
 use crate::monitor::{MonitorManager, ServerStats};
 use crate::sftp::{FileEntry, SftpManager};
-use crate::ssh::SshManager;
+use crate::ssh::{JumpHostConfig, SshManager};
+use crate::tail::{TailEvent, TailManager};
 use tauri::ipc::Channel;
 use tauri::State;
 use uuid::Uuid;
@@ -62,6 +64,8 @@ pub async fn create_ssh_session(
     auth_type: String,
     password: Option<String>,
     key_path: Option<String>,
+    jump_host: Option<JumpHostConfig>,
+    agent_forward: Option<bool>,
     on_event: Channel<PtyEvent>,
     ssh_manager: State<'_, SshManager>,
 ) -> Result<String, String> {
@@ -75,6 +79,8 @@ pub async fn create_ssh_session(
             &auth_type,
             password.as_deref(),
             key_path.as_deref(),
+            jump_host,
+            agent_forward.unwrap_or(false),
             on_event,
         )
         .await?;
@@ -443,4 +449,65 @@ pub fn import_from_file(
     let data: ExportData = serde_json::from_str(&json)
         .map_err(|e| format!("Invalid JSON: {e}"))?;
     db.import_data(data, &crypto)
+}
+
+// ── Snippet Commands ──
+
+#[tauri::command]
+pub fn create_snippet(
+    req: CreateSnippetRequest,
+    db: State<'_, Arc<Database>>,
+) -> Result<Snippet, String> {
+    db.create_snippet(req)
+}
+
+#[tauri::command]
+pub fn list_snippets(
+    query: Option<String>,
+    db: State<'_, Arc<Database>>,
+) -> Result<Vec<Snippet>, String> {
+    db.list_snippets(query.as_deref())
+}
+
+#[tauri::command]
+pub fn update_snippet(
+    id: i64,
+    req: UpdateSnippetRequest,
+    db: State<'_, Arc<Database>>,
+) -> Result<Snippet, String> {
+    db.update_snippet(id, req)
+}
+
+#[tauri::command]
+pub fn delete_snippet(
+    id: i64,
+    db: State<'_, Arc<Database>>,
+) -> Result<(), String> {
+    db.delete_snippet(id)
+}
+
+// ── Tail Commands ──
+
+#[tauri::command]
+pub async fn tail_start(
+    session_id: String,
+    path: String,
+    lines: Option<u32>,
+    on_event: Channel<TailEvent>,
+    ssh_manager: State<'_, SshManager>,
+    tail_manager: State<'_, TailManager>,
+) -> Result<String, String> {
+    let tail_id = format!("tail-{}-{}", session_id.chars().take(8).collect::<String>(), path.replace('/', "_"));
+    tail_manager
+        .start(&tail_id, &path, &session_id, &ssh_manager, lines.unwrap_or(50), on_event)
+        .await?;
+    Ok(tail_id)
+}
+
+#[tauri::command]
+pub async fn tail_stop(
+    tail_id: String,
+    tail_manager: State<'_, TailManager>,
+) -> Result<(), String> {
+    tail_manager.stop(&tail_id).await
 }
