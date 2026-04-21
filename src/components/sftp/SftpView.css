@@ -270,6 +270,21 @@
 .sftp-ctx-danger { color: var(--danger, #f38ba8); }
 .sftp-ctx-danger:hover { background: rgba(243, 139, 168, 0.1); }
 
+.sftp-ctx-divider {
+  height: 1px;
+  background: var(--border, #313244);
+  margin: 4px 0;
+}
+
+.sftp-ctx-label {
+  color: var(--text-dim, #585b70);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 4px 10px 2px;
+}
+
 /* Overlays */
 .sftp-drop-overlay {
   position: absolute;

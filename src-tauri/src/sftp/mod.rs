@@ -179,6 +179,35 @@ impl SftpManager {
         Ok(metadata.size.unwrap_or(0))
     }
 
+    pub async fn copy_between(
+        &self,
+        src_sftp_id: &str,
+        src_path: &str,
+        dst_sftp_id: &str,
+        dst_path: &str,
+    ) -> Result<u64, String> {
+        let sessions = self.sessions.lock().await;
+        let src = sessions
+            .get(src_sftp_id)
+            .ok_or_else(|| format!("Source SFTP not found: {src_sftp_id}"))?;
+        let dst = sessions
+            .get(dst_sftp_id)
+            .ok_or_else(|| format!("Dest SFTP not found: {dst_sftp_id}"))?;
+
+        let data = src
+            .read(src_path)
+            .await
+            .map_err(|e| format!("Failed to read source: {e}"))?;
+
+        let size = data.len() as u64;
+
+        dst.write(dst_path, &data)
+            .await
+            .map_err(|e| format!("Failed to write destination: {e}"))?;
+
+        Ok(size)
+    }
+
     pub fn clone_sessions(&self) -> Arc<Mutex<HashMap<String, SftpSession>>> {
         Arc::clone(&self.sessions)
     }

@@ -279,6 +279,11 @@ function App() {
           {activeTab?.type === "sftp" && activeTab.linkedSessionId && sessionMap[activeTab.linkedSessionId] && (
             <SftpView
               sessionId={sessionMap[activeTab.linkedSessionId]}
+              availableSessions={
+                tabs
+                  .filter((t) => t.type === "ssh" && sessionMap[t.id])
+                  .map((t) => ({ id: sessionMap[t.id], label: t.title }))
+              }
             />
           )}
           <div style={{ display: activeTabId === "connections" || activeTabId === "snippets" || activeTab?.type === "sftp" ? "none" : "contents" }}>

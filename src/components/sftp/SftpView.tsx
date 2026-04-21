@@ -15,6 +15,7 @@ interface FileEntry {
 
 interface SftpViewProps {
   sessionId: string;
+  availableSessions?: { id: string; label: string }[];
   onPopoutWindow?: () => void;
 }
 
@@ -35,7 +36,7 @@ function formatPermissions(perm: number | null): string {
   return (perm & 0o777).toString(8).padStart(3, "0");
 }
 
-export default function SftpView({ sessionId, onPopoutWindow }: SftpViewProps) {
+export default function SftpView({ sessionId, availableSessions, onPopoutWindow }: SftpViewProps) {
   const [sftpId, setSftpId] = useState<string | null>(null);
   const [currentPath, setCurrentPath] = useState("/");
   const [entries, setEntries] = useState<FileEntry[]>([]);
@@ -227,6 +228,34 @@ export default function SftpView({ sessionId, onPopoutWindow }: SftpViewProps) {
     }
     setContextMenu(null);
   }, [sftpId, currentPath, navigateTo]);
+
+  const handleCopyToServer = useCallback(async (entry: FileEntry, targetSessionId: string) => {
+    if (!sftpId || entry.is_dir) return;
+    try {
+      // 대상 서버의 SFTP 세션 열기
+      showToast(`Connecting to target server...`);
+      const dstSftpId = await invoke<string>("sftp_open", { sessionId: targetSessionId });
+      const dstHome = await invoke<string>("sftp_get_home_dir", { sftpId: dstSftpId });
+      const dstPath = dstHome.endsWith("/")
+        ? `${dstHome}${entry.name}`
+        : `${dstHome}/${entry.name}`;
+
+      showToast(`Copying ${entry.name}...`);
+      const bytes = await invoke<number>("sftp_copy_between", {
+        srcSftpId: sftpId,
+        srcPath: entry.path,
+        dstSftpId,
+        dstPath,
+      });
+      showToast(`Copied: ${entry.name} (${formatSize(bytes)})`);
+
+      // 대상 SFTP 세션 정리
+      await invoke("sftp_close", { sftpId: dstSftpId });
+    } catch (err) {
+      showToast(`Failed: ${err}`);
+    }
+    setContextMenu(null);
+  }, [sftpId]);
 
   const handleMkdir = useCallback(async () => {
     if (!sftpId) return;
@@ -450,6 +479,24 @@ export default function SftpView({ sessionId, onPopoutWindow }: SftpViewProps) {
           <button className="sftp-ctx-item" onClick={() => handleRename(contextMenu.entry)}>
             Rename
           </button>
+          {!contextMenu.entry.is_dir && availableSessions && availableSessions.length > 0 && (
+            <>
+              <div className="sftp-ctx-divider" />
+              <div className="sftp-ctx-label">Copy to...</div>
+              {availableSessions
+                .filter((s) => s.id !== sessionId)
+                .map((s) => (
+                  <button
+                    key={s.id}
+                    className="sftp-ctx-item"
+                    onClick={() => handleCopyToServer(contextMenu.entry, s.id)}
+                  >
+                    {s.label}
+                  </button>
+                ))}
+            </>
+          )}
+          <div className="sftp-ctx-divider" />
           <button className="sftp-ctx-item sftp-ctx-danger" onClick={() => handleDelete(contextMenu.entry)}>
             Delete
           </button>

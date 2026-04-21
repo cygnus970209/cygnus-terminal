@@ -93,6 +93,19 @@ pub async fn sftp_mkdir(
 }
 
 #[tauri::command]
+pub async fn sftp_copy_between(
+    src_sftp_id: String,
+    src_path: String,
+    dst_sftp_id: String,
+    dst_path: String,
+    sftp_manager: State<'_, SftpManager>,
+) -> Result<u64, String> {
+    sftp_manager
+        .copy_between(&src_sftp_id, &src_path, &dst_sftp_id, &dst_path)
+        .await
+}
+
+#[tauri::command]
 pub async fn sftp_upload_bytes(
     sftp_id: String,
     remote_path: String,
