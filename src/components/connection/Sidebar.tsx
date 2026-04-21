@@ -1,23 +1,7 @@
 import { useState, useEffect, useCallback, forwardRef, useImperativeHandle } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { Profile } from "../../types";
 import "./Sidebar.css";
-
-export interface Profile {
-  id: number;
-  name: string;
-  host: string;
-  port: number;
-  username: string;
-  auth_type: "password" | "key";
-  password?: string;
-  key_path?: string;
-  group_name: string;
-  sort_order: number;
-  jump_host?: string;
-  agent_forward?: boolean;
-  created_at: string;
-  updated_at: string;
-}
 
 interface SidebarProps {
   onConnectProfile: (profile: Profile) => void;

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Profile } from "./Sidebar";
+import { Profile } from "../../types";
 import "./ConnectionsView.css";
 
 interface ConnectionsViewProps {

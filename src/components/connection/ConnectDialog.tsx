@@ -1,29 +1,8 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Profile } from "./Sidebar";
+import { Profile, SshConfig, JumpHostConfig } from "../../types";
 import "./ConnectDialog.css";
-
-export interface JumpHostConfig {
-  host: string;
-  port: number;
-  username: string;
-  auth_type: "password" | "key";
-  password?: string;
-  key_path?: string;
-}
-
-export interface SshConfig {
-  host: string;
-  port: number;
-  username: string;
-  authType: "password" | "key";
-  password?: string;
-  keyPath?: string;
-  profileId?: number;
-  jumpHost?: JumpHostConfig;
-  agentForward?: boolean;
-}
 
 interface ConnectDialogProps {
   onConnect: (config: SshConfig) => void;

@@ -1,10 +1,5 @@
+import { Tab } from "../../types";
 import "./TabBar.css";
-
-export interface Tab {
-  id: string;
-  title: string;
-  type: "local" | "ssh" | "connections" | "snippets";
-}
 
 interface TabBarProps {
   tabs: Tab[];
