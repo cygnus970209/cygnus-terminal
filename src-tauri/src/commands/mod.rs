@@ -2,11 +2,14 @@ use std::sync::Arc;
 
 use crate::crypto::CryptoManager;
 use crate::db::command_bookmark::{CommandBookmark, CreateCommandBookmarkRequest};
+use crate::db::export::ExportData;
 use crate::db::history::CommandHistoryEntry;
 use crate::db::path_bookmark::{CreatePathBookmarkRequest, PathBookmark};
 use crate::db::profile::{CreateProfileRequest, Profile, UpdateProfileRequest};
 use crate::db::Database;
 use crate::pty::{PtyEvent, PtyManager};
+use crate::forward::{ForwardManager, PortForward};
+use crate::monitor::{MonitorManager, ServerStats};
 use crate::sftp::{FileEntry, SftpManager};
 use crate::ssh::SshManager;
 use tauri::ipc::Channel;
@@ -332,4 +335,112 @@ pub async fn sftp_close(
 ) -> Result<(), String> {
     sftp_manager.close(&sftp_id).await;
     Ok(())
+}
+
+// ── Monitor Commands ──
+
+#[tauri::command]
+pub async fn monitor_start(
+    session_id: String,
+    ssh_manager: State<'_, SshManager>,
+    monitor_manager: State<'_, MonitorManager>,
+) -> Result<String, String> {
+    let monitor_id = format!("mon-{}", session_id);
+    monitor_manager
+        .start(&monitor_id, &session_id, &ssh_manager)
+        .await?;
+    Ok(monitor_id)
+}
+
+#[tauri::command]
+pub async fn monitor_stop(
+    monitor_id: String,
+    monitor_manager: State<'_, MonitorManager>,
+) -> Result<(), String> {
+    monitor_manager.stop(&monitor_id).await;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn monitor_get_stats(
+    monitor_id: String,
+    monitor_manager: State<'_, MonitorManager>,
+) -> Result<ServerStats, String> {
+    monitor_manager.get_stats(&monitor_id).await
+}
+
+// ── Port Forward Commands ──
+
+#[tauri::command]
+pub async fn forward_add(
+    session_id: String,
+    local_port: u16,
+    remote_host: String,
+    remote_port: u16,
+    ssh_manager: State<'_, SshManager>,
+    forward_manager: State<'_, ForwardManager>,
+) -> Result<PortForward, String> {
+    forward_manager
+        .add(local_port, &remote_host, remote_port, &session_id, &ssh_manager)
+        .await
+}
+
+#[tauri::command]
+pub async fn forward_remove(
+    id: String,
+    forward_manager: State<'_, ForwardManager>,
+) -> Result<(), String> {
+    forward_manager.remove(&id).await
+}
+
+#[tauri::command]
+pub async fn forward_list(
+    forward_manager: State<'_, ForwardManager>,
+) -> Result<Vec<PortForward>, String> {
+    Ok(forward_manager.list().await)
+}
+
+// ── Export/Import Commands ──
+
+#[tauri::command]
+pub fn export_data(
+    db: State<'_, Arc<Database>>,
+    crypto: State<'_, CryptoManager>,
+) -> Result<ExportData, String> {
+    db.export_data(&crypto)
+}
+
+#[tauri::command]
+pub fn import_data(
+    data: ExportData,
+    db: State<'_, Arc<Database>>,
+    crypto: State<'_, CryptoManager>,
+) -> Result<u32, String> {
+    db.import_data(data, &crypto)
+}
+
+#[tauri::command]
+pub fn export_to_file(
+    path: String,
+    db: State<'_, Arc<Database>>,
+    crypto: State<'_, CryptoManager>,
+) -> Result<(), String> {
+    let data = db.export_data(&crypto)?;
+    let json = serde_json::to_string_pretty(&data)
+        .map_err(|e| format!("Serialization failed: {e}"))?;
+    std::fs::write(&path, json)
+        .map_err(|e| format!("Failed to write file: {e}"))
+}
+
+#[tauri::command]
+pub fn import_from_file(
+    path: String,
+    db: State<'_, Arc<Database>>,
+    crypto: State<'_, CryptoManager>,
+) -> Result<u32, String> {
+    let json = std::fs::read_to_string(&path)
+        .map_err(|e| format!("Failed to read file: {e}"))?;
+    let data: ExportData = serde_json::from_str(&json)
+        .map_err(|e| format!("Invalid JSON: {e}"))?;
+    db.import_data(data, &crypto)
 }

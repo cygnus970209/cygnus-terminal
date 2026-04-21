@@ -13,6 +13,7 @@ interface TabBarProps {
   onCloseTab: (id: string) => void;
   onNewLocalTab: () => void;
   onNewSshTab: () => void;
+  onOpenSettings?: () => void;
 }
 
 function tabIcon(type: Tab["type"]) {
@@ -30,6 +31,7 @@ export default function TabBar({
   onCloseTab,
   onNewLocalTab,
   onNewSshTab,
+  onOpenSettings,
 }: TabBarProps) {
   return (
     <div className="tabbar">
@@ -63,6 +65,11 @@ export default function TabBar({
         <button className="tabbar-btn tabbar-btn-ssh" onClick={onNewSshTab} title="New SSH Connection">
           SSH
         </button>
+        {onOpenSettings && (
+          <button className="tabbar-btn" onClick={onOpenSettings} title="Settings">
+            ⚙
+          </button>
+        )}
       </div>
     </div>
   );

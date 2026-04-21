@@ -1,5 +1,6 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import TabBar, { Tab } from "./components/TabBar";
 import Terminal from "./components/Terminal";
 import ConnectionsView from "./components/ConnectionsView";
@@ -7,7 +8,9 @@ import { Profile } from "./components/Sidebar";
 import ServerContext from "./components/ServerContext";
 import FileTree from "./components/FileTree";
 import ResizablePanel from "./components/ResizablePanel";
+import MonitorBar from "./components/MonitorBar";
 import ConnectDialog, { SshConfig } from "./components/ConnectDialog";
+import SettingsDialog from "./components/SettingsDialog";
 import "./App.css";
 
 let tabCounter = 1;
@@ -41,6 +44,14 @@ function App() {
   const [fileTreePath, setFileTreePath] = useState<string | null>(null);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
+  const [monitorVisible, setMonitorVisible] = useState(true);
+  const [showSettings, setShowSettings] = useState(false);
+
+  // macOS 메뉴 "Preferences" 이벤트 수신
+  useEffect(() => {
+    const unlisten = listen("open-settings", () => setShowSettings(true));
+    return () => { unlisten.then((f) => f()); };
+  }, []);
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const activeProfileId = activeTab?.sshConfig?.profileId ?? null;
@@ -183,6 +194,7 @@ function App() {
         onCloseTab={closeTab}
         onNewLocalTab={createLocalTab}
         onNewSshTab={handleNewProfile}
+        onOpenSettings={() => setShowSettings(true)}
       />
       <div className="app-body">
         {activeProfileId && (
@@ -216,6 +228,7 @@ function App() {
                 </div>
                 <ServerContext
                   profileId={activeProfileId}
+                  sessionId={sessionMap[activeTabId!]}
                   onExecuteCommand={handleExecuteCommand}
                   onCaptureCurrentPath={handleCaptureCurrentPath}
                 />
@@ -276,6 +289,13 @@ function App() {
           </ResizablePanel>
         )}
       </div>
+      {activeTabId && activeTab?.type === "ssh" && sessionMap[activeTabId] && (
+        <MonitorBar
+          sessionId={sessionMap[activeTabId]}
+          visible={monitorVisible}
+          onToggle={() => setMonitorVisible((v) => !v)}
+        />
+      )}
       {showConnectDialog && (
         <ConnectDialog
           onConnect={createSshTab}
@@ -286,6 +306,9 @@ function App() {
           onSaved={handleProfileSaved}
           editProfile={editProfile}
         />
+      )}
+      {showSettings && (
+        <SettingsDialog onClose={() => setShowSettings(false)} />
       )}
     </div>
   );

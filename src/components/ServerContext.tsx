@@ -26,16 +26,26 @@ interface PathBookmark {
   created_at: string;
 }
 
+interface PortForward {
+  id: string;
+  local_port: number;
+  remote_host: string;
+  remote_port: number;
+  status: string;
+}
+
 interface ServerContextProps {
   profileId: number;
+  sessionId: string;
   onExecuteCommand: (command: string) => void;
   onCaptureCurrentPath?: () => Promise<string | null>;
 }
 
-type TabType = "history" | "commands" | "paths";
+type TabType = "history" | "commands" | "paths" | "forwards";
 
 export default function ServerContext({
   profileId,
+  sessionId,
   onExecuteCommand,
   onCaptureCurrentPath,
 }: ServerContextProps) {
@@ -50,6 +60,11 @@ export default function ServerContext({
   const [newPath, setNewPath] = useState("");
   const [newPathLabel, setNewPathLabel] = useState("");
   const [showAddPath, setShowAddPath] = useState(false);
+  const [forwards, setForwards] = useState<PortForward[]>([]);
+  const [showAddForward, setShowAddForward] = useState(false);
+  const [fwdLocalPort, setFwdLocalPort] = useState("");
+  const [fwdRemoteHost, setFwdRemoteHost] = useState("localhost");
+  const [fwdRemotePort, setFwdRemotePort] = useState("");
   const [toast, setToast] = useState<string | null>(null);
   const [historyContextMenu, setHistoryContextMenu] = useState<{
     x: number;
@@ -97,11 +112,21 @@ export default function ServerContext({
     }
   }, [profileId]);
 
+  const loadForwards = useCallback(async () => {
+    try {
+      const list = await invoke<PortForward[]>("forward_list");
+      setForwards(list);
+    } catch (err) {
+      console.error("Failed to load forwards:", err);
+    }
+  }, []);
+
   useEffect(() => {
     if (activeTab === "history") loadHistory();
     else if (activeTab === "commands") loadCommandBookmarks();
     else if (activeTab === "paths") loadPathBookmarks();
-  }, [activeTab, profileId, loadHistory, loadCommandBookmarks, loadPathBookmarks]);
+    else if (activeTab === "forwards") loadForwards();
+  }, [activeTab, profileId, loadHistory, loadCommandBookmarks, loadPathBookmarks, loadForwards]);
 
   useEffect(() => {
     const close = () => setHistoryContextMenu(null);
@@ -130,6 +155,37 @@ export default function ServerContext({
       setHistoryContextMenu(null);
     } catch (err) {
       console.error("Failed to save bookmark:", err);
+    }
+  };
+
+  const handleAddForward = async () => {
+    const lp = parseInt(fwdLocalPort);
+    const rp = parseInt(fwdRemotePort);
+    if (!lp || !rp || !fwdRemoteHost) return;
+    try {
+      await invoke("forward_add", {
+        sessionId,
+        localPort: lp,
+        remoteHost: fwdRemoteHost,
+        remotePort: rp,
+      });
+      setFwdLocalPort("");
+      setFwdRemotePort("");
+      setFwdRemoteHost("localhost");
+      setShowAddForward(false);
+      loadForwards();
+      showToast(`Forward: localhost:${lp} → ${fwdRemoteHost}:${rp}`);
+    } catch (err) {
+      showToast(`Failed: ${err}`);
+    }
+  };
+
+  const handleRemoveForward = async (id: string) => {
+    try {
+      await invoke("forward_remove", { id });
+      loadForwards();
+    } catch (err) {
+      console.error("Failed to remove forward:", err);
     }
   };
 
@@ -239,6 +295,12 @@ export default function ServerContext({
           onClick={() => setActiveTab("paths")}
         >
           Paths
+        </button>
+        <button
+          className={`sc-tab ${activeTab === "forwards" ? "sc-tab-active" : ""}`}
+          onClick={() => setActiveTab("forwards")}
+        >
+          Ports
         </button>
       </div>
 
@@ -419,6 +481,86 @@ export default function ServerContext({
                   No bookmarked paths.
                   <br />
                   Click + Add to save one.
+                </div>
+              )}
+            </div>
+          </>
+        )}
+
+        {activeTab === "forwards" && (
+          <>
+            <div className="sc-header-row">
+              <button
+                className="sc-add-btn"
+                onClick={() => setShowAddForward(!showAddForward)}
+              >
+                {showAddForward ? "Cancel" : "+ Add"}
+              </button>
+            </div>
+            {showAddForward && (
+              <div className="sc-add-form">
+                <div className="sc-fwd-row">
+                  <input
+                    type="text"
+                    placeholder="Local port"
+                    value={fwdLocalPort}
+                    onChange={(e) => setFwdLocalPort(e.target.value)}
+                    style={{ width: 80 }}
+                    autoFocus
+                  />
+                  <span className="sc-fwd-arrow">→</span>
+                  <input
+                    type="text"
+                    placeholder="Host"
+                    value={fwdRemoteHost}
+                    onChange={(e) => setFwdRemoteHost(e.target.value)}
+                    style={{ flex: 1 }}
+                  />
+                  <span className="sc-fwd-arrow">:</span>
+                  <input
+                    type="text"
+                    placeholder="Port"
+                    value={fwdRemotePort}
+                    onChange={(e) => setFwdRemotePort(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleAddForward()}
+                    style={{ width: 60 }}
+                  />
+                </div>
+                <button className="sc-save-btn" onClick={handleAddForward}>
+                  Start
+                </button>
+              </div>
+            )}
+            <div className="sc-list">
+              {forwards.map((fwd) => (
+                <div key={fwd.id} className="sc-item sc-item-bookmark">
+                  <div className="sc-item-main">
+                    <span
+                      className="sc-fwd-status"
+                      style={{ color: fwd.status === "active" ? "#a6e3a1" : "#f38ba8" }}
+                    >
+                      ●
+                    </span>
+                    <div className="sc-item-info">
+                      <span className="sc-item-text">
+                        :{fwd.local_port} → {fwd.remote_host}:{fwd.remote_port}
+                      </span>
+                    </div>
+                  </div>
+                  <button
+                    className="sc-delete-btn"
+                    onClick={() => handleRemoveForward(fwd.id)}
+                    style={{ opacity: 1 }}
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+              {forwards.length === 0 && !showAddForward && (
+                <div className="sc-empty">
+                  No port forwards.
+                  <br />
+                  Click + Add to create one.
                 </div>
               )}
             </div>

@@ -279,6 +279,39 @@
   z-index: 100;
 }
 
+.sc-fwd-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sc-fwd-row input {
+  padding: 5px 6px;
+  background: #11111b;
+  border: 1px solid #313244;
+  border-radius: 4px;
+  color: #cdd6f4;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.sc-fwd-row input:focus {
+  border-color: #89b4fa;
+}
+
+.sc-fwd-arrow {
+  color: #585b70;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.sc-fwd-status {
+  font-size: 8px;
+  flex-shrink: 0;
+}
+
 @keyframes sc-toast-in {
   from {
     opacity: 0;

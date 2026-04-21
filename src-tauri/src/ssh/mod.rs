@@ -73,7 +73,7 @@ enum SshCommand {
 
 pub struct SshSession {
     cmd_tx: mpsc::Sender<SshCommand>,
-    handle: client::Handle<SshHandler>,
+    pub(crate) handle: client::Handle<SshHandler>,
 }
 
 pub struct SshManager {
@@ -281,6 +281,10 @@ impl SshManager {
         } else {
             Err(format!("Session not found: {}", session_id))
         }
+    }
+
+    pub fn clone_inner(&self) -> Arc<Mutex<HashMap<String, SshSession>>> {
+        Arc::clone(&self.sessions)
     }
 
     pub async fn open_sftp_channel(

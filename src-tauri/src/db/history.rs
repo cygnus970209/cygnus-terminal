@@ -16,7 +16,28 @@ impl Database {
         profile_id: i64,
         command: &str,
     ) -> Result<(), String> {
+        let command = command.trim();
+        if command.is_empty() {
+            return Ok(());
+        }
+
         let conn = self.conn();
+
+        // 직전 명령과 동일하면 저장하지 않음 (연속 중복 방지)
+        let is_dup: bool = conn
+            .query_row(
+                "SELECT command = ?2 FROM command_history
+                 WHERE profile_id = ?1
+                 ORDER BY executed_at DESC LIMIT 1",
+                rusqlite::params![profile_id, command],
+                |row| row.get(0),
+            )
+            .unwrap_or(false);
+
+        if is_dup {
+            return Ok(());
+        }
+
         conn.execute(
             "INSERT INTO command_history (profile_id, command) VALUES (?1, ?2)",
             rusqlite::params![profile_id, command],

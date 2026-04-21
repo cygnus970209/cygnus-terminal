@@ -1,25 +1,43 @@
 mod commands;
 pub mod crypto;
 pub mod db;
+pub mod forward;
+pub mod monitor;
 mod pty;
 pub mod sftp;
-mod ssh;
+pub mod ssh;
 
 use std::sync::Arc;
 
 use crypto::CryptoManager;
 use db::Database;
+use forward::ForwardManager;
+use monitor::MonitorManager;
 use pty::PtyManager;
 use sftp::SftpManager;
 use ssh::SshManager;
-use tauri::Manager;
+use tauri::menu::{MenuBuilder, MenuItemBuilder};
+use tauri::{Emitter, Manager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .on_menu_event(|app, event| {
+            if event.id() == "preferences" {
+                let _ = app.emit("open-settings", ());
+            }
+        })
         .setup(|app| {
+            // 메뉴 설정
+            let preferences = MenuItemBuilder::with_id("preferences", "Preferences")
+                .accelerator("CmdOrCtrl+,")
+                .build(app)?;
+            let menu = MenuBuilder::new(app)
+                .item(&preferences)
+                .build()?;
+            app.set_menu(menu)?;
             let app_data_dir = app
                 .path()
                 .app_data_dir()
@@ -32,6 +50,8 @@ pub fn run() {
             app.manage(crypto);
             app.manage(ssh_manager);
             app.manage(SftpManager::new());
+            app.manage(MonitorManager::new());
+            app.manage(ForwardManager::new());
             Ok(())
         })
         .manage(PtyManager::new())
@@ -68,6 +88,16 @@ pub fn run() {
             commands::sftp_mkdir,
             commands::sftp_upload_bytes,
             commands::sftp_close,
+            commands::monitor_start,
+            commands::monitor_stop,
+            commands::monitor_get_stats,
+            commands::forward_add,
+            commands::forward_remove,
+            commands::forward_list,
+            commands::export_data,
+            commands::import_data,
+            commands::export_to_file,
+            commands::import_from_file,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

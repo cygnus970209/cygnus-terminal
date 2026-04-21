@@ -174,12 +174,25 @@ export default function Terminal({
           // 에디터/페이저 모드에서는 히스토리 캡처 스킵
           if (profileId && !isAlternateBuffer() && (data === "\r" || data === "\n")) {
             const buffer = xterm.buffer.active;
-            const line = buffer.getLine(buffer.cursorY + buffer.baseY);
+            const cursorLine = buffer.cursorY + buffer.baseY;
+            const line = buffer.getLine(cursorLine);
             if (line) {
               const text = line.translateToString(true).trim();
-              const promptMatch = text.match(/[$#>]\s*(.+)/);
-              const cmd = promptMatch ? promptMatch[1].trim() : "";
-              if (cmd) {
+              // 다양한 프롬프트 패턴: $, #, >, %, ❯, →, ), ] 뒤의 텍스트
+              const promptMatch = text.match(/[$#>%❯→\])\x1b]*\s+(.+)/)
+                || text.match(/[$#>%]\s*(.+)/);
+              let cmd = promptMatch ? promptMatch[1].trim() : "";
+              // 프롬프트 없이 커서 위치 기반 fallback
+              if (!cmd && buffer.cursorX > 0) {
+                const cursorPos = buffer.cursorX;
+                const rawText = line.translateToString(false);
+                // 커서 위치까지의 텍스트에서 마지막 공백 이후 추출 시도
+                const beforeCursor = rawText.substring(0, cursorPos).trim();
+                if (beforeCursor.length > 0) {
+                  cmd = beforeCursor;
+                }
+              }
+              if (cmd && cmd.length > 0 && cmd.length < 1000) {
                 invoke("save_command_history", { profileId, command: cmd });
                 if (cmd.match(/^cd\s|^cd$/)) {
                   onCdDetected?.();
