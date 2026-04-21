@@ -1,27 +1,67 @@
-use async_trait::async_trait;
 use russh::client;
-use ssh_key::public::PublicKey;
+use russh::keys::key::PrivateKeyWithHashAlg;
 use russh::{ChannelMsg, Disconnect};
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::sync::Arc;
 use tauri::ipc::Channel;
 use tokio::sync::{mpsc, Mutex};
 
+use crate::db::known_host::HostKeyStatus;
+use crate::db::Database;
 use crate::pty::PtyEvent;
 
-struct SshHandler;
+struct SshHandler {
+    db: Arc<Database>,
+    host: String,
+    port: u16,
+}
 
-#[async_trait]
 impl client::Handler for SshHandler {
     type Error = russh::Error;
 
-    async fn check_server_key(
+    fn check_server_key(
         &mut self,
-        _server_public_key: &PublicKey,
-    ) -> Result<bool, Self::Error> {
-        // TODO: Known hosts verification
-        Ok(true)
+        server_public_key: &russh::keys::PublicKey,
+    ) -> impl std::future::Future<Output = Result<bool, Self::Error>> + Send {
+        let key_type = server_public_key.algorithm().as_str().to_string();
+        let key_data = server_public_key.to_bytes();
+        let db = Arc::clone(&self.db);
+        let host = self.host.clone();
+        let port = self.port;
+
+        async move {
+            let key_data = key_data.map_err(|e| russh::Error::from(russh::keys::Error::from(e)))?;
+
+            match db.check_host_key(&host, port, &key_type, &key_data) {
+                Ok(HostKeyStatus::Trusted) => {
+                    eprintln!("[SSH] Host key verified for {}:{}", host, port);
+                    Ok(true)
+                }
+                Ok(HostKeyStatus::Unknown) => {
+                    eprintln!(
+                        "[SSH] New host key for {}:{}, saving to known hosts",
+                        host, port
+                    );
+                    if let Err(e) = db.save_host_key(&host, port, &key_type, &key_data) {
+                        eprintln!("[SSH] Warning: failed to save host key: {}", e);
+                    }
+                    Ok(true)
+                }
+                Ok(HostKeyStatus::Changed { stored_key_type }) => {
+                    eprintln!(
+                        "[SSH] WARNING: Host key changed for {}:{} (was {}, now {})",
+                        host, port, stored_key_type, key_type
+                    );
+                    Ok(false)
+                }
+                Err(e) => {
+                    eprintln!("[SSH] Error checking host key: {}", e);
+                    Ok(true)
+                }
+            }
+        }
     }
 }
 
@@ -38,12 +78,14 @@ pub struct SshSession {
 
 pub struct SshManager {
     sessions: Arc<Mutex<HashMap<String, SshSession>>>,
+    db: Arc<Database>,
 }
 
 impl SshManager {
-    pub fn new() -> Self {
+    pub fn new(db: Arc<Database>) -> Self {
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
+            db,
         }
     }
 
@@ -62,10 +104,35 @@ impl SshManager {
 
         let config = Arc::new(client::Config {
             keepalive_interval: Some(std::time::Duration::from_secs(30)),
+            preferred: russh::Preferred {
+                key: Cow::Borrowed(&[
+                    russh::keys::Algorithm::Ed25519,
+                    russh::keys::Algorithm::Ecdsa {
+                        curve: russh::keys::EcdsaCurve::NistP256,
+                    },
+                    russh::keys::Algorithm::Ecdsa {
+                        curve: russh::keys::EcdsaCurve::NistP384,
+                    },
+                    russh::keys::Algorithm::Ecdsa {
+                        curve: russh::keys::EcdsaCurve::NistP521,
+                    },
+                    russh::keys::Algorithm::Rsa {
+                        hash: Some(russh::keys::HashAlg::Sha256),
+                    },
+                    russh::keys::Algorithm::Rsa {
+                        hash: Some(russh::keys::HashAlg::Sha512),
+                    },
+                ]),
+                ..russh::Preferred::DEFAULT
+            },
             ..Default::default()
         });
 
-        let handler = SshHandler;
+        let handler = SshHandler {
+            db: Arc::clone(&self.db),
+            host: host.to_string(),
+            port,
+        };
 
         let mut handle = client::connect(config, (host, port), handler)
             .await
@@ -78,10 +145,19 @@ impl SshManager {
             "key" => {
                 let key_path = key_path.ok_or("Key path required")?;
                 let expanded = shellexpand::tilde(key_path).to_string();
-                let key_pair = russh_keys::load_secret_key(&expanded, None)
-                    .map_err(|e| format!("Failed to load key: {}", e))?;
+                eprintln!("[SSH] Loading key from: {}", expanded);
+                let key_pair = russh::keys::load_secret_key(&expanded, None)
+                    .map_err(|e| format!("Failed to load key '{}': {}", expanded, e))?;
+                let hash_alg = if key_pair.algorithm().is_rsa() {
+                    Some(russh::keys::HashAlg::Sha256)
+                } else {
+                    None
+                };
+                let key_with_alg =
+                    PrivateKeyWithHashAlg::new(Arc::new(key_pair), hash_alg);
+                eprintln!("[SSH] Key algorithm: {:?}", key_with_alg.algorithm());
                 handle
-                    .authenticate_publickey(username, Arc::new(key_pair))
+                    .authenticate_publickey(username, key_with_alg)
                     .await
                     .map_err(|e| format!("Auth failed: {}", e))?
             }
@@ -94,7 +170,7 @@ impl SshManager {
             }
         };
 
-        if !auth_result {
+        if !auth_result.success() {
             return Err("Authentication failed".to_string());
         }
 
@@ -119,7 +195,6 @@ impl SshManager {
 
         let (cmd_tx, mut cmd_rx) = mpsc::channel::<SshCommand>(256);
 
-        // Single task owns the channel: handles both reads and write commands
         tokio::spawn(async move {
             loop {
                 tokio::select! {
@@ -165,10 +240,7 @@ impl SshManager {
             }
         });
 
-        let session = SshSession {
-            cmd_tx,
-            handle,
-        };
+        let session = SshSession { cmd_tx, handle };
 
         self.sessions
             .lock()

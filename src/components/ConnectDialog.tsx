@@ -1,10 +1,8 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { open } from "@tauri-apps/plugin-dialog";
+import { Profile } from "./Sidebar";
 import "./ConnectDialog.css";
-
-interface ConnectDialogProps {
-  onConnect: (config: SshConfig) => void;
-  onCancel: () => void;
-}
 
 export interface SshConfig {
   host: string;
@@ -13,19 +11,96 @@ export interface SshConfig {
   authType: "password" | "key";
   password?: string;
   keyPath?: string;
+  profileId?: number;
 }
 
-export default function ConnectDialog({ onConnect, onCancel }: ConnectDialogProps) {
+interface ConnectDialogProps {
+  onConnect: (config: SshConfig) => void;
+  onCancel: () => void;
+  onSaved?: () => void;
+  editProfile?: Profile | null;
+}
+
+export default function ConnectDialog({
+  onConnect,
+  onCancel,
+  onSaved,
+  editProfile,
+}: ConnectDialogProps) {
+  const [name, setName] = useState("");
   const [host, setHost] = useState("");
   const [port, setPort] = useState("22");
   const [username, setUsername] = useState("");
   const [authType, setAuthType] = useState<"password" | "key">("password");
   const [password, setPassword] = useState("");
   const [keyPath, setKeyPath] = useState("");
+  const [groupName, setGroupName] = useState("");
+  const [saveProfile, setSaveProfile] = useState(true);
 
-  const handleSubmit = (e?: React.FormEvent | React.MouseEvent) => {
+  const isEdit = !!editProfile;
+
+  useEffect(() => {
+    if (editProfile) {
+      setName(editProfile.name);
+      setHost(editProfile.host);
+      setPort(String(editProfile.port));
+      setUsername(editProfile.username);
+      setAuthType(editProfile.auth_type);
+      setKeyPath(editProfile.key_path || "");
+      setGroupName(editProfile.group_name || "");
+      setPassword("");
+      setSaveProfile(true);
+    }
+  }, [editProfile]);
+
+  const handleSave = async (): Promise<Profile | null> => {
+    if (!saveProfile) return null;
+
+    try {
+      if (isEdit && editProfile) {
+        const updated = await invoke<Profile>("update_profile", {
+          id: editProfile.id,
+          req: {
+            name: name || `${username}@${host}`,
+            host,
+            port: parseInt(port) || 22,
+            username,
+            auth_type: authType,
+            password: authType === "password" && password ? password : undefined,
+            key_path: authType === "key" ? keyPath : undefined,
+            group_name: groupName || undefined,
+          },
+        });
+        onSaved?.();
+        return updated;
+      } else {
+        const created = await invoke<Profile>("create_profile", {
+          req: {
+            name: name || `${username}@${host}`,
+            host,
+            port: parseInt(port) || 22,
+            username,
+            auth_type: authType,
+            password: authType === "password" ? password : undefined,
+            key_path: authType === "key" ? keyPath : undefined,
+            group_name: groupName || undefined,
+          },
+        });
+        onSaved?.();
+        return created;
+      }
+    } catch (err) {
+      console.error("Failed to save profile:", err);
+      return null;
+    }
+  };
+
+  const handleConnect = async (e?: React.FormEvent | React.MouseEvent) => {
     e?.preventDefault?.();
     if (!host || !username) return;
+
+    await handleSave();
+
     onConnect({
       host,
       port: parseInt(port) || 22,
@@ -36,29 +111,48 @@ export default function ConnectDialog({ onConnect, onCancel }: ConnectDialogProp
     });
   };
 
+  const handleSaveOnly = async () => {
+    if (!host || !username) return;
+    await handleSave();
+    onCancel();
+  };
+
   return (
     <div className="dialog-overlay" onClick={onCancel}>
       <div className="dialog" onClick={(e) => e.stopPropagation()}>
-        <h2 className="dialog-title">SSH Connection</h2>
-        <form onSubmit={handleSubmit}>
+        <h2 className="dialog-title">
+          {isEdit ? "Edit Profile" : "New Connection"}
+        </h2>
+        <form onSubmit={handleConnect}>
           <div className="dialog-row">
-            <label>Host</label>
+            <label>Name</label>
             <input
               type="text"
-              value={host}
-              onChange={(e) => setHost(e.target.value)}
-              placeholder="192.168.1.1"
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="My Server"
               autoFocus
             />
           </div>
-          <div className="dialog-row">
-            <label>Port</label>
-            <input
-              type="text"
-              value={port}
-              onChange={(e) => setPort(e.target.value)}
-              placeholder="22"
-            />
+          <div className="dialog-row-pair">
+            <div className="dialog-row" style={{ flex: 1 }}>
+              <label>Host</label>
+              <input
+                type="text"
+                value={host}
+                onChange={(e) => setHost(e.target.value)}
+                placeholder="192.168.1.1"
+              />
+            </div>
+            <div className="dialog-row" style={{ width: 80 }}>
+              <label>Port</label>
+              <input
+                type="text"
+                value={port}
+                onChange={(e) => setPort(e.target.value)}
+                placeholder="22"
+              />
+            </div>
           </div>
           <div className="dialog-row">
             <label>Username</label>
@@ -92,7 +186,7 @@ export default function ConnectDialog({ onConnect, onCancel }: ConnectDialogProp
           </div>
           {authType === "password" ? (
             <div className="dialog-row">
-              <label>Password</label>
+              <label>Password{isEdit && " (leave empty to keep current)"}</label>
               <input
                 type="password"
                 value={password}
@@ -102,24 +196,75 @@ export default function ConnectDialog({ onConnect, onCancel }: ConnectDialogProp
           ) : (
             <div className="dialog-row">
               <label>Key Path</label>
-              <input
-                type="text"
-                value={keyPath}
-                onChange={(e) => setKeyPath(e.target.value)}
-                placeholder="~/.ssh/id_rsa"
-              />
+              <div className="dialog-input-with-btn">
+                <input
+                  type="text"
+                  value={keyPath}
+                  onChange={(e) => setKeyPath(e.target.value)}
+                  placeholder="~/.ssh/id_rsa"
+                />
+                <button
+                  type="button"
+                  className="dialog-browse-btn"
+                  onClick={async () => {
+                    const selected = await open({
+                      title: "Select SSH Private Key",
+                      defaultPath: "~/.ssh",
+                      multiple: false,
+                      directory: false,
+                    });
+                    if (selected) setKeyPath(selected);
+                  }}
+                >
+                  Browse
+                </button>
+              </div>
+            </div>
+          )}
+          <div className="dialog-row">
+            <label>Group</label>
+            <input
+              type="text"
+              value={groupName}
+              onChange={(e) => setGroupName(e.target.value)}
+              placeholder="Production"
+            />
+          </div>
+          {!isEdit && (
+            <div className="dialog-row">
+              <label className="dialog-checkbox">
+                <input
+                  type="checkbox"
+                  checked={saveProfile}
+                  onChange={(e) => setSaveProfile(e.target.checked)}
+                />
+                Save to profiles
+              </label>
             </div>
           )}
           <div className="dialog-actions">
-            <button type="button" className="dialog-btn dialog-btn-cancel" onClick={onCancel}>
+            <button
+              type="button"
+              className="dialog-btn dialog-btn-cancel"
+              onClick={onCancel}
+            >
               Cancel
             </button>
+            {isEdit && (
+              <button
+                type="button"
+                className="dialog-btn dialog-btn-save"
+                onClick={handleSaveOnly}
+              >
+                Save
+              </button>
+            )}
             <button
               type="button"
               className="dialog-btn dialog-btn-connect"
-              onClick={handleSubmit as any}
+              onClick={handleConnect as any}
             >
-              Connect
+              {isEdit ? "Save & Connect" : "Connect"}
             </button>
           </div>
         </form>

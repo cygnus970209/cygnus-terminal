@@ -127,12 +127,7 @@ impl PtyManager {
         }
     }
 
-    pub fn resize_session(
-        &self,
-        session_id: &str,
-        rows: u16,
-        cols: u16,
-    ) -> Result<(), String> {
+    pub fn resize_session(&self, session_id: &str, rows: u16, cols: u16) -> Result<(), String> {
         let sessions = self
             .sessions
             .lock()

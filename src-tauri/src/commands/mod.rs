@@ -1,3 +1,8 @@
+use std::sync::Arc;
+
+use crate::crypto::CryptoManager;
+use crate::db::profile::{CreateProfileRequest, Profile, UpdateProfileRequest};
+use crate::db::Database;
 use crate::pty::{PtyEvent, PtyManager};
 use crate::ssh::SshManager;
 use tauri::ipc::Channel;
@@ -36,10 +41,7 @@ pub fn resize_pty(
 }
 
 #[tauri::command]
-pub fn close_pty(
-    session_id: String,
-    pty_manager: State<'_, PtyManager>,
-) -> Result<(), String> {
+pub fn close_pty(session_id: String, pty_manager: State<'_, PtyManager>) -> Result<(), String> {
     pty_manager.close_session(&session_id)
 }
 
@@ -99,4 +101,47 @@ pub async fn close_ssh(
     ssh_manager: State<'_, SshManager>,
 ) -> Result<(), String> {
     ssh_manager.close_session(&session_id).await
+}
+
+// ── Profile Commands ──
+
+#[tauri::command]
+pub fn create_profile(
+    req: CreateProfileRequest,
+    db: State<'_, Arc<Database>>,
+    crypto: State<'_, CryptoManager>,
+) -> Result<Profile, String> {
+    db.create_profile(req, &crypto)
+}
+
+#[tauri::command]
+pub fn list_profiles(
+    db: State<'_, Arc<Database>>,
+    crypto: State<'_, CryptoManager>,
+) -> Result<Vec<Profile>, String> {
+    db.list_profiles(&crypto)
+}
+
+#[tauri::command]
+pub fn get_profile(
+    id: i64,
+    db: State<'_, Arc<Database>>,
+    crypto: State<'_, CryptoManager>,
+) -> Result<Profile, String> {
+    db.get_profile(id, &crypto)
+}
+
+#[tauri::command]
+pub fn update_profile(
+    id: i64,
+    req: UpdateProfileRequest,
+    db: State<'_, Arc<Database>>,
+    crypto: State<'_, CryptoManager>,
+) -> Result<Profile, String> {
+    db.update_profile(id, req, &crypto)
+}
+
+#[tauri::command]
+pub fn delete_profile(id: i64, db: State<'_, Arc<Database>>) -> Result<(), String> {
+    db.delete_profile(id)
 }
