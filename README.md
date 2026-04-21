@@ -7,7 +7,7 @@
 
 # Cygnus Terminal
 
-**Server Cockpit** - A modern SSH terminal client that remembers your servers.
+**Server Cockpit** - A modern and simple SSH terminal client that remembers your servers.
 
 Cygnus is not just another SSH client. It builds a persistent relationship with every server you connect to -- remembering your command history, bookmarked paths, frequently used snippets, and server health metrics. All in a lightweight ~30MB native binary.
 
