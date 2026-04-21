@@ -11,6 +11,10 @@
 
 Cygnus is not just another SSH client. It builds a persistent relationship with every server you connect to -- remembering your command history, bookmarked paths, frequently used snippets, and server health metrics. All in a lightweight ~30MB native binary.
 
+## Motivation
+
+I'm a backend developer who works with SSH daily. I kept thinking "this could be a bit more convenient" while switching between tools. Around the same time, I wanted to learn Rust -- so I combined the two and started building this as a side project. It's still rough around the edges, but it's been a great way to learn.
+
 ---
 
 ## Why Cygnus?
