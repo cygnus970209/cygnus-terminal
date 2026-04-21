@@ -3,7 +3,7 @@ import "./TabBar.css";
 export interface Tab {
   id: string;
   title: string;
-  type: "local" | "ssh";
+  type: "local" | "ssh" | "connections";
 }
 
 interface TabBarProps {
@@ -13,6 +13,14 @@ interface TabBarProps {
   onCloseTab: (id: string) => void;
   onNewLocalTab: () => void;
   onNewSshTab: () => void;
+}
+
+function tabIcon(type: Tab["type"]) {
+  switch (type) {
+    case "connections": return "☰";
+    case "ssh": return "⬡";
+    default: return "▸";
+  }
 }
 
 export default function TabBar({
@@ -32,19 +40,19 @@ export default function TabBar({
             className={`tab ${tab.id === activeTabId ? "tab-active" : ""}`}
             onClick={() => onSelectTab(tab.id)}
           >
-            <span className="tab-icon">
-              {tab.type === "ssh" ? "⬡" : "▸"}
-            </span>
+            <span className="tab-icon">{tabIcon(tab.type)}</span>
             <span className="tab-title">{tab.title}</span>
-            <button
-              className="tab-close"
-              onClick={(e) => {
-                e.stopPropagation();
-                onCloseTab(tab.id);
-              }}
-            >
-              ×
-            </button>
+            {tab.type !== "connections" && (
+              <button
+                className="tab-close"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onCloseTab(tab.id);
+                }}
+              >
+                ×
+              </button>
+            )}
           </div>
         ))}
       </div>
