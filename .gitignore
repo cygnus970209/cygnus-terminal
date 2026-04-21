@@ -22,3 +22,12 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Tauri
+src-tauri/target
+
+# Environment
+.env
+.env.*
+*.pem
+*.key
