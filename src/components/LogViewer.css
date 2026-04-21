@@ -1,0 +1,207 @@
+.logviewer {
+  background: #181825;
+  border-top: 1px solid #313244;
+  display: flex;
+  flex-direction: column;
+  height: 250px;
+  min-height: 100px;
+  flex-shrink: 0;
+}
+
+.lv-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 10px;
+  border-bottom: 1px solid #313244;
+}
+
+.lv-title {
+  color: #a6adc8;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}
+
+.lv-btn {
+  background: none;
+  border: none;
+  color: #89b4fa;
+  font-size: 11px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.1s;
+}
+
+.lv-btn:hover {
+  background: rgba(137, 180, 250, 0.1);
+}
+
+.lv-auto-scroll {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #585b70;
+  font-size: 10px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  cursor: pointer;
+  margin-left: auto;
+}
+
+.lv-auto-scroll input {
+  accent-color: #89b4fa;
+  width: 12px;
+  height: 12px;
+}
+
+.lv-close {
+  background: none;
+  border: none;
+  color: #6c7086;
+  font-size: 14px;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background 0.1s, color 0.1s;
+}
+
+.lv-close:hover {
+  background: #313244;
+  color: #cdd6f4;
+}
+
+.lv-add-form {
+  display: flex;
+  gap: 6px;
+  padding: 6px 10px;
+  border-bottom: 1px solid #252536;
+}
+
+.lv-add-form input {
+  flex: 1;
+  padding: 5px 8px;
+  background: #11111b;
+  border: 1px solid #313244;
+  border-radius: 4px;
+  color: #cdd6f4;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  outline: none;
+}
+
+.lv-add-form input:focus {
+  border-color: #89b4fa;
+}
+
+.lv-add-btn {
+  padding: 5px 12px;
+  background: #89b4fa;
+  border: none;
+  border-radius: 4px;
+  color: #1e1e2e;
+  font-size: 11px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.lv-add-btn:hover {
+  background: #74c7ec;
+}
+
+.lv-tabs {
+  display: flex;
+  gap: 1px;
+  padding: 0 4px;
+  border-bottom: 1px solid #313244;
+  overflow-x: auto;
+}
+
+.lv-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.lv-tab {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 10px;
+  color: #585b70;
+  font-size: 11px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.1s, border-color 0.1s;
+  white-space: nowrap;
+}
+
+.lv-tab:hover {
+  color: #a6adc8;
+}
+
+.lv-tab-active {
+  color: #89b4fa;
+  border-bottom-color: #89b4fa;
+}
+
+.lv-tab-name {
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.lv-tab-close {
+  background: none;
+  border: none;
+  color: #585b70;
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 2px;
+  border-radius: 2px;
+  opacity: 0;
+  transition: opacity 0.1s;
+}
+
+.lv-tab:hover .lv-tab-close {
+  opacity: 1;
+}
+
+.lv-tab-close:hover {
+  color: #f38ba8;
+}
+
+.lv-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 4px 10px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 11px;
+}
+
+.lv-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.lv-content::-webkit-scrollbar-thumb {
+  background: #313244;
+  border-radius: 3px;
+}
+
+.lv-line {
+  color: #a6adc8;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.lv-empty {
+  color: #585b70;
+  font-size: 12px;
+  text-align: center;
+  padding: 30px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+}

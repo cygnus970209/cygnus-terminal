@@ -18,6 +18,8 @@ interface MonitorBarProps {
   sessionId: string;
   visible: boolean;
   onToggle: () => void;
+  onToggleLogs?: () => void;
+  logViewerActive?: boolean;
 }
 
 function formatBytes(bytes: number): string {
@@ -38,6 +40,8 @@ export default function MonitorBar({
   sessionId,
   visible,
   onToggle,
+  onToggleLogs,
+  logViewerActive,
 }: MonitorBarProps) {
   const [monitorId, setMonitorId] = useState<string | null>(null);
   const [stats, setStats] = useState<ServerStats | null>(null);
@@ -93,9 +97,19 @@ export default function MonitorBar({
 
   if (!visible) {
     return (
-      <button className="monitor-toggle monitor-toggle-closed" onClick={onToggle}>
-        Monitor ▴
-      </button>
+      <div className="monitor-toggle-bar">
+        <button className="monitor-toggle monitor-toggle-closed" onClick={onToggle}>
+          Monitor ▴
+        </button>
+        {onToggleLogs && (
+          <button
+            className={`monitor-toggle monitor-toggle-closed ${logViewerActive ? "monitor-toggle-active" : ""}`}
+            onClick={onToggleLogs}
+          >
+            Logs {logViewerActive ? "▾" : "▴"}
+          </button>
+        )}
+      </div>
     );
   }
 
@@ -105,6 +119,14 @@ export default function MonitorBar({
         <span className="monitor-title">Server Monitor</span>
         {stats?.uptime && (
           <span className="monitor-uptime">{stats.uptime}</span>
+        )}
+        {onToggleLogs && (
+          <button
+            className={`monitor-logs-btn ${logViewerActive ? "monitor-logs-active" : ""}`}
+            onClick={onToggleLogs}
+          >
+            Logs
+          </button>
         )}
         <button className="monitor-close" onClick={onToggle}>
           ▾
