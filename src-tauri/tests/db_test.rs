@@ -42,7 +42,7 @@ fn migration_version_recorded() {
         })
         .unwrap();
 
-    assert_eq!(version, 2);
+    assert_eq!(version, 5);
 }
 
 #[test]
@@ -64,6 +64,8 @@ fn make_password_profile() -> CreateProfileRequest {
         password: Some("secret123".to_string()),
         key_path: None,
         group_name: Some("Production".to_string()),
+        jump_host: None,
+        agent_forward: None,
     }
 }
 
@@ -77,6 +79,8 @@ fn make_key_profile() -> CreateProfileRequest {
         password: None,
         key_path: Some("~/.ssh/id_rsa".to_string()),
         group_name: None,
+        jump_host: None,
+        agent_forward: None,
     }
 }
 
@@ -144,6 +148,8 @@ fn update_profile_partial() {
                 password: None,
                 key_path: None,
                 group_name: None,
+                jump_host: None,
+                agent_forward: None,
             },
             &crypto,
         )
@@ -175,6 +181,8 @@ fn update_profile_password() {
                 password: Some("new-password".to_string()),
                 key_path: None,
                 group_name: None,
+                jump_host: None,
+                agent_forward: None,
             },
             &crypto,
         )

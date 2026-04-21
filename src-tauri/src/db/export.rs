@@ -56,9 +56,9 @@ impl Database {
                     group_name: row.get(6)?,
                 })
             })
-            .map_err(|e| format!("{e}"))?
+            .map_err(|e| format!("Export query failed: {e}"))?
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| format!("{e}"))?;
+            .map_err(|e| format!("Export query failed: {e}"))?;
 
         // Command bookmarks (profile_name으로 조인)
         let mut stmt = conn
@@ -68,7 +68,7 @@ impl Database {
                  JOIN profiles p ON p.id = cb.profile_id
                  ORDER BY p.name, cb.sort_order",
             )
-            .map_err(|e| format!("{e}"))?;
+            .map_err(|e| format!("Export query failed: {e}"))?;
         let command_bookmarks: Vec<ExportCommandBookmark> = stmt
             .query_map([], |row| {
                 Ok(ExportCommandBookmark {
@@ -77,9 +77,9 @@ impl Database {
                     label: row.get(2)?,
                 })
             })
-            .map_err(|e| format!("{e}"))?
+            .map_err(|e| format!("Export query failed: {e}"))?
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| format!("{e}"))?;
+            .map_err(|e| format!("Export query failed: {e}"))?;
 
         // Path bookmarks
         let mut stmt = conn
@@ -89,7 +89,7 @@ impl Database {
                  JOIN profiles p ON p.id = pb.profile_id
                  ORDER BY p.name, pb.created_at",
             )
-            .map_err(|e| format!("{e}"))?;
+            .map_err(|e| format!("Export query failed: {e}"))?;
         let path_bookmarks: Vec<ExportPathBookmark> = stmt
             .query_map([], |row| {
                 Ok(ExportPathBookmark {
@@ -98,9 +98,9 @@ impl Database {
                     label: row.get(2)?,
                 })
             })
-            .map_err(|e| format!("{e}"))?
+            .map_err(|e| format!("Export query failed: {e}"))?
             .collect::<Result<Vec<_>, _>>()
-            .map_err(|e| format!("{e}"))?;
+            .map_err(|e| format!("Export query failed: {e}"))?;
 
         Ok(ExportData {
             version: 1,
@@ -149,10 +149,10 @@ impl Database {
         let profile_map: std::collections::HashMap<String, i64> = {
             let mut stmt = conn
                 .prepare("SELECT id, name FROM profiles")
-                .map_err(|e| format!("{e}"))?;
+                .map_err(|e| format!("Export query failed: {e}"))?;
             let rows: Vec<(String, i64)> = stmt
                 .query_map([], |row| Ok((row.get::<_, String>(1)?, row.get::<_, i64>(0)?)))
-                .map_err(|e| format!("{e}"))?
+                .map_err(|e| format!("Export query failed: {e}"))?
                 .filter_map(|r| r.ok())
                 .collect();
             rows.into_iter().collect()

@@ -79,7 +79,9 @@ export default function ConnectDialog({
           setJumpUsername(jh.username || "");
           setJumpAuthType(jh.auth_type || "password");
           setJumpKeyPath(jh.key_path || "");
-        } catch { /* ignore */ }
+        } catch (e) {
+          console.error("Failed to parse jump host config:", e);
+        }
       } else {
         setUseJumpHost(false);
       }
@@ -420,7 +422,7 @@ export default function ConnectDialog({
             <button
               type="button"
               className="dialog-btn dialog-btn-connect"
-              onClick={handleConnect as any}
+              onClick={() => handleConnect()}
             >
               {isEdit ? "Save & Connect" : "Connect"}
             </button>

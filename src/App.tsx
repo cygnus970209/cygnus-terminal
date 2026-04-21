@@ -23,10 +23,10 @@ const connectionsTab: Tab = {
   type: "connections",
 };
 
-const snippetsTab: Tab = {
+const snippetsTab: Tab & { sshConfig?: SshConfig } = {
   id: "snippets",
   title: "Snippets",
-  type: "snippets" as any,
+  type: "snippets",
 };
 
 const initialLocalTab: Tab & { sshConfig?: SshConfig } = {
