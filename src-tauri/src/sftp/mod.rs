@@ -165,6 +165,20 @@ impl SftpManager {
             .map_err(|e| format!("Failed to create directory: {e}"))
     }
 
+    pub async fn file_size(&self, sftp_id: &str, path: &str) -> Result<u64, String> {
+        let sessions = self.sessions.lock().await;
+        let sftp = sessions
+            .get(sftp_id)
+            .ok_or_else(|| format!("SFTP session not found: {sftp_id}"))?;
+
+        let metadata = sftp
+            .metadata(path)
+            .await
+            .map_err(|e| format!("Failed to get file metadata: {e}"))?;
+
+        Ok(metadata.size.unwrap_or(0))
+    }
+
     pub async fn close(&self, sftp_id: &str) {
         let mut sessions = self.sessions.lock().await;
         if let Some(sftp) = sessions.remove(sftp_id) {

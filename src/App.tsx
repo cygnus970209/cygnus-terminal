@@ -13,6 +13,7 @@ import ConnectDialog from "./components/connection/ConnectDialog";
 import ServerContext from "./components/connection/ServerContext";
 import FileTree from "./components/files/FileTree";
 import SnippetsView from "./components/snippets/SnippetsView";
+import SftpView from "./components/sftp/SftpView";
 import "./App.css";
 
 let tabCounter = 1;
@@ -85,6 +86,21 @@ function App() {
     setActiveTabId(id);
     setShowConnectDialog(false);
     setEditProfile(null);
+  }, []);
+
+  const openSftpTab = useCallback((sshTabId: string, sshTabTitle: string) => {
+    const sftpTabId = `sftp-${sshTabId}`;
+    // 이미 열려있으면 활성화만
+    setTabs((prev) => {
+      if (prev.find((t) => t.id === sftpTabId)) return prev;
+      return [...prev, {
+        id: sftpTabId,
+        title: `SFTP: ${sshTabTitle}`,
+        type: "sftp" as const,
+        linkedSessionId: sshTabId,
+      }];
+    });
+    setActiveTabId(sftpTabId);
   }, []);
 
   const closeTab = useCallback(
@@ -260,8 +276,13 @@ function App() {
           {activeTabId === "snippets" && (
             <SnippetsView onExecute={handleExecuteCommand} />
           )}
-          <div style={{ display: activeTabId === "connections" || activeTabId === "snippets" ? "none" : "contents" }}>
-            {tabs.filter((t) => t.type !== "connections" && t.type !== "snippets").map((tab) => (
+          {activeTab?.type === "sftp" && activeTab.linkedSessionId && sessionMap[activeTab.linkedSessionId] && (
+            <SftpView
+              sessionId={sessionMap[activeTab.linkedSessionId]}
+            />
+          )}
+          <div style={{ display: activeTabId === "connections" || activeTabId === "snippets" || activeTab?.type === "sftp" ? "none" : "contents" }}>
+            {tabs.filter((t) => t.type !== "connections" && t.type !== "snippets" && t.type !== "sftp").map((tab) => (
               <Terminal
                 key={tab.id}
                 tabId={tab.id}
@@ -300,6 +321,7 @@ function App() {
               cdTrackingEnabled={cdTrackingEnabled}
               onCdTrackingChange={setCdTrackingEnabled}
               onCollapse={() => setRightCollapsed(true)}
+              onOpenSftpView={() => openSftpTab(activeTabId!, activeTab?.title || "")}
             />
           </ResizablePanel>
         )}

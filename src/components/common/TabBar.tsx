@@ -15,6 +15,7 @@ function tabIcon(type: Tab["type"]) {
   switch (type) {
     case "connections": return "☰";
     case "snippets": return "{ }";
+    case "sftp": return "📂";
     case "ssh": return "⬡";
     default: return "▸";
   }

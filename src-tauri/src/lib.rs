@@ -7,6 +7,7 @@ mod pty;
 pub mod sftp;
 pub mod ssh;
 pub mod tail;
+pub mod transfer;
 
 use std::sync::Arc;
 
@@ -18,6 +19,7 @@ use pty::PtyManager;
 use sftp::SftpManager;
 use ssh::SshManager;
 use tail::TailManager;
+use transfer::TransferManager;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
 use tauri::{Emitter, Manager};
 
@@ -55,6 +57,7 @@ pub fn run() {
             app.manage(MonitorManager::new());
             app.manage(ForwardManager::new());
             app.manage(TailManager::new());
+            app.manage(TransferManager::new());
             Ok(())
         })
         .manage(PtyManager::new())

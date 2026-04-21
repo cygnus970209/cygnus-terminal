@@ -18,6 +18,7 @@ interface FileTreeProps {
   cdTrackingEnabled: boolean;
   onCdTrackingChange: (enabled: boolean) => void;
   onCollapse?: () => void;
+  onOpenSftpView?: () => void;
 }
 
 interface ExpandedDirs {
@@ -38,6 +39,7 @@ export default function FileTree({
   cdTrackingEnabled,
   onCdTrackingChange,
   onCollapse,
+  onOpenSftpView,
 }: FileTreeProps) {
   const [sftpId, setSftpId] = useState<string | null>(null);
   const [currentPath, setCurrentPath] = useState<string>("/");
@@ -339,6 +341,11 @@ export default function FileTree({
         >
           ↻
         </button>
+        {onOpenSftpView && (
+          <button className="ft-btn" onClick={onOpenSftpView} title="Open SFTP view">
+            ⧉
+          </button>
+        )}
         {onCollapse && (
           <button className="ft-btn" onClick={onCollapse} title="Hide file tree">
             ▸
