@@ -64,8 +64,14 @@ pub async fn sftp_open(
     ssh_manager: State<'_, SshManager>,
     sftp_manager: State<'_, SftpManager>,
 ) -> Result<String, String> {
-    let sftp_session = ssh_manager.open_sftp_channel(&session_id).await?;
     let sftp_id = format!("sftp-{}", session_id);
+
+    // 이미 열려있으면 재사용
+    if sftp_manager.exists(&sftp_id).await {
+        return Ok(sftp_id);
+    }
+
+    let sftp_session = ssh_manager.open_sftp_channel(&session_id).await?;
     sftp_manager.open(&sftp_id, sftp_session).await?;
     Ok(sftp_id)
 }

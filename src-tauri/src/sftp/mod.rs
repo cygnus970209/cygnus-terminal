@@ -37,6 +37,10 @@ impl SftpManager {
         Ok(())
     }
 
+    pub async fn exists(&self, sftp_id: &str) -> bool {
+        self.sessions.lock().await.contains_key(sftp_id)
+    }
+
     pub async fn get_home_dir(&self, sftp_id: &str) -> Result<String, String> {
         let sessions = self.sessions.lock().await;
         let sftp = sessions
