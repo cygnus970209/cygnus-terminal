@@ -9,6 +9,7 @@ interface TabBarProps {
   onNewLocalTab: () => void;
   onNewSshTab: () => void;
   onNewTelnetTab?: () => void;
+  onNewSerialTab?: () => void;
   onOpenSettings?: () => void;
 }
 
@@ -18,6 +19,7 @@ function tabIcon(type: Tab["type"]) {
     case "snippets": return "{ }";
     case "sftp": return "📂";
     case "telnet": return "◇";
+    case "serial": return "⌁";
     case "ssh": return "⬡";
     default: return "▸";
   }
@@ -31,6 +33,7 @@ export default function TabBar({
   onNewLocalTab,
   onNewSshTab,
   onNewTelnetTab,
+  onNewSerialTab,
   onOpenSettings,
 }: TabBarProps) {
   return (
@@ -68,6 +71,11 @@ export default function TabBar({
         {onNewTelnetTab && (
           <button className="tabbar-btn tabbar-btn-ssh" onClick={onNewTelnetTab} title="New Telnet Connection">
             TEL
+          </button>
+        )}
+        {onNewSerialTab && (
+          <button className="tabbar-btn tabbar-btn-ssh" onClick={onNewSerialTab} title="New Serial Connection">
+            SER
           </button>
         )}
         {onOpenSettings && (

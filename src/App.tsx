@@ -101,6 +101,35 @@ function App() {
     setShowConnectDialog(false);
   }, []);
 
+  const createSerialTab = useCallback(async () => {
+    try {
+      const ports = await invoke<{ name: string; port_type: string }[]>("list_serial_ports");
+      if (ports.length === 0) {
+        alert("No serial ports found");
+        return;
+      }
+      const portList = ports.map((p, i) => `${i + 1}) ${p.name} (${p.port_type})`).join("\n");
+      const choice = prompt(`Select port:\n${portList}\n\nEnter number:`);
+      if (!choice) return;
+      const idx = parseInt(choice) - 1;
+      if (idx < 0 || idx >= ports.length) return;
+
+      const baudStr = prompt("Baud rate:", "115200");
+      const baudRate = parseInt(baudStr || "115200") || 115200;
+
+      const id = `tab-${++tabCounter}`;
+      setTabs((prev) => [...prev, {
+        id,
+        title: ports[idx].name,
+        type: "serial" as const,
+        serialConfig: { portName: ports[idx].name, baudRate },
+      } as any]);
+      setActiveTabId(id);
+    } catch (err) {
+      alert(`Failed: ${err}`);
+    }
+  }, []);
+
   const [sftpSessions, setSftpSessions] = useState<Record<string, { sftpId: string; homePath: string }>>({});
 
   const openSftpTab = useCallback(async (sshTabId: string, sshTabTitle: string) => {
@@ -283,6 +312,7 @@ function App() {
         onCloseTab={closeTab}
         onNewLocalTab={createLocalTab}
         onNewSshTab={handleNewProfile}
+        onNewSerialTab={createSerialTab}
         onNewTelnetTab={() => {
           const input = prompt("Telnet host:port (e.g. 192.168.1.1:23)");
           if (!input) return;
@@ -365,9 +395,10 @@ function App() {
               <Terminal
                 key={tab.id}
                 tabId={tab.id}
-                type={tab.type as "local" | "ssh" | "telnet"}
+                type={tab.type as "local" | "ssh" | "telnet" | "serial"}
                 sshConfig={tab.sshConfig}
                 telnetConfig={(tab as any).telnetConfig}
+                serialConfig={(tab as any).serialConfig}
                 isActive={tab.id === activeTabId}
                 onSessionCreated={handleSessionCreated}
                 onTitleChange={handleTitleChange}

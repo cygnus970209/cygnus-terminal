@@ -3,6 +3,7 @@ use crate::monitor::{MonitorManager, ServerStats};
 use crate::sftp::{FileEntry, SftpManager};
 use crate::ssh::SshManager;
 use crate::tail::{TailEvent, TailManager};
+use crate::serial::{SerialManager, SerialPortInfo};
 use crate::sync::{self, SyncEvent, SyncPlan};
 use crate::telnet::TelnetManager;
 use crate::watcher::{FileWatcherManager, WatchEvent};
@@ -54,6 +55,46 @@ pub async fn close_telnet(
     telnet_manager: State<'_, TelnetManager>,
 ) -> Result<(), String> {
     telnet_manager.close_session(&session_id).await
+}
+
+// ── Serial ──
+
+#[tauri::command]
+pub fn list_serial_ports() -> Result<Vec<SerialPortInfo>, String> {
+    SerialManager::list_ports()
+}
+
+#[tauri::command]
+pub async fn create_serial_session(
+    port_name: String,
+    baud_rate: u32,
+    on_event: Channel<crate::pty::PtyEvent>,
+    serial_manager: State<'_, SerialManager>,
+) -> Result<String, String> {
+    let session_id = uuid::Uuid::new_v4().to_string();
+    serial_manager
+        .connect(&session_id, &port_name, baud_rate, on_event)
+        .await?;
+    Ok(session_id)
+}
+
+#[tauri::command]
+pub async fn write_serial(
+    session_id: String,
+    data: String,
+    serial_manager: State<'_, SerialManager>,
+) -> Result<(), String> {
+    serial_manager
+        .write_to_session(&session_id, data.as_bytes())
+        .await
+}
+
+#[tauri::command]
+pub async fn close_serial(
+    session_id: String,
+    serial_manager: State<'_, SerialManager>,
+) -> Result<(), String> {
+    serial_manager.close_session(&session_id).await
 }
 
 // ── Local Files ──

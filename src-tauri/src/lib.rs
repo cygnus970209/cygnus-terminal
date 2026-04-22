@@ -4,6 +4,7 @@ pub mod db;
 pub mod forward;
 pub mod monitor;
 mod pty;
+pub mod serial;
 pub mod sftp;
 pub mod ssh;
 pub mod sync;
@@ -22,6 +23,7 @@ use pty::PtyManager;
 use sftp::SftpManager;
 use ssh::SshManager;
 use tail::TailManager;
+use serial::SerialManager;
 use telnet::TelnetManager;
 use transfer::TransferManager;
 use watcher::FileWatcherManager;
@@ -62,6 +64,7 @@ pub fn run() {
             app.manage(MonitorManager::new());
             app.manage(ForwardManager::new());
             app.manage(TailManager::new());
+            app.manage(SerialManager::new());
             app.manage(TelnetManager::new());
             app.manage(TransferManager::new());
             app.manage(FileWatcherManager::new());
@@ -124,6 +127,10 @@ pub fn run() {
             commands::stop_file_watch,
             commands::sync_preview,
             commands::sync_execute,
+            commands::list_serial_ports,
+            commands::create_serial_session,
+            commands::write_serial,
+            commands::close_serial,
             commands::create_telnet_session,
             commands::write_telnet,
             commands::resize_telnet,
