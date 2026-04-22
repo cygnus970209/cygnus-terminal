@@ -4,9 +4,57 @@ use crate::sftp::{FileEntry, SftpManager};
 use crate::ssh::SshManager;
 use crate::tail::{TailEvent, TailManager};
 use crate::sync::{self, SyncEvent, SyncPlan};
+use crate::telnet::TelnetManager;
 use crate::watcher::{FileWatcherManager, WatchEvent};
 use tauri::ipc::Channel;
 use tauri::State;
+
+// ── Telnet ──
+
+#[tauri::command]
+pub async fn create_telnet_session(
+    host: String,
+    port: u16,
+    on_event: Channel<crate::pty::PtyEvent>,
+    telnet_manager: State<'_, TelnetManager>,
+) -> Result<String, String> {
+    let session_id = uuid::Uuid::new_v4().to_string();
+    telnet_manager
+        .connect(&session_id, &host, port, on_event)
+        .await?;
+    Ok(session_id)
+}
+
+#[tauri::command]
+pub async fn write_telnet(
+    session_id: String,
+    data: String,
+    telnet_manager: State<'_, TelnetManager>,
+) -> Result<(), String> {
+    telnet_manager
+        .write_to_session(&session_id, data.as_bytes())
+        .await
+}
+
+#[tauri::command]
+pub async fn resize_telnet(
+    session_id: String,
+    cols: u16,
+    rows: u16,
+    telnet_manager: State<'_, TelnetManager>,
+) -> Result<(), String> {
+    telnet_manager
+        .resize_session(&session_id, cols, rows)
+        .await
+}
+
+#[tauri::command]
+pub async fn close_telnet(
+    session_id: String,
+    telnet_manager: State<'_, TelnetManager>,
+) -> Result<(), String> {
+    telnet_manager.close_session(&session_id).await
+}
 
 // ── Local Files ──
 

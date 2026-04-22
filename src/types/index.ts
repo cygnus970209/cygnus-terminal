@@ -39,6 +39,6 @@ export interface SshConfig {
 export interface Tab {
   id: string;
   title: string;
-  type: "local" | "ssh" | "connections" | "snippets" | "sftp";
+  type: "local" | "ssh" | "telnet" | "connections" | "snippets" | "sftp";
   linkedSessionId?: string; // SFTP 탭이 어떤 SSH 세션과 연결되는지
 }

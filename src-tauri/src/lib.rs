@@ -8,6 +8,7 @@ pub mod sftp;
 pub mod ssh;
 pub mod sync;
 pub mod tail;
+pub mod telnet;
 pub mod transfer;
 pub mod watcher;
 
@@ -21,6 +22,7 @@ use pty::PtyManager;
 use sftp::SftpManager;
 use ssh::SshManager;
 use tail::TailManager;
+use telnet::TelnetManager;
 use transfer::TransferManager;
 use watcher::FileWatcherManager;
 use tauri::menu::{MenuBuilder, MenuItemBuilder};
@@ -60,6 +62,7 @@ pub fn run() {
             app.manage(MonitorManager::new());
             app.manage(ForwardManager::new());
             app.manage(TailManager::new());
+            app.manage(TelnetManager::new());
             app.manage(TransferManager::new());
             app.manage(FileWatcherManager::new());
             Ok(())
@@ -121,6 +124,10 @@ pub fn run() {
             commands::stop_file_watch,
             commands::sync_preview,
             commands::sync_execute,
+            commands::create_telnet_session,
+            commands::write_telnet,
+            commands::resize_telnet,
+            commands::close_telnet,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

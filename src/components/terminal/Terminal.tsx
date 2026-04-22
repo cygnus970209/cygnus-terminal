@@ -8,8 +8,9 @@ import "@xterm/xterm/css/xterm.css";
 
 interface TerminalProps {
   tabId: string;
-  type: "local" | "ssh";
+  type: "local" | "ssh" | "telnet";
   sshConfig?: SshConfig;
+  telnetConfig?: { host: string; port: number };
   isActive: boolean;
   onSessionCreated?: (tabId: string, sessionId: string) => void;
   onTitleChange?: (tabId: string, title: string) => void;
@@ -34,6 +35,7 @@ export default function Terminal({
   tabId,
   type,
   sshConfig,
+  telnetConfig,
   isActive,
   onSessionCreated,
   onTitleChange,
@@ -142,6 +144,14 @@ export default function Terminal({
             onEvent,
           });
           onTitleChange?.(tabId, `${sshConfig.username}@${sshConfig.host}`);
+        } else if (type === "telnet" && telnetConfig) {
+          xterm.write(`Connecting via Telnet to ${telnetConfig.host}:${telnetConfig.port}...\r\n`);
+          sessionId = await invoke<string>("create_telnet_session", {
+            host: telnetConfig.host,
+            port: telnetConfig.port,
+            onEvent,
+          });
+          onTitleChange?.(tabId, `telnet://${telnetConfig.host}`);
         } else {
           sessionId = await invoke<string>("create_pty_session", {
             onEvent,
@@ -153,7 +163,7 @@ export default function Terminal({
         onSessionCreated?.(tabId, sessionId);
 
         // pwd 캡처 함수 등록
-        const writeCmd = type === "ssh" ? "write_ssh" : "write_pty";
+        const writeCmd = type === "ssh" ? "write_ssh" : type === "telnet" ? "write_telnet" : "write_pty";
         // alternate screen buffer 감지 (vi, nano, less, top 등)
         const isAlternateBuffer = () => xterm.buffer.active.type === "alternate";
         onRegisterBufferCheck?.(tabId, isAlternateBuffer);
@@ -207,7 +217,7 @@ export default function Terminal({
         });
 
         // Handle resize
-        const resizeCmd = type === "ssh" ? "resize_ssh" : "resize_pty";
+        const resizeCmd = type === "ssh" ? "resize_ssh" : type === "telnet" ? "resize_telnet" : "resize_pty";
         xterm.onResize(({ rows, cols }) => {
           if (sessionIdRef.current) {
             invoke(resizeCmd, { sessionId: sessionIdRef.current, rows, cols });
@@ -231,7 +241,7 @@ export default function Terminal({
       window.removeEventListener("resize", handleResize);
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
       if (sessionIdRef.current) {
-        const closeCmd = type === "ssh" ? "close_ssh" : "close_pty";
+        const closeCmd = type === "ssh" ? "close_ssh" : type === "telnet" ? "close_telnet" : "close_pty";
         invoke(closeCmd, { sessionId: sessionIdRef.current });
       }
       xterm.dispose();

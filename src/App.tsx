@@ -88,6 +88,19 @@ function App() {
     setEditProfile(null);
   }, []);
 
+  const createTelnetTab = useCallback((host: string, port: number) => {
+    const id = `tab-${++tabCounter}`;
+    const newTab = {
+      id,
+      title: `telnet://${host}:${port}`,
+      type: "telnet" as const,
+      telnetConfig: { host, port },
+    };
+    setTabs((prev) => [...prev, newTab]);
+    setActiveTabId(id);
+    setShowConnectDialog(false);
+  }, []);
+
   const [sftpSessions, setSftpSessions] = useState<Record<string, { sftpId: string; homePath: string }>>({});
 
   const openSftpTab = useCallback(async (sshTabId: string, sshTabTitle: string) => {
@@ -270,6 +283,12 @@ function App() {
         onCloseTab={closeTab}
         onNewLocalTab={createLocalTab}
         onNewSshTab={handleNewProfile}
+        onNewTelnetTab={() => {
+          const input = prompt("Telnet host:port (e.g. 192.168.1.1:23)");
+          if (!input) return;
+          const [host, portStr] = input.includes(":") ? input.split(":") : [input, "23"];
+          createTelnetTab(host.trim(), parseInt(portStr) || 23);
+        }}
         onOpenSettings={() => setShowSettings(true)}
       />
       <div className="app-body">
@@ -346,8 +365,9 @@ function App() {
               <Terminal
                 key={tab.id}
                 tabId={tab.id}
-                type={tab.type as "local" | "ssh"}
+                type={tab.type as "local" | "ssh" | "telnet"}
                 sshConfig={tab.sshConfig}
+                telnetConfig={(tab as any).telnetConfig}
                 isActive={tab.id === activeTabId}
                 onSessionCreated={handleSessionCreated}
                 onTitleChange={handleTitleChange}
