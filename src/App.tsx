@@ -122,7 +122,39 @@ function App() {
   const closeTab = useCallback(
     (id: string) => {
       if (id === "connections" || id === "snippets") return;
+
       setTabs((prev) => {
+        const tab = prev.find((t) => t.id === id);
+
+        // SSH 탭 닫을 때 연관 리소스 정리
+        if (tab?.type === "ssh") {
+          const sshSessionId = sessionMap[id];
+          if (sshSessionId) {
+            // SFTP 세션 정리
+            const sftpInfo = sftpSessions[sshSessionId];
+            if (sftpInfo) {
+              invoke("sftp_close", { sftpId: sftpInfo.sftpId });
+              setSftpSessions((p) => {
+                const next = { ...p };
+                delete next[sshSessionId];
+                return next;
+              });
+            }
+            // SSH 세션 정리
+            invoke("close_ssh", { sessionId: sshSessionId });
+          }
+
+          // 연결된 SFTP 탭도 함께 제거
+          const sftpTabId = `sftp-${id}`;
+          const filtered = prev.filter((t) => t.id !== id && t.id !== sftpTabId);
+          if (activeTabId === id || activeTabId === sftpTabId) {
+            const idx = prev.findIndex((t) => t.id === id);
+            const newActive = filtered[Math.min(idx, filtered.length - 1)]?.id ?? null;
+            setActiveTabId(newActive);
+          }
+          return filtered;
+        }
+
         const next = prev.filter((t) => t.id !== id);
         if (activeTabId === id) {
           const idx = prev.findIndex((t) => t.id === id);
@@ -132,7 +164,7 @@ function App() {
         return next;
       });
     },
-    [activeTabId]
+    [activeTabId, sessionMap, sftpSessions]
   );
 
   const handleTitleChange = useCallback((tabId: string, title: string) => {
