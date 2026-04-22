@@ -6,6 +6,7 @@ pub mod monitor;
 mod pty;
 pub mod sftp;
 pub mod ssh;
+pub mod sync;
 pub mod tail;
 pub mod transfer;
 pub mod watcher;
@@ -118,6 +119,8 @@ pub fn run() {
             commands::tail_stop,
             commands::open_in_editor,
             commands::stop_file_watch,
+            commands::sync_preview,
+            commands::sync_execute,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

@@ -3,6 +3,7 @@ use crate::monitor::{MonitorManager, ServerStats};
 use crate::sftp::{FileEntry, SftpManager};
 use crate::ssh::SshManager;
 use crate::tail::{TailEvent, TailManager};
+use crate::sync::{self, SyncEvent, SyncPlan};
 use crate::watcher::{FileWatcherManager, WatchEvent};
 use tauri::ipc::Channel;
 use tauri::State;
@@ -309,4 +310,29 @@ pub async fn stop_file_watch(
 ) -> Result<(), String> {
     watcher_manager.stop_watch(&watch_id).await;
     Ok(())
+}
+
+// ── Folder Sync ──
+
+#[tauri::command]
+pub async fn sync_preview(
+    sftp_id: String,
+    local_path: String,
+    remote_path: String,
+    direction: String,
+    sftp_manager: State<'_, SftpManager>,
+) -> Result<SyncPlan, String> {
+    sync::compute_sync_plan(&sftp_manager, &sftp_id, &local_path, &remote_path, &direction).await
+}
+
+#[tauri::command]
+pub async fn sync_execute(
+    sftp_id: String,
+    local_path: String,
+    remote_path: String,
+    plan: SyncPlan,
+    on_event: Channel<SyncEvent>,
+    sftp_manager: State<'_, SftpManager>,
+) -> Result<(), String> {
+    sync::execute_sync(&sftp_manager, &sftp_id, &local_path, &remote_path, plan, on_event).await
 }

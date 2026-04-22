@@ -2,6 +2,7 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import FilePanel, { FileEntry, FilePanelHandle } from "./FilePanel";
 import TransferPanel from "./TransferPanel";
+import SyncDialog from "./SyncDialog";
 import "./SftpView.css";
 
 interface SftpViewProps {
@@ -32,6 +33,7 @@ export default function SftpView({
   const [rightSftpId, setRightSftpId] = useState<string | null>(null);
   const [rightHomePath, setRightHomePath] = useState<string>("/");
   const [toast, setToast] = useState<string | null>(null);
+  const [showSync, setShowSync] = useState(false);
 
   // 로컬 홈 디렉토리 로드
   useEffect(() => {
@@ -165,6 +167,9 @@ export default function SftpView({
       <div className="sftp-dual-header">
         <div className="sftp-panel-header">
           <span className="sftp-panel-label">Remote</span>
+          <button className="sftp-hdr-btn" onClick={() => setShowSync(true)} title="Folder Sync">
+            ⇄ Sync
+          </button>
           {onPopoutWindow && (
             <button className="sftp-hdr-btn" onClick={onPopoutWindow} title="Pop out">⧉</button>
           )}
@@ -222,6 +227,16 @@ export default function SftpView({
       <TransferPanel />
 
       {toast && <div className="sftp-toast">{toast}</div>}
+      {showSync && (
+        <SyncDialog
+          sftpId={sftpId}
+          remoteBasePath={leftHandle.current?.currentPath || homePath}
+          onClose={() => {
+            setShowSync(false);
+            leftHandle.current?.refresh();
+          }}
+        />
+      )}
     </div>
   );
 }
