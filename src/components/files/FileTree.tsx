@@ -96,12 +96,7 @@ export default function FileTree({
     }
   }, [navigateToPath]);
 
-  // 클린업
-  useEffect(() => {
-    return () => {
-      if (sftpId) invoke("sftp_close", { sftpId });
-    };
-  }, [sftpId]);
+  // 세션 정리는 App 레벨에서 관리 (FileTree는 세션을 닫지 않음)
 
   useEffect(() => {
     const close = () => setContextMenu(null);
