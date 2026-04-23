@@ -3,6 +3,7 @@ import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { invoke, Channel } from "@tauri-apps/api/core";
+import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { SshConfig } from "../../types";
 import "@xterm/xterm/css/xterm.css";
 
@@ -118,6 +119,53 @@ export default function Terminal({
 
     xtermRef.current = xterm;
     fitAddonRef.current = fitAddon;
+
+    // Copy / Paste 단축키. xterm 은 기본 clipboard 연동이 없어서 직접 붙인다.
+    //  macOS: ⌘C copy (선택 있을 때만), ⌘V paste
+    //  Win/Linux: Ctrl+Shift+C copy, Ctrl+Shift+V paste
+    //  Ctrl+C 는 SIGINT 로 남겨둠 (터미널 관례).
+    const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
+    xterm.attachCustomKeyEventHandler((ev) => {
+      if (ev.type !== "keydown") return true;
+      const k = ev.key.toLowerCase();
+
+      const isCopy = isMac
+        ? ev.metaKey && !ev.ctrlKey && !ev.altKey && !ev.shiftKey && k === "c"
+        : ev.ctrlKey && ev.shiftKey && !ev.altKey && k === "c";
+      const isPaste = isMac
+        ? ev.metaKey && !ev.ctrlKey && !ev.altKey && !ev.shiftKey && k === "v"
+        : ev.ctrlKey && ev.shiftKey && !ev.altKey && k === "v";
+      const isSelectAll = isMac
+        ? ev.metaKey && !ev.ctrlKey && !ev.altKey && !ev.shiftKey && k === "a"
+        : false; // 리눅스/윈도우에서 Ctrl+A 는 bash bind key (line start) — 건드리지 않음
+
+      if (isCopy) {
+        const sel = xterm.getSelection();
+        // Tauri native clipboard — WKWebView 의 Safari 권한 프롬프트("Paste" 미니 팝업)를 우회.
+        if (sel) writeText(sel).catch(() => {});
+        ev.preventDefault();
+        ev.stopPropagation();
+        return false;
+      }
+      if (isPaste) {
+        // preventDefault 안 하면 브라우저 native paste 가 xterm textarea 로 또 들어가서 2회 paste 됨.
+        ev.preventDefault();
+        ev.stopPropagation();
+        readText()
+          .then((text) => {
+            if (text) xterm.paste(text);
+          })
+          .catch(() => {});
+        return false;
+      }
+      if (isSelectAll) {
+        xterm.selectAll();
+        ev.preventDefault();
+        ev.stopPropagation();
+        return false;
+      }
+      return true;
+    });
 
     const initSession = async () => {
       try {

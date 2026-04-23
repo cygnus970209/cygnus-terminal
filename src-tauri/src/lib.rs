@@ -44,6 +44,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_drag::init())
+        .plugin(tauri_plugin_clipboard_manager::init())
         .on_menu_event(|app, event| {
             match event.id().as_ref() {
                 "preferences" => {
@@ -101,6 +102,18 @@ pub fn run() {
             let updater_check =
                 MenuItemBuilder::with_id("updater-check", "Check for Updates...")
                     .build(app)?;
+            // macOS 웹뷰(WKWebView) 는 표준 Edit 메뉴의 copy:/paste:/selectAll: 액션을
+            // 통해서만 input 에 clipboard 단축키를 연결한다. 커스텀 메뉴만 있으면
+            // 모든 input 에서 ⌘C/V/A 가 죽는다. 표준 predefined item 으로 복구.
+            let edit_submenu = SubmenuBuilder::new(app, "Edit")
+                .undo()
+                .redo()
+                .separator()
+                .cut()
+                .copy()
+                .paste()
+                .select_all()
+                .build()?;
             let view_submenu = SubmenuBuilder::new(app, "View")
                 .item(&toggle_server_ctx)
                 .item(&toggle_file_tree)
@@ -113,6 +126,7 @@ pub fn run() {
                 .build()?;
             let menu = MenuBuilder::new(app)
                 .item(&preferences)
+                .item(&edit_submenu)
                 .item(&view_submenu)
                 .build()?;
             app.set_menu(menu)?;
