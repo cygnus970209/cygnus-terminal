@@ -1150,7 +1150,7 @@ dependencies = [
 
 [[package]]
 name = "cygnus-terminal"
-version = "0.1.0"
+version = "0.1.2"
 dependencies = [
  "aes-gcm 0.10.3",
  "base64 0.22.1",
