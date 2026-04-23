@@ -1,11 +1,12 @@
 use crate::pty::PtyEvent;
 use crate::ssh::{JumpHostConfig, SshManager};
 use tauri::ipc::Channel;
-use tauri::State;
+use tauri::{AppHandle, State};
 use uuid::Uuid;
 
 #[tauri::command]
 pub async fn create_ssh_session(
+    app: AppHandle,
     host: String,
     port: u16,
     username: String,
@@ -20,6 +21,7 @@ pub async fn create_ssh_session(
     let session_id = Uuid::new_v4().to_string();
     ssh_manager
         .connect(
+            app,
             &session_id,
             &host,
             port,
@@ -33,6 +35,17 @@ pub async fn create_ssh_session(
         )
         .await?;
     Ok(session_id)
+}
+
+/// 프론트엔드가 host key 확인 다이얼로그에서 수락/거절한 결과를 반영.
+/// 수락하면 연결이 진행되고, 거절하면 fail-closed 로 연결이 끊긴다.
+#[tauri::command]
+pub async fn ssh_host_key_respond(
+    prompt_id: String,
+    accept: bool,
+    ssh_manager: State<'_, SshManager>,
+) -> Result<(), String> {
+    ssh_manager.resolve_host_key_prompt(&prompt_id, accept).await
 }
 
 #[tauri::command]

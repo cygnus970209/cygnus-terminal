@@ -161,6 +161,7 @@ pub fn run() {
             commands::write_ssh,
             commands::resize_ssh,
             commands::close_ssh,
+            commands::ssh_host_key_respond,
             commands::create_profile,
             commands::list_profiles,
             commands::get_profile,

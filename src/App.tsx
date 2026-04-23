@@ -16,6 +16,7 @@ import CommandPalette, { PaletteItem } from "./components/common/CommandPalette"
 import InputDialog from "./components/sftp/InputDialog";
 import SerialConnectDialog, { SerialPortInfo } from "./components/common/SerialConnectDialog";
 import UpdateBanner from "./components/common/UpdateBanner";
+import HostKeyPrompt, { HostKeyPromptPayload } from "./components/common/HostKeyPrompt";
 import { message } from "@tauri-apps/plugin-dialog";
 import ConnectionsView from "./components/connection/ConnectionsView";
 import ConnectDialog from "./components/connection/ConnectDialog";
@@ -63,6 +64,8 @@ function App() {
   const [showSnippets, setShowSnippets] = useState(false);
   const [telnetPromptOpen, setTelnetPromptOpen] = useState(false);
   const [serialPorts, setSerialPorts] = useState<SerialPortInfo[] | null>(null);
+  // SSH host key 확인 큐. 연속 연결 시 여러 개가 쌓일 수 있어 FIFO 로 하나씩 처리.
+  const [hostKeyPrompts, setHostKeyPrompts] = useState<HostKeyPromptPayload[]>([]);
   const [paletteSnippets, setPaletteSnippets] = useState<
     { id: number; title: string; command: string; category: string }[]
   >([]);
@@ -104,6 +107,47 @@ function App() {
       unlistenLeft.then((f) => f());
       unlistenRight.then((f) => f());
       unlistenDrawer.then((f) => f());
+    };
+  }, []);
+
+  // SSH host key 이벤트 구독:
+  //  - ssh-host-key-prompt: 처음 보는 호스트. 확인 다이얼로그로 사용자 승인 필요.
+  //  - ssh-host-key-rejected: 변경/DB 에러/사용자 거절로 인해 연결이 차단됨.
+  useEffect(() => {
+    const unlistenPrompt = listen<HostKeyPromptPayload>("ssh-host-key-prompt", (e) => {
+      setHostKeyPrompts((prev) => [...prev, e.payload]);
+    });
+    const unlistenRejected = listen<{
+      host: string;
+      port: number;
+      reason: string;
+      stored_type?: string;
+      new_type?: string;
+      new_fingerprint?: string;
+      detail?: string;
+    }>("ssh-host-key-rejected", (e) => {
+      const p = e.payload;
+      if (p.reason === "changed") {
+        message(
+          `⚠️ Host key CHANGED for ${p.host}:${p.port}\n\n` +
+            `Previously trusted: ${p.stored_type}\n` +
+            `Now presenting:     ${p.new_type}\n` +
+            `New fingerprint:    ${p.new_fingerprint}\n\n` +
+            `This may indicate a man-in-the-middle attack. The connection was refused.\n\n` +
+            `If you know the server key was rotated legitimately, remove the old entry from the known hosts DB and reconnect.`,
+          { title: "SSH Host Key Changed", kind: "error" },
+        ).catch(() => {});
+      } else if (p.reason === "db_error") {
+        message(
+          `Could not verify host key for ${p.host}:${p.port} (${p.detail}). Connection refused.`,
+          { title: "SSH Verification Failed", kind: "error" },
+        ).catch(() => {});
+      }
+      // user_rejected_or_timeout 은 사용자 의도이므로 별도 알림 없음.
+    });
+    return () => {
+      unlistenPrompt.then((f) => f());
+      unlistenRejected.then((f) => f());
     };
   }, []);
 
@@ -760,6 +804,7 @@ function App() {
           placeholder="host:port (e.g. 192.168.1.1:23)"
           initial=""
           confirmLabel="Connect"
+          warning="⚠ Telnet is unencrypted. Credentials and all terminal traffic travel in plain text. Use SSH for anything that crosses an untrusted network."
           onConfirm={handleTelnetInput}
           onCancel={() => setTelnetPromptOpen(false)}
         />
@@ -770,6 +815,15 @@ function App() {
           ports={serialPorts}
           onConnect={handleSerialConnect}
           onCancel={() => setSerialPorts(null)}
+        />
+      )}
+
+      {hostKeyPrompts.length > 0 && (
+        <HostKeyPrompt
+          prompt={hostKeyPrompts[0]}
+          onClose={() =>
+            setHostKeyPrompts((prev) => prev.slice(1))
+          }
         />
       )}
     </div>

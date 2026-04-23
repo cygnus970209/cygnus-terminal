@@ -5,14 +5,19 @@ use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::Cursor;
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::ipc::Channel;
-use tokio::sync::{mpsc, Mutex};
+use tauri::{AppHandle, Emitter};
+use tokio::sync::{mpsc, oneshot, Mutex};
 
 use serde::Deserialize;
 
 use crate::db::known_host::HostKeyStatus;
 use crate::db::Database;
 use crate::pty::PtyEvent;
+
+/// 사용자가 host key 확인 다이얼로그를 수락/거절할 때까지 기다리는 최대 시간.
+const HOST_KEY_PROMPT_TIMEOUT: Duration = Duration::from_secs(120);
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct JumpHostConfig {
@@ -28,6 +33,13 @@ pub struct SshHandler {
     db: Arc<Database>,
     host: String,
     port: u16,
+    app_handle: AppHandle,
+    pending_prompts: Arc<Mutex<HashMap<String, oneshot::Sender<bool>>>>,
+}
+
+/// OpenSSH 호환 `SHA256:<base64(NoPad)>` 포맷의 public key fingerprint.
+fn compute_fingerprint(key: &russh::keys::PublicKey) -> String {
+    key.fingerprint(russh::keys::HashAlg::Sha256).to_string()
 }
 
 impl client::Handler for SshHandler {
@@ -38,13 +50,17 @@ impl client::Handler for SshHandler {
         server_public_key: &russh::keys::PublicKey,
     ) -> impl std::future::Future<Output = Result<bool, Self::Error>> + Send {
         let key_type = server_public_key.algorithm().as_str().to_string();
-        let key_data = server_public_key.to_bytes();
+        let key_bytes_res = server_public_key.to_bytes();
+        let fingerprint = compute_fingerprint(server_public_key);
         let db = Arc::clone(&self.db);
         let host = self.host.clone();
         let port = self.port;
+        let app_handle = self.app_handle.clone();
+        let pending = Arc::clone(&self.pending_prompts);
 
         async move {
-            let key_data = key_data.map_err(|e| russh::Error::from(russh::keys::Error::from(e)))?;
+            let key_data =
+                key_bytes_res.map_err(|e| russh::Error::from(russh::keys::Error::from(e)))?;
 
             match db.check_host_key(&host, port, &key_type, &key_data) {
                 Ok(HostKeyStatus::Trusted) => {
@@ -52,25 +68,83 @@ impl client::Handler for SshHandler {
                     Ok(true)
                 }
                 Ok(HostKeyStatus::Unknown) => {
-                    eprintln!(
-                        "[SSH] New host key for {}:{}, saving to known hosts",
-                        host, port
-                    );
-                    if let Err(e) = db.save_host_key(&host, port, &key_type, &key_data) {
-                        eprintln!("[SSH] Warning: failed to save host key: {}", e);
+                    // MITM 방지: 처음 보는 호스트는 사용자 확인을 받아야 한다.
+                    // 프론트에 prompt 이벤트를 보내고 응답을 oneshot 채널로 기다린다.
+                    let prompt_id = uuid::Uuid::new_v4().to_string();
+                    let (tx, rx) = oneshot::channel::<bool>();
+                    pending.lock().await.insert(prompt_id.clone(), tx);
+
+                    let payload = serde_json::json!({
+                        "id": prompt_id,
+                        "host": host,
+                        "port": port,
+                        "key_type": key_type,
+                        "fingerprint": fingerprint,
+                        "status": "unknown",
+                    });
+                    let _ = app_handle.emit("ssh-host-key-prompt", payload);
+
+                    let accept =
+                        match tokio::time::timeout(HOST_KEY_PROMPT_TIMEOUT, rx).await {
+                            Ok(Ok(v)) => v,
+                            _ => false, // timeout 또는 channel 닫힘 → 거부로 처리 (fail-closed)
+                        };
+                    // timeout 시에는 tx 가 pending 에 남아 있을 수 있으니 정리.
+                    pending.lock().await.remove(&prompt_id);
+
+                    if accept {
+                        if let Err(e) = db.save_host_key(&host, port, &key_type, &key_data) {
+                            eprintln!("[SSH] Warning: failed to save host key: {}", e);
+                        }
+                        eprintln!("[SSH] Host key accepted by user for {}:{}", host, port);
+                        Ok(true)
+                    } else {
+                        let _ = app_handle.emit(
+                            "ssh-host-key-rejected",
+                            serde_json::json!({
+                                "host": host,
+                                "port": port,
+                                "reason": "user_rejected_or_timeout",
+                            }),
+                        );
+                        eprintln!("[SSH] Host key rejected/timed out for {}:{}", host, port);
+                        Ok(false)
                     }
-                    Ok(true)
                 }
                 Ok(HostKeyStatus::Changed { stored_key_type }) => {
                     eprintln!(
-                        "[SSH] WARNING: Host key changed for {}:{} (was {}, now {})",
+                        "[SSH] WARNING: Host key CHANGED for {}:{} (was {}, now {})",
                         host, port, stored_key_type, key_type
+                    );
+                    let _ = app_handle.emit(
+                        "ssh-host-key-rejected",
+                        serde_json::json!({
+                            "host": host,
+                            "port": port,
+                            "reason": "changed",
+                            "stored_type": stored_key_type,
+                            "new_type": key_type,
+                            "new_fingerprint": fingerprint,
+                        }),
                     );
                     Ok(false)
                 }
                 Err(e) => {
-                    eprintln!("[SSH] Error checking host key: {}", e);
-                    Ok(true)
+                    // DB 조회 실패를 "수락"으로 처리하면 MITM 가능. fail-closed.
+                    eprintln!(
+                        "[SSH] Error checking host key for {}:{}: {} (rejecting)",
+                        host, port, e
+                    );
+                    let _ = app_handle.emit(
+                        "ssh-host-key-rejected",
+                        serde_json::json!({
+                            "host": host,
+                            "port": port,
+                            "reason": "db_error",
+                            "detail": e,
+                        }),
+                    );
+                    Ok(false)
                 }
             }
         }
@@ -91,6 +165,9 @@ pub struct SshSession {
 pub struct SshManager {
     sessions: Arc<Mutex<HashMap<String, SshSession>>>,
     db: Arc<Database>,
+    /// Host key 확인 prompt 대기열. `check_server_key` 에서 Unknown 인 경우
+    /// 여기에 oneshot 을 등록해 두고 프론트가 `ssh_host_key_respond` 로 응답할 때까지 대기.
+    pending_prompts: Arc<Mutex<HashMap<String, oneshot::Sender<bool>>>>,
 }
 
 impl SshManager {
@@ -98,6 +175,20 @@ impl SshManager {
         Self {
             sessions: Arc::new(Mutex::new(HashMap::new())),
             db,
+            pending_prompts: Arc::new(Mutex::new(HashMap::new())),
+        }
+    }
+
+    /// 프론트엔드가 host key prompt 에 응답할 때 호출.
+    /// 해당 id 의 기다리던 연결이 수락/거절 결과로 풀린다.
+    pub async fn resolve_host_key_prompt(&self, id: &str, accept: bool) -> Result<(), String> {
+        let mut pending = self.pending_prompts.lock().await;
+        match pending.remove(id) {
+            Some(tx) => {
+                let _ = tx.send(accept);
+                Ok(())
+            }
+            None => Err(format!("Prompt not found or already answered: {id}")),
         }
     }
 
@@ -170,6 +261,7 @@ impl SshManager {
 
     pub async fn connect(
         &self,
+        app: AppHandle,
         session_id: &str,
         host: &str,
         port: u16,
@@ -192,6 +284,8 @@ impl SshManager {
                 db: Arc::clone(&self.db),
                 host: jump.host.clone(),
                 port: jump.port,
+                app_handle: app.clone(),
+                pending_prompts: Arc::clone(&self.pending_prompts),
             };
             let mut jump_handle =
                 client::connect(config.clone(), (&*jump.host, jump.port), jump_handler)
@@ -224,6 +318,8 @@ impl SshManager {
                 db: Arc::clone(&self.db),
                 host: host.to_string(),
                 port,
+                app_handle: app.clone(),
+                pending_prompts: Arc::clone(&self.pending_prompts),
             };
             client::connect_stream(config, stream, target_handler)
                 .await
@@ -234,6 +330,8 @@ impl SshManager {
                 db: Arc::clone(&self.db),
                 host: host.to_string(),
                 port,
+                app_handle: app.clone(),
+                pending_prompts: Arc::clone(&self.pending_prompts),
             };
             client::connect(config, (host, port), handler)
                 .await

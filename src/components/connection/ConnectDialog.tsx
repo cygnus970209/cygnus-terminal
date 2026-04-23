@@ -295,6 +295,13 @@ export default function ConnectDialog({
               />
               SSH Agent Forwarding
             </label>
+            {agentForward && (
+              <div className="dialog-warn">
+                ⚠ Only enable for servers you fully trust. Root on the remote host
+                can read your SSH agent socket and authenticate as you to any
+                other server.
+              </div>
+            )}
           </div>
           {useJumpHost && (
             <div className="dialog-jump-host">

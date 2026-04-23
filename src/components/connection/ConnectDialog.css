@@ -175,3 +175,15 @@
 .dialog-browse-btn:hover {
   background: #45475a;
 }
+
+.dialog-warn {
+  margin-top: 6px;
+  margin-left: 22px; /* checkbox 아래로 들여쓰기 */
+  padding: 7px 9px;
+  background: rgba(245, 169, 127, 0.08); /* Peach at low alpha */
+  border-left: 2px solid var(--warn, #f5a97f);
+  border-radius: 0 4px 4px 0;
+  color: var(--text-dim, #bac2de);
+  font-size: 11.5px;
+  line-height: 1.45;
+}

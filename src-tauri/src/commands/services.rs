@@ -127,11 +127,36 @@ pub fn local_exists(path: String) -> bool {
 /// Return a temp path under cygnus-drag-out/ where SFTP files can be staged before
 /// being picked up by a system drag. The directory is created on demand. macOS
 /// cleans temp dir across reboots, so leftover files don't accumulate long.
+///
+/// SECURITY: file_name 은 악의적 SFTP 서버가 정할 수 있는 값이다 (디렉토리 엔트리명).
+/// `..` 이나 구분자 포함 시 temp dir 밖으로 나가는 path traversal 이 가능하므로 차단.
 #[tauri::command]
 pub fn drag_temp_path(file_name: String) -> Result<String, String> {
+    let trimmed = file_name.trim();
+    if trimmed.is_empty()
+        || trimmed.contains('/')
+        || trimmed.contains('\\')
+        || trimmed.contains('\0')
+        || trimmed == "."
+        || trimmed == ".."
+    {
+        return Err("Invalid file name".into());
+    }
     let dir = std::env::temp_dir().join("cygnus-drag-out");
     std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create temp dir: {e}"))?;
-    Ok(dir.join(file_name).to_string_lossy().to_string())
+    let target = dir.join(trimmed);
+    // 결과 경로가 실제로 dir 아래에 있는지 최종 검증 (symlink/상대경로 혼합 방지).
+    let parent = target.parent().ok_or("Invalid target path")?;
+    let parent_canon = parent
+        .canonicalize()
+        .map_err(|e| format!("Failed to resolve parent: {e}"))?;
+    let dir_canon = dir
+        .canonicalize()
+        .map_err(|e| format!("Failed to resolve temp dir: {e}"))?;
+    if !parent_canon.starts_with(&dir_canon) {
+        return Err("Path traversal rejected".into());
+    }
+    Ok(target.to_string_lossy().to_string())
 }
 
 #[tauri::command]
@@ -442,6 +467,7 @@ pub async fn tail_stop(
 
 #[tauri::command]
 pub async fn open_in_editor(
+    app: tauri::AppHandle,
     sftp_id: String,
     remote_path: String,
     on_event: Channel<WatchEvent>,
@@ -449,7 +475,7 @@ pub async fn open_in_editor(
     watcher_manager: State<'_, FileWatcherManager>,
 ) -> Result<String, String> {
     watcher_manager
-        .open_in_editor(&sftp_id, &remote_path, &sftp_manager, on_event)
+        .open_in_editor(&app, &sftp_id, &remote_path, &sftp_manager, on_event)
         .await
 }
 

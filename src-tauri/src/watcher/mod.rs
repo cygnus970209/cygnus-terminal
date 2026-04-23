@@ -5,6 +5,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::ipc::Channel;
+use tauri::AppHandle;
+use tauri_plugin_opener::OpenerExt;
 use tokio::sync::Mutex;
 
 use crate::sftp::SftpManager;
@@ -36,8 +38,14 @@ impl FileWatcherManager {
     }
 
     /// 파일 다운로드 → 로컬 에디터 열기 → 변경 감지 시 자동 업로드
+    ///
+    /// 파일 열기는 `tauri-plugin-opener` 를 통한다. 내부적으로 플랫폼별 native API
+    /// (macOS `open`, Linux `xdg-open`, Windows `ShellExecuteW`) 를 호출해 **shell 을 통하지 않는다**.
+    /// 예전에 Windows 에서 `cmd /C start "" <path>` 로 열었을 때 원격 서버가 임의로 정한
+    /// 파일명에 `&` / `"` / `^` 같은 cmd 메타문자가 섞이면 command injection 가능성이 있었음 — 이 경로로 차단.
     pub async fn open_in_editor(
         &self,
+        app: &AppHandle,
         sftp_id: &str,
         remote_path: &str,
         sftp_manager: &SftpManager,
@@ -61,28 +69,10 @@ impl FileWatcherManager {
         std::fs::write(&local_path, &data)
             .map_err(|e| format!("Failed to write temp file: {e}"))?;
 
-        // 2. 시스템 기본 에디터로 열기
-        #[cfg(target_os = "macos")]
-        {
-            std::process::Command::new("open")
-                .arg(&local_path)
-                .spawn()
-                .map_err(|e| format!("Failed to open editor: {e}"))?;
-        }
-        #[cfg(target_os = "linux")]
-        {
-            std::process::Command::new("xdg-open")
-                .arg(&local_path)
-                .spawn()
-                .map_err(|e| format!("Failed to open editor: {e}"))?;
-        }
-        #[cfg(target_os = "windows")]
-        {
-            std::process::Command::new("cmd")
-                .args(["/C", "start", "", &local_path.to_string_lossy()])
-                .spawn()
-                .map_err(|e| format!("Failed to open editor: {e}"))?;
-        }
+        // 2. 기본 에디터로 열기 (shell 경유하지 않는 native API)
+        app.opener()
+            .open_path(local_path.to_string_lossy().to_string(), None::<&str>)
+            .map_err(|e| format!("Failed to open editor: {e}"))?;
 
         // 3. file watcher 시작 (500ms debounce)
         let watch_id = format!("watch-{}-{}", sftp_id, file_name);
