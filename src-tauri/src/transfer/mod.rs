@@ -1,16 +1,25 @@
 use serde::Serialize;
 use std::collections::HashMap;
+use std::io::SeekFrom;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
+use std::time::Instant;
 use tauri::ipc::Channel;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tokio::sync::Mutex;
 
 use crate::sftp::SftpManager;
 
-const CHUNK_SIZE: usize = 64 * 1024;
+/// 각 병렬 stripe 안에서 한 번에 주고받는 크기. russh-sftp 가 내부적으로 32KB 씩
+/// 쪼갤 수 있지만, 사용자 공간 버퍼를 크게 두면 await 루프 오버헤드가 줄어든다.
+const CHUNK_SIZE: usize = 256 * 1024;
+/// 한 전송 job 을 몇 개의 stripe (= 병렬 worker) 로 나눌지.
+/// 각 worker 는 독립 SFTP file handle 을 들고 자기 offset range 를 처리한다.
+/// SFTP 는 request_id 기반이라 한 세션에서도 N 개 요청이 동시에 in-flight 가능.
+const PARALLEL_STRIPES: u64 = 8;
+/// 이 크기 이하 파일은 병렬화 오버헤드 (N 번 open round-trip) 가 더 크므로 순차로.
+const SERIAL_THRESHOLD: u64 = 1024 * 1024; // 1 MB
 const PROGRESS_THROTTLE_MS: u64 = 100;
 
 #[derive(Debug, Clone, Serialize)]
@@ -416,8 +425,12 @@ impl TransferManager {
     }
 }
 
-/// Executes one transfer job. Runs the chunk loop and emits throttled Progress events.
+/// Executes one transfer job. Runs chunked I/O and emits throttled Progress events.
 /// Returns Ok(()) on success (or cancellation), Err(msg) on failure.
+///
+/// Upload / Download 큰 파일은 N 개 stripe 로 나눠 병렬 worker 가 각자 open+seek 하고
+/// 자기 range 에 대해 read/write. SFTP 는 request_id 기반이라 한 세션에서 여러 요청이
+/// 동시에 in-flight 가능 — RTT 에 의한 순차 대기를 제거해 실효 throughput 이 크게 증가.
 async fn execute_job(
     job_id: &str,
     spec: JobSpec,
@@ -428,24 +441,43 @@ async fn execute_job(
     channel: &Channel<TransferEvent>,
 ) -> Result<(), String> {
     let started = Instant::now();
-    let mut last_emit = Instant::now()
-        .checked_sub(Duration::from_millis(PROGRESS_THROTTLE_MS))
-        .unwrap_or_else(Instant::now);
+    // 병렬 worker 들이 공유하는 "마지막 emit 시각" (AtomicU64 ms since start).
+    // 각 worker 가 여기 try-swap 해서 한 worker 만 emit, 나머지는 skip.
+    let last_emit_ms = Arc::new(AtomicU64::new(0));
 
-    let emit_progress = |now: Instant, last: &mut Instant, force: bool| {
-        if !force && now.duration_since(*last) < Duration::from_millis(PROGRESS_THROTTLE_MS) {
-            return;
+    // 공통 emit 함수.
+    let emit = {
+        let transferred = Arc::clone(&transferred);
+        let channel = channel.clone();
+        let job_id = job_id.to_string();
+        let last_emit_ms = Arc::clone(&last_emit_ms);
+        move |force: bool| {
+            let now_ms = started.elapsed().as_millis() as u64;
+            if !force {
+                let last = last_emit_ms.load(Ordering::Relaxed);
+                if now_ms.saturating_sub(last) < PROGRESS_THROTTLE_MS {
+                    return;
+                }
+                // 한 worker 만 이번 tick 에 emit 하도록 CAS.
+                if last_emit_ms
+                    .compare_exchange(last, now_ms, Ordering::Relaxed, Ordering::Relaxed)
+                    .is_err()
+                {
+                    return;
+                }
+            } else {
+                last_emit_ms.store(now_ms, Ordering::Relaxed);
+            }
+            let done = transferred.load(Ordering::Relaxed);
+            let elapsed_s = (now_ms as f64 / 1000.0).max(0.001);
+            let speed_bps = (done as f64 / elapsed_s) as u64;
+            let _ = channel.send(TransferEvent::Progress(TransferProgress {
+                job_id: job_id.clone(),
+                transferred_bytes: done,
+                total_bytes,
+                speed_bps,
+            }));
         }
-        *last = now;
-        let done = transferred.load(Ordering::Relaxed);
-        let elapsed = now.duration_since(started).as_secs_f64().max(0.001);
-        let speed_bps = (done as f64 / elapsed) as u64;
-        let _ = channel.send(TransferEvent::Progress(TransferProgress {
-            job_id: job_id.to_string(),
-            transferred_bytes: done,
-            total_bytes,
-            speed_bps,
-        }));
     };
 
     match spec {
@@ -454,65 +486,34 @@ async fn execute_job(
             local_path,
             remote_path,
         } => {
-            let mut src = tokio::fs::File::open(&local_path)
-                .await
-                .map_err(|e| format!("Failed to open local file: {e}"))?;
-            let mut dst = sftp.open_write(&sftp_id, &remote_path).await?;
-            let mut buf = vec![0u8; CHUNK_SIZE];
-            loop {
-                if cancelled.load(Ordering::Relaxed) {
-                    return Ok(());
-                }
-                let n = src
-                    .read(&mut buf)
-                    .await
-                    .map_err(|e| format!("Local read failed: {e}"))?;
-                if n == 0 {
-                    break;
-                }
-                dst.write_all(&buf[..n])
-                    .await
-                    .map_err(|e| format!("Remote write failed: {e}"))?;
-                transferred.fetch_add(n as u64, Ordering::Relaxed);
-                emit_progress(Instant::now(), &mut last_emit, false);
-            }
-            dst.shutdown()
-                .await
-                .map_err(|e| format!("Remote close failed: {e}"))?;
+            upload_job(
+                &sftp_id,
+                &local_path,
+                &remote_path,
+                total_bytes,
+                Arc::clone(&transferred),
+                Arc::clone(&cancelled),
+                sftp,
+                &emit,
+            )
+            .await?;
         }
         JobSpec::Download {
             sftp_id,
             remote_path,
             local_path,
         } => {
-            let mut src = sftp.open_read(&sftp_id, &remote_path).await?;
-            if let Some(parent) = Path::new(&local_path).parent() {
-                let _ = tokio::fs::create_dir_all(parent).await;
-            }
-            let mut dst = tokio::fs::File::create(&local_path)
-                .await
-                .map_err(|e| format!("Failed to create local file: {e}"))?;
-            let mut buf = vec![0u8; CHUNK_SIZE];
-            loop {
-                if cancelled.load(Ordering::Relaxed) {
-                    return Ok(());
-                }
-                let n = src
-                    .read(&mut buf)
-                    .await
-                    .map_err(|e| format!("Remote read failed: {e}"))?;
-                if n == 0 {
-                    break;
-                }
-                dst.write_all(&buf[..n])
-                    .await
-                    .map_err(|e| format!("Local write failed: {e}"))?;
-                transferred.fetch_add(n as u64, Ordering::Relaxed);
-                emit_progress(Instant::now(), &mut last_emit, false);
-            }
-            dst.flush()
-                .await
-                .map_err(|e| format!("Local flush failed: {e}"))?;
+            download_job(
+                &sftp_id,
+                &remote_path,
+                &local_path,
+                total_bytes,
+                Arc::clone(&transferred),
+                Arc::clone(&cancelled),
+                sftp,
+                &emit,
+            )
+            .await?;
         }
         JobSpec::ServerToServer {
             src_sftp_id,
@@ -520,32 +521,338 @@ async fn execute_job(
             dst_sftp_id,
             dst_path,
         } => {
-            let mut src = sftp.open_read(&src_sftp_id, &src_path).await?;
-            let mut dst = sftp.open_write(&dst_sftp_id, &dst_path).await?;
-            let mut buf = vec![0u8; CHUNK_SIZE];
-            loop {
-                if cancelled.load(Ordering::Relaxed) {
-                    return Ok(());
-                }
-                let n = src
-                    .read(&mut buf)
-                    .await
-                    .map_err(|e| format!("Source read failed: {e}"))?;
-                if n == 0 {
-                    break;
-                }
-                dst.write_all(&buf[..n])
-                    .await
-                    .map_err(|e| format!("Dest write failed: {e}"))?;
-                transferred.fetch_add(n as u64, Ordering::Relaxed);
-                emit_progress(Instant::now(), &mut last_emit, false);
-            }
-            dst.shutdown()
-                .await
-                .map_err(|e| format!("Dest close failed: {e}"))?;
+            server_to_server_job(
+                &src_sftp_id,
+                &src_path,
+                &dst_sftp_id,
+                &dst_path,
+                Arc::clone(&transferred),
+                Arc::clone(&cancelled),
+                sftp,
+                &emit,
+            )
+            .await?;
         }
     }
 
-    emit_progress(Instant::now(), &mut last_emit, true);
+    emit(true);
+    Ok(())
+}
+
+/// 업로드 — stripe 병렬. 큰 파일만 병렬 적용 (작은 파일은 open 왕복 N 번이 더 비쌈).
+#[allow(clippy::too_many_arguments)]
+async fn upload_job(
+    sftp_id: &str,
+    local_path: &str,
+    remote_path: &str,
+    total_bytes: u64,
+    transferred: Arc<AtomicU64>,
+    cancelled: Arc<AtomicBool>,
+    sftp: &SftpManager,
+    emit: &(impl Fn(bool) + Clone + Send + Sync + 'static),
+) -> Result<(), String> {
+    if total_bytes < SERIAL_THRESHOLD {
+        return upload_serial(
+            sftp_id,
+            local_path,
+            remote_path,
+            transferred,
+            cancelled,
+            sftp,
+            emit,
+        )
+        .await;
+    }
+
+    // 1. 빈 파일 생성 (기존 내용 truncate). drop 으로 즉시 close.
+    {
+        let _f = sftp.open_write(sftp_id, remote_path).await?;
+    }
+
+    // 2. N 개 stripe 를 독립 worker 로.
+    let stripe = total_bytes.div_ceil(PARALLEL_STRIPES);
+    let mut handles = Vec::with_capacity(PARALLEL_STRIPES as usize);
+    for i in 0..PARALLEL_STRIPES {
+        let start = i * stripe;
+        let end = ((i + 1) * stripe).min(total_bytes);
+        if start >= end {
+            break;
+        }
+
+        let sftp = sftp.clone();
+        let sftp_id = sftp_id.to_string();
+        let local_path = local_path.to_string();
+        let remote_path = remote_path.to_string();
+        let transferred = Arc::clone(&transferred);
+        let cancelled = Arc::clone(&cancelled);
+        let emit = emit.clone();
+
+        handles.push(tokio::spawn(async move {
+            let mut local = tokio::fs::File::open(&local_path)
+                .await
+                .map_err(|e| format!("Failed to open local file: {e}"))?;
+            local
+                .seek(SeekFrom::Start(start))
+                .await
+                .map_err(|e| format!("Local seek failed: {e}"))?;
+
+            let mut remote = sftp
+                .open_write_existing(&sftp_id, &remote_path)
+                .await?;
+            remote
+                .seek(SeekFrom::Start(start))
+                .await
+                .map_err(|e| format!("Remote seek failed: {e}"))?;
+
+            let mut buf = vec![0u8; CHUNK_SIZE];
+            let mut pos = start;
+            while pos < end {
+                if cancelled.load(Ordering::Relaxed) {
+                    return Ok::<(), String>(());
+                }
+                let want = ((end - pos) as usize).min(buf.len());
+                let n = local
+                    .read(&mut buf[..want])
+                    .await
+                    .map_err(|e| format!("Local read failed: {e}"))?;
+                if n == 0 {
+                    break;
+                }
+                remote
+                    .write_all(&buf[..n])
+                    .await
+                    .map_err(|e| format!("Remote write failed: {e}"))?;
+                transferred.fetch_add(n as u64, Ordering::Relaxed);
+                pos += n as u64;
+                emit(false);
+            }
+            remote
+                .shutdown()
+                .await
+                .map_err(|e| format!("Remote close failed: {e}"))?;
+            Ok(())
+        }));
+    }
+
+    for h in handles {
+        h.await.map_err(|e| format!("Upload worker panicked: {e}"))??;
+    }
+    Ok(())
+}
+
+async fn upload_serial(
+    sftp_id: &str,
+    local_path: &str,
+    remote_path: &str,
+    transferred: Arc<AtomicU64>,
+    cancelled: Arc<AtomicBool>,
+    sftp: &SftpManager,
+    emit: &impl Fn(bool),
+) -> Result<(), String> {
+    let mut src = tokio::fs::File::open(local_path)
+        .await
+        .map_err(|e| format!("Failed to open local file: {e}"))?;
+    let mut dst = sftp.open_write(sftp_id, remote_path).await?;
+    let mut buf = vec![0u8; CHUNK_SIZE];
+    loop {
+        if cancelled.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+        let n = src
+            .read(&mut buf)
+            .await
+            .map_err(|e| format!("Local read failed: {e}"))?;
+        if n == 0 {
+            break;
+        }
+        dst.write_all(&buf[..n])
+            .await
+            .map_err(|e| format!("Remote write failed: {e}"))?;
+        transferred.fetch_add(n as u64, Ordering::Relaxed);
+        emit(false);
+    }
+    dst.shutdown()
+        .await
+        .map_err(|e| format!("Remote close failed: {e}"))?;
+    Ok(())
+}
+
+/// 다운로드 — stripe 병렬.
+#[allow(clippy::too_many_arguments)]
+async fn download_job(
+    sftp_id: &str,
+    remote_path: &str,
+    local_path: &str,
+    total_bytes: u64,
+    transferred: Arc<AtomicU64>,
+    cancelled: Arc<AtomicBool>,
+    sftp: &SftpManager,
+    emit: &(impl Fn(bool) + Clone + Send + Sync + 'static),
+) -> Result<(), String> {
+    if let Some(parent) = Path::new(local_path).parent() {
+        let _ = tokio::fs::create_dir_all(parent).await;
+    }
+
+    if total_bytes < SERIAL_THRESHOLD {
+        return download_serial(
+            sftp_id,
+            remote_path,
+            local_path,
+            transferred,
+            cancelled,
+            sftp,
+            emit,
+        )
+        .await;
+    }
+
+    // 로컬 파일을 만들고 set_len 으로 pre-allocate — 각 worker 가 자기 range 를 덮어씀.
+    {
+        let f = tokio::fs::File::create(local_path)
+            .await
+            .map_err(|e| format!("Failed to create local file: {e}"))?;
+        f.set_len(total_bytes)
+            .await
+            .map_err(|e| format!("Failed to pre-allocate local file: {e}"))?;
+    }
+
+    let stripe = total_bytes.div_ceil(PARALLEL_STRIPES);
+    let mut handles = Vec::with_capacity(PARALLEL_STRIPES as usize);
+    for i in 0..PARALLEL_STRIPES {
+        let start = i * stripe;
+        let end = ((i + 1) * stripe).min(total_bytes);
+        if start >= end {
+            break;
+        }
+
+        let sftp = sftp.clone();
+        let sftp_id = sftp_id.to_string();
+        let remote_path = remote_path.to_string();
+        let local_path = local_path.to_string();
+        let transferred = Arc::clone(&transferred);
+        let cancelled = Arc::clone(&cancelled);
+        let emit = emit.clone();
+
+        handles.push(tokio::spawn(async move {
+            let mut remote = sftp.open_read(&sftp_id, &remote_path).await?;
+            remote
+                .seek(SeekFrom::Start(start))
+                .await
+                .map_err(|e| format!("Remote seek failed: {e}"))?;
+
+            let mut local = tokio::fs::OpenOptions::new()
+                .write(true)
+                .open(&local_path)
+                .await
+                .map_err(|e| format!("Failed to open local file: {e}"))?;
+            local
+                .seek(SeekFrom::Start(start))
+                .await
+                .map_err(|e| format!("Local seek failed: {e}"))?;
+
+            let mut buf = vec![0u8; CHUNK_SIZE];
+            let mut pos = start;
+            while pos < end {
+                if cancelled.load(Ordering::Relaxed) {
+                    return Ok::<(), String>(());
+                }
+                let want = ((end - pos) as usize).min(buf.len());
+                let n = remote
+                    .read(&mut buf[..want])
+                    .await
+                    .map_err(|e| format!("Remote read failed: {e}"))?;
+                if n == 0 {
+                    break;
+                }
+                local
+                    .write_all(&buf[..n])
+                    .await
+                    .map_err(|e| format!("Local write failed: {e}"))?;
+                transferred.fetch_add(n as u64, Ordering::Relaxed);
+                pos += n as u64;
+                emit(false);
+            }
+            Ok(())
+        }));
+    }
+
+    for h in handles {
+        h.await.map_err(|e| format!("Download worker panicked: {e}"))??;
+    }
+    Ok(())
+}
+
+async fn download_serial(
+    sftp_id: &str,
+    remote_path: &str,
+    local_path: &str,
+    transferred: Arc<AtomicU64>,
+    cancelled: Arc<AtomicBool>,
+    sftp: &SftpManager,
+    emit: &impl Fn(bool),
+) -> Result<(), String> {
+    let mut src = sftp.open_read(sftp_id, remote_path).await?;
+    let mut dst = tokio::fs::File::create(local_path)
+        .await
+        .map_err(|e| format!("Failed to create local file: {e}"))?;
+    let mut buf = vec![0u8; CHUNK_SIZE];
+    loop {
+        if cancelled.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+        let n = src
+            .read(&mut buf)
+            .await
+            .map_err(|e| format!("Remote read failed: {e}"))?;
+        if n == 0 {
+            break;
+        }
+        dst.write_all(&buf[..n])
+            .await
+            .map_err(|e| format!("Local write failed: {e}"))?;
+        transferred.fetch_add(n as u64, Ordering::Relaxed);
+        emit(false);
+    }
+    dst.flush()
+        .await
+        .map_err(|e| format!("Local flush failed: {e}"))?;
+    Ok(())
+}
+
+/// server-to-server 는 양쪽 SFTP 세션을 동시에 태워야 하는 다른 문제라 순차 유지.
+/// 청크만 크게 잡아 오버헤드 축소.
+async fn server_to_server_job(
+    src_sftp_id: &str,
+    src_path: &str,
+    dst_sftp_id: &str,
+    dst_path: &str,
+    transferred: Arc<AtomicU64>,
+    cancelled: Arc<AtomicBool>,
+    sftp: &SftpManager,
+    emit: &impl Fn(bool),
+) -> Result<(), String> {
+    let mut src = sftp.open_read(src_sftp_id, src_path).await?;
+    let mut dst = sftp.open_write(dst_sftp_id, dst_path).await?;
+    let mut buf = vec![0u8; CHUNK_SIZE];
+    loop {
+        if cancelled.load(Ordering::Relaxed) {
+            return Ok(());
+        }
+        let n = src
+            .read(&mut buf)
+            .await
+            .map_err(|e| format!("Source read failed: {e}"))?;
+        if n == 0 {
+            break;
+        }
+        dst.write_all(&buf[..n])
+            .await
+            .map_err(|e| format!("Dest write failed: {e}"))?;
+        transferred.fetch_add(n as u64, Ordering::Relaxed);
+        emit(false);
+    }
+    dst.shutdown()
+        .await
+        .map_err(|e| format!("Dest close failed: {e}"))?;
     Ok(())
 }
