@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, Channel } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
+import { TransferEvent } from "../sftp/TransferDock";
 import "./FileTree.css";
 
 interface FileEntry {
@@ -19,6 +20,9 @@ interface FileTreeProps {
   onCdTrackingChange: (enabled: boolean) => void;
   onCollapse?: () => void;
   onOpenSftpView?: () => void;
+  transferChannel?: Channel<TransferEvent>;
+  /** 값이 바뀔 때마다 현재 디렉토리를 리로드한다. 업로드 완료 후 파일 목록 갱신용. */
+  refreshTrigger?: number;
 }
 
 interface ExpandedDirs {
@@ -40,6 +44,8 @@ export default function FileTree({
   onCdTrackingChange,
   onCollapse,
   onOpenSftpView,
+  transferChannel,
+  refreshTrigger,
 }: FileTreeProps) {
   const [sftpId, setSftpId] = useState<string | null>(null);
   const [currentPath, setCurrentPath] = useState<string>("/");
@@ -95,6 +101,14 @@ export default function FileTree({
       navigateTo(navigateToPath);
     }
   }, [navigateToPath]);
+
+  // 외부 트리거로 현재 디렉토리 리로드 (업로드/다운로드 완료 등)
+  useEffect(() => {
+    if (refreshTrigger === undefined) return;
+    if (!sftpId) return;
+    navigateTo(currentPath);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshTrigger]);
 
   // 세션 정리는 App 레벨에서 관리 (FileTree는 세션을 닫지 않음)
 
@@ -161,21 +175,22 @@ export default function FileTree({
           defaultPath: entry.name,
         });
         if (!localPath) return;
-        setTransferStatus(`Downloading ${entry.name}...`);
-        await invoke("sftp_download", {
+        // TransferManager 큐에 올리고 진행률은 하단 Dock 에서 본다.
+        await invoke("sftp_transfer_download", {
           sftpId,
           remotePath: entry.path,
           localPath,
+          onEvent: transferChannel,
         });
-        setTransferStatus(`Downloaded: ${entry.name}`);
-        setTimeout(() => setTransferStatus(null), 2500);
+        setTransferStatus(`Queued: ${entry.name}`);
+        setTimeout(() => setTransferStatus(null), 1500);
       } catch (err) {
         setTransferStatus(`Failed: ${err}`);
         setTimeout(() => setTransferStatus(null), 3000);
       }
       setContextMenu(null);
     },
-    [sftpId]
+    [sftpId, transferChannel]
   );
 
   const handleUpload = useCallback(

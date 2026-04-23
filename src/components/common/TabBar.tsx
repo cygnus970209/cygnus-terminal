@@ -10,6 +10,7 @@ interface TabBarProps {
   onNewSshTab: () => void;
   onNewTelnetTab?: () => void;
   onNewSerialTab?: () => void;
+  onOpenSftp?: () => void;
   onOpenSettings?: () => void;
 }
 
@@ -34,6 +35,7 @@ export default function TabBar({
   onNewSshTab,
   onNewTelnetTab,
   onNewSerialTab,
+  onOpenSftp,
   onOpenSettings,
 }: TabBarProps) {
   return (
@@ -76,6 +78,15 @@ export default function TabBar({
         {onNewSerialTab && (
           <button className="tabbar-btn tabbar-btn-ssh" onClick={onNewSerialTab} title="New Serial Connection">
             SER
+          </button>
+        )}
+        {onOpenSftp && (
+          <button
+            className="tabbar-btn tabbar-btn-sftp"
+            onClick={onOpenSftp}
+            title="Open SFTP window (connect from there)"
+          >
+            📂 SFTP
           </button>
         )}
         {onOpenSettings && (

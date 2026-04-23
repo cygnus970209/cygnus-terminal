@@ -6,6 +6,7 @@ use crate::tail::{TailEvent, TailManager};
 use crate::serial::{SerialManager, SerialPortInfo};
 use crate::sync::{self, SyncEvent, SyncPlan};
 use crate::telnet::TelnetManager;
+use crate::transfer::{TransferEvent, TransferJob, TransferManager};
 use crate::watcher::{FileWatcherManager, WatchEvent};
 use tauri::ipc::Channel;
 use tauri::State;
@@ -104,6 +105,33 @@ pub fn get_local_home_dir() -> Result<String, String> {
     dirs::home_dir()
         .map(|p| p.to_string_lossy().to_string())
         .ok_or_else(|| "Home directory not found".to_string())
+}
+
+/// Returns whether a local path is a directory. Used by the SFTP view to
+/// decide between a single-file upload and a recursive folder walk when
+/// files are dropped from outside the app (Finder / Explorer).
+#[tauri::command]
+pub fn is_local_dir(path: String) -> Result<bool, String> {
+    std::fs::metadata(&path)
+        .map(|m| m.is_dir())
+        .map_err(|e| e.to_string())
+}
+
+/// Return whether a local path (file or directory) exists. Used by the download
+/// conflict flow so the frontend can decide between Replace / Keep-Both / Skip.
+#[tauri::command]
+pub fn local_exists(path: String) -> bool {
+    std::path::Path::new(&path).exists()
+}
+
+/// Return a temp path under cygnus-drag-out/ where SFTP files can be staged before
+/// being picked up by a system drag. The directory is created on demand. macOS
+/// cleans temp dir across reboots, so leftover files don't accumulate long.
+#[tauri::command]
+pub fn drag_temp_path(file_name: String) -> Result<String, String> {
+    let dir = std::env::temp_dir().join("cygnus-drag-out");
+    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create temp dir: {e}"))?;
+    Ok(dir.join(file_name).to_string_lossy().to_string())
 }
 
 #[tauri::command]
@@ -235,6 +263,39 @@ pub async fn sftp_mkdir(
     sftp_manager: State<'_, SftpManager>,
 ) -> Result<(), String> {
     sftp_manager.create_dir(&sftp_id, &path).await
+}
+
+/// Check whether a remote path exists. Used by the upload conflict flow
+/// so the frontend can decide between Replace / Keep-Both / Skip.
+#[tauri::command]
+pub async fn sftp_exists(
+    sftp_id: String,
+    path: String,
+    sftp_manager: State<'_, SftpManager>,
+) -> Result<bool, String> {
+    // file_size 호출은 metadata 조회. 있으면 Ok, 없으면 Err.
+    match sftp_manager.file_size(&sftp_id, &path).await {
+        Ok(_) => Ok(true),
+        Err(_) => Ok(false),
+    }
+}
+
+/// Recursively create all intermediate directories (like `mkdir -p`).
+/// Ignores errors on directories that already exist.
+#[tauri::command]
+pub async fn sftp_mkdir_p(
+    sftp_id: String,
+    path: String,
+    sftp_manager: State<'_, SftpManager>,
+) -> Result<(), String> {
+    let parts: Vec<&str> = path.split('/').filter(|s| !s.is_empty()).collect();
+    let mut current = String::new();
+    for part in parts {
+        current.push('/');
+        current.push_str(part);
+        let _ = sftp_manager.create_dir(&sftp_id, &current).await;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -424,4 +485,79 @@ pub async fn sync_execute(
     sftp_manager: State<'_, SftpManager>,
 ) -> Result<(), String> {
     sync::execute_sync(&sftp_manager, &sftp_id, &local_path, &remote_path, plan, on_event).await
+}
+
+// ── Transfer Queue ──
+
+#[tauri::command]
+pub async fn sftp_transfer_upload(
+    sftp_id: String,
+    local_path: String,
+    remote_path: String,
+    on_event: Channel<TransferEvent>,
+    sftp_manager: State<'_, SftpManager>,
+    transfer_manager: State<'_, TransferManager>,
+) -> Result<String, String> {
+    transfer_manager
+        .enqueue_upload(&sftp_id, &local_path, &remote_path, &sftp_manager, on_event)
+        .await
+}
+
+#[tauri::command]
+pub async fn sftp_transfer_download(
+    sftp_id: String,
+    remote_path: String,
+    local_path: String,
+    on_event: Channel<TransferEvent>,
+    sftp_manager: State<'_, SftpManager>,
+    transfer_manager: State<'_, TransferManager>,
+) -> Result<String, String> {
+    transfer_manager
+        .enqueue_download(&sftp_id, &remote_path, &local_path, &sftp_manager, on_event)
+        .await
+}
+
+#[tauri::command]
+pub async fn sftp_transfer_server_to_server(
+    src_sftp_id: String,
+    src_path: String,
+    dst_sftp_id: String,
+    dst_path: String,
+    on_event: Channel<TransferEvent>,
+    sftp_manager: State<'_, SftpManager>,
+    transfer_manager: State<'_, TransferManager>,
+) -> Result<String, String> {
+    transfer_manager
+        .enqueue_server_to_server(
+            &src_sftp_id,
+            &src_path,
+            &dst_sftp_id,
+            &dst_path,
+            &sftp_manager,
+            on_event,
+        )
+        .await
+}
+
+#[tauri::command]
+pub async fn sftp_transfer_cancel(
+    job_id: String,
+    transfer_manager: State<'_, TransferManager>,
+) -> Result<(), String> {
+    transfer_manager.cancel_job(&job_id).await
+}
+
+#[tauri::command]
+pub async fn sftp_transfer_list(
+    transfer_manager: State<'_, TransferManager>,
+) -> Result<Vec<TransferJob>, String> {
+    Ok(transfer_manager.list_jobs().await)
+}
+
+#[tauri::command]
+pub async fn sftp_transfer_clear_completed(
+    transfer_manager: State<'_, TransferManager>,
+) -> Result<(), String> {
+    transfer_manager.clear_completed().await;
+    Ok(())
 }

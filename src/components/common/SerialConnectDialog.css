@@ -1,0 +1,131 @@
+.sd-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2500;
+}
+
+.sd-modal {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 20px;
+  min-width: 440px;
+  max-width: 520px;
+  box-shadow: 0 16px 44px rgba(0, 0, 0, 0.55);
+}
+
+.sd-title {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 14px;
+}
+
+.sd-label {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 6px;
+  margin-top: 10px;
+}
+
+.sd-input {
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  outline: none;
+  box-sizing: border-box;
+}
+
+.sd-input:focus {
+  border-color: var(--accent);
+}
+
+.sd-baud-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.sd-baud-input {
+  max-width: 140px;
+}
+
+.sd-baud-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.sd-preset {
+  background: none;
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+}
+
+.sd-preset:hover {
+  color: var(--text-primary);
+  border-color: var(--border-hover);
+}
+
+.sd-preset.active {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.sd-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 18px;
+}
+
+.sd-btn {
+  padding: 5px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: none;
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+  font-family: var(--font-sans);
+}
+
+.sd-btn-secondary:hover {
+  border-color: var(--border-hover);
+}
+
+.sd-btn-primary {
+  background: var(--accent);
+  color: var(--bg-primary);
+  border-color: var(--accent);
+}
+
+.sd-btn-primary:hover:not(:disabled) {
+  filter: brightness(1.07);
+}
+
+.sd-btn-primary:disabled {
+  background: var(--border);
+  color: var(--text-muted);
+  border-color: var(--border);
+  cursor: not-allowed;
+}

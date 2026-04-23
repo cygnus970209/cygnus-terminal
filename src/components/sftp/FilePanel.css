@@ -8,8 +8,109 @@
 }
 
 .fp-drag-over {
-  outline: 2px dashed var(--accent, #89b4fa);
+  outline: 2px dashed var(--accent);
   outline-offset: -2px;
+}
+
+.fp-focused {
+  background: rgba(122, 162, 247, 0.02);
+}
+
+.fp-focused .fp-breadcrumb {
+  border-bottom-color: var(--accent);
+}
+
+/* ─── Source stripe ───────────────────────────
+ * breadcrumb 위에 현재 연결된 서버(또는 Local)를 명확히.
+ * dot = 상태(색으로 remote/local 구분), label = user@host, kind = "SFTP"/"LOCAL".
+ */
+.fp-source {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-secondary);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.fp-source-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.fp-source-remote .fp-source-dot {
+  background: var(--accent);
+  box-shadow: 0 0 0 2px rgba(122, 162, 247, 0.2);
+}
+
+.fp-source-local .fp-source-dot {
+  background: var(--info);
+  box-shadow: 0 0 0 2px rgba(148, 226, 213, 0.2);
+}
+
+.fp-source-label {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-feature-settings: 'tnum' 1;
+}
+
+.fp-source-kind {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  padding: 1px 5px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--r-sm);
+  flex-shrink: 0;
+}
+
+.fp-bc-up {
+  background: none;
+  border: none;
+  color: var(--text-muted, #6c7086);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 6px 0 0;
+  flex-shrink: 0;
+}
+
+.fp-bc-up:hover {
+  color: var(--text-primary, #cdd6f4);
+}
+
+.fp-row-parent {
+  color: var(--text-muted, #6c7086);
+}
+
+.fp-row-drop-target {
+  background: rgba(166, 227, 161, 0.18) !important;
+  outline: 1px dashed var(--success, #a6e3a1);
+  outline-offset: -1px;
+}
+
+.fp-selection-info {
+  position: absolute;
+  bottom: 6px;
+  right: 10px;
+  background: var(--bg-secondary, #181825);
+  border: 1px solid var(--border, #313244);
+  border-radius: 10px;
+  padding: 2px 8px;
+  font-size: 10px;
+  color: var(--accent);
+  pointer-events: none;
+  z-index: 5;
 }
 
 .fp-breadcrumb {
@@ -27,7 +128,7 @@
 .fp-breadcrumb::-webkit-scrollbar { height: 0; }
 
 .fp-bc-item {
-  color: var(--accent, #89b4fa);
+  color: var(--accent);
   cursor: pointer;
 }
 
@@ -86,8 +187,8 @@
 }
 
 .fp-row:hover { background: var(--bg-secondary, #181825); }
-.fp-row-selected { background: rgba(137, 180, 250, 0.08); }
-.fp-row-selected:hover { background: rgba(137, 180, 250, 0.12); }
+.fp-row-selected { background: rgba(122, 162, 247, 0.08); }
+.fp-row-selected:hover { background: rgba(122, 162, 247, 0.12); }
 
 .fp-col-name {
   flex: 3;
@@ -133,11 +234,11 @@
 .fp-drop-overlay {
   position: absolute;
   inset: 0;
-  background: rgba(137, 180, 250, 0.08);
+  background: rgba(122, 162, 247, 0.08);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--accent, #89b4fa);
+  color: var(--accent);
   font-size: 13px;
   font-weight: 600;
   pointer-events: none;

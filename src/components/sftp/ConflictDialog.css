@@ -1,0 +1,88 @@
+.conflict-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.conflict-dialog {
+  background: var(--bg-secondary, #181825);
+  border: 1px solid var(--border, #313244);
+  border-radius: 8px;
+  padding: 18px 20px;
+  min-width: 420px;
+  max-width: 560px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.cd-title {
+  color: var(--text-primary, #cdd6f4);
+  font-size: 14px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+
+.cd-message {
+  color: var(--text-muted, #6c7086);
+  font-size: 12px;
+  margin-bottom: 14px;
+  line-height: 1.5;
+}
+
+.cd-filename {
+  color: var(--text-primary, #cdd6f4);
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+.cd-apply-all {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted, #6c7086);
+  margin-bottom: 14px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.cd-apply-all input {
+  margin: 0;
+}
+
+.cd-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.cd-btn {
+  padding: 6px 16px;
+  border: 1px solid var(--border, #313244);
+  border-radius: 4px;
+  background: none;
+  color: var(--text-primary, #cdd6f4);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.cd-btn-skip:hover {
+  background: var(--border, #313244);
+}
+
+.cd-btn-keep:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.cd-btn-replace {
+  background: var(--warn, #f9e2af);
+  color: var(--bg, #1e1e2e);
+  border-color: var(--warn, #f9e2af);
+}
+
+.cd-btn-replace:hover {
+  filter: brightness(1.1);
+}

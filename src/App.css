@@ -1,21 +1,81 @@
+/* ─────────────────────────────────────────────────────────────────
+ * Cygnus Terminal — Design System v1 (see DESIGN.md)
+ * Aesthetic: Developer Cockpit. Catppuccin Mocha base + Cygnus accents.
+ * Typography: Iosevka Aile (UI) + Iosevka (mono).
+ * ─────────────────────────────────────────────────────────────── */
 :root {
-  --bg-primary: #1e1e2e;
+  /* Surfaces */
+  --bg-primary:   #1e1e2e;
   --bg-secondary: #181825;
-  --bg-tertiary: #11111b;
-  --border: #313244;
-  --border-hover: #45475a;
-  --text-primary: #cdd6f4;
+  --bg-tertiary:  #11111b;
+  --bg-hover:     #232338;
+
+  /* Borders */
+  --border:         #313244;
+  --border-subtle:  #24283b;
+  --border-hover:   #45475a;
+
+  /* Text */
+  --text-primary:   #cdd6f4;
   --text-secondary: #a6adc8;
-  --text-muted: #6c7086;
-  --text-dim: #585b70;
-  --accent: #89b4fa;
-  --accent-hover: #74c7ec;
-  --danger: #f38ba8;
+  --text-muted:     #6c7086;
+  --text-dim:       #585b70;
+
+  /* Primary accent — Cygnus Blue (shifted from Catppuccin #89b4fa) */
+  --accent:       #7aa2f7;
+  --accent-hover: #8bb3f8;
+  --accent-soft:  rgba(122, 162, 247, 0.12);
+  --accent-ring:  rgba(122, 162, 247, 0.35);
+
+  /* Secondary accent — Peach (live/CTA only, strict usage) */
+  --peach:        #f5a97f;
+
+  /* Semantic */
   --success: #a6e3a1;
-  --warning: #f9e2af;
-  --orange: #fab387;
-  --font-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --warn:    #f9e2af;
+  --warning: #f9e2af; /* alias (기존 코드 호환) */
+  --error:   #f38ba8;
+  --danger:  #f38ba8; /* alias (기존 코드 호환) */
+  --info:    #94e2d5;
+  --orange:  #fab387; /* Catppuccin orange — 기존 호환. 신규 코드엔 --peach 사용 */
+
+  /* Fonts — Iosevka 롤백(2026-04-22). sans 는 OS 네이티브, mono 는 JetBrains Mono.
+   * 향후 다른 디스플레이 폰트 실험할 때 여기서만 바꿔도 전역 반영. */
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
   --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+
+  /* Type scale */
+  --fs-xs:   10px;
+  --fs-sm:   11px;
+  --fs-base: 12px;
+  --fs-md:   13px;
+  --fs-lg:   14px;
+  --fs-h3:   17px;
+  --fs-h2:   20px;
+  --fs-h1:   26px;
+
+  /* Spacing (4px base) */
+  --sp-2xs: 2px;
+  --sp-xs:  4px;
+  --sp-sm:  8px;
+  --sp-md:  12px;
+  --sp-lg:  16px;
+  --sp-xl:  24px;
+  --sp-2xl: 32px;
+  --sp-3xl: 48px;
+
+  /* Radius */
+  --r-sm: 3px;
+  --r-md: 4px;
+  --r-lg: 6px;
+  --r-xl: 10px;
+  --r-full: 9999px;
+
+  /* Motion */
+  --dur-micro: 80ms;
+  --dur:       120ms;
+  --dur-slow:  180ms;
+  --ease:      cubic-bezier(0.2, 0.7, 0.3, 1);
 }
 
 * {
@@ -27,14 +87,20 @@
 html, body, #root {
   height: 100%;
   overflow: hidden;
-  background: #1e1e2e;
+  background: var(--bg-primary);
+  font-family: var(--font-sans);
+  color: var(--text-primary);
+}
+
+body {
+  font-feature-settings: 'calt' 1, 'ss01' 1;
 }
 
 .app {
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: #1e1e2e;
+  background: var(--bg-primary);
 }
 
 .titlebar {
@@ -118,33 +184,92 @@ html, body, #root {
   color: #cdd6f4;
 }
 
-.panel-show-btn {
-  position: relative;
-  z-index: 5;
-  width: 20px;
-  background: #181825;
+/* Collapsed sidebar 를 되돌리는 가장자리 hover strip.
+ * 평상시 얇은 border 처럼 보이다 hover 시 accent 로 두드러짐. 부유 버튼의
+ * ▸◂ 아이콘 제거로 "덕지덕지"한 인상 줄임. */
+.panel-strip {
+  width: 3px;
+  height: 100%;
+  background: var(--border-subtle);
   border: none;
-  border-top: none;
-  border-bottom: none;
-  color: #6c7086;
-  font-size: 10px;
+  padding: 0;
   cursor: pointer;
+  position: relative;
+  flex-shrink: 0;
+  transition: width var(--dur) var(--ease), background var(--dur) var(--ease);
+}
+
+.panel-strip:hover {
+  width: 5px;
+  background: var(--accent);
+}
+
+/* 클릭 영역을 좌우 6px 씩 넓혀 정확도 올림 (시각 너비는 유지) */
+.panel-strip::before {
+  content: '';
+  position: absolute;
+  inset: 0 -6px;
+}
+
+/* ─── Snippets modal (Command Palette 의 "Manage Snippets..." 로 열림) ─── */
+.sn-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.5);
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: background 0.1s, color 0.1s;
-  flex-shrink: 0;
+  z-index: 2500;
 }
 
-.panel-show-btn:hover {
-  background: #313244;
-  color: #cdd6f4;
+.sn-modal-body {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  width: min(900px, 92vw);
+  height: min(700px, 88vh);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
 }
 
-.panel-show-left {
-  border-right: 1px solid #313244;
+.sn-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 36px;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-tertiary);
 }
 
-.panel-show-right {
-  border-left: 1px solid #313244;
+.sn-modal-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+}
+
+.sn-modal-close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  font-size: 14px;
+  padding: 4px 8px;
+  border-radius: 3px;
+}
+
+.sn-modal-close:hover {
+  color: var(--text-primary);
+  background: var(--bg);
+}
+
+/* SnippetsView 가 내부에서 height:100% 를 기대하므로 감싸는 컨테이너가 flex 공간 차지 */
+.sn-modal-body > .snippets-view {
+  flex: 1;
+  min-height: 0;
 }

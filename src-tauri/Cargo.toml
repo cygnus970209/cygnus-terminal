@@ -35,6 +35,7 @@ keyring = { version = "3", features = ["apple-native", "windows-native", "linux-
 rand = "0.8"
 base64 = "0.22"
 tauri-plugin-dialog = "2"
+tauri-plugin-drag = "2"
 notify = "7"
 notify-debouncer-mini = "0.5"
 dirs = "6"

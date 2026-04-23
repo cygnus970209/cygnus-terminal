@@ -58,7 +58,7 @@
 }
 
 .sftp-source-select:focus {
-  border-color: var(--accent, #89b4fa);
+  border-color: var(--accent);
 }
 
 .sftp-panel-divider {

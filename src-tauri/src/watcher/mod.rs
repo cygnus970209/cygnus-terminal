@@ -90,7 +90,6 @@ impl FileWatcherManager {
         let remote_path_owned = remote_path.to_string();
         let local_path_clone = local_path.clone();
         let file_name_clone = file_name.clone();
-        let watches = Arc::clone(&self.watches);
 
         // SftpManager의 sessions를 공유하기 위해 sftp_manager의 내부 참조를 가져옴
         let sftp_sessions = sftp_manager.clone_sessions();

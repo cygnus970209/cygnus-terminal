@@ -31,3 +31,10 @@ src-tauri/target
 .env.*
 *.pem
 *.key
+.gstack/
+.claude/
+
+# Local notes (not for repo)
+TODOS.md
+DESIGN.md
+CLAUDE.md

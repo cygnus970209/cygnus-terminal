@@ -1,13 +1,21 @@
-import { useState, useCallback, useRef, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import { invoke, Channel } from "@tauri-apps/api/core";
+import { listen, emit } from "@tauri-apps/api/event";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Profile, SshConfig, Tab } from "./types";
+import TransferDock, { TransferJob, TransferEvent } from "./components/sftp/TransferDock";
 import TabBar from "./components/common/TabBar";
 import ResizablePanel from "./components/common/ResizablePanel";
 import SettingsDialog from "./components/common/SettingsDialog";
 import Terminal from "./components/terminal/Terminal";
-import MonitorBar from "./components/terminal/MonitorBar";
 import LogViewer from "./components/terminal/LogViewer";
+import MonitorPanel from "./components/terminal/MonitorPanel";
+import StatusBar, { DrawerTab } from "./components/common/StatusBar";
+import { useServerStats } from "./hooks/useServerStats";
+import CommandPalette, { PaletteItem } from "./components/common/CommandPalette";
+import InputDialog from "./components/sftp/InputDialog";
+import SerialConnectDialog, { SerialPortInfo } from "./components/common/SerialConnectDialog";
+import { message } from "@tauri-apps/plugin-dialog";
 import ConnectionsView from "./components/connection/ConnectionsView";
 import ConnectDialog from "./components/connection/ConnectDialog";
 import ServerContext from "./components/connection/ServerContext";
@@ -24,12 +32,6 @@ const connectionsTab: Tab = {
   type: "connections",
 };
 
-const snippetsTab: Tab & { sshConfig?: SshConfig } = {
-  id: "snippets",
-  title: "Snippets",
-  type: "snippets",
-};
-
 const initialLocalTab: Tab & { sshConfig?: SshConfig } = {
   id: "tab-1",
   title: "Local Shell",
@@ -39,13 +41,13 @@ const initialLocalTab: Tab & { sshConfig?: SshConfig } = {
 function App() {
   const [tabs, setTabs] = useState<(Tab & { sshConfig?: SshConfig })[]>([
     connectionsTab,
-    snippetsTab,
     initialLocalTab,
   ]);
   const [activeTabId, setActiveTabId] = useState<string | null>("tab-1");
   const [showConnectDialog, setShowConnectDialog] = useState(false);
   const [editProfile, setEditProfile] = useState<Profile | null>(null);
   const [sessionMap, setSessionMap] = useState<Record<string, string>>({});
+  const [sftpSessions, setSftpSessions] = useState<Record<string, { sftpId: string; homePath: string }>>({});
   const [profileReloadKey, setProfileReloadKey] = useState(0);
   const capturePathFns = useRef<Record<string, () => Promise<string | null>>>({});
   const bufferCheckFns = useRef<Record<string, () => boolean>>({});
@@ -54,15 +56,170 @@ function App() {
   const [fileTreePath, setFileTreePath] = useState<string | null>(null);
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
-  const [monitorVisible, setMonitorVisible] = useState(true);
-  const [logViewerVisible, setLogViewerVisible] = useState(false);
+  const [drawerTab, setDrawerTab] = useState<DrawerTab>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [showPalette, setShowPalette] = useState(false);
+  const [showSnippets, setShowSnippets] = useState(false);
+  const [telnetPromptOpen, setTelnetPromptOpen] = useState(false);
+  const [serialPorts, setSerialPorts] = useState<SerialPortInfo[] | null>(null);
+  const [paletteSnippets, setPaletteSnippets] = useState<
+    { id: number; title: string; command: string; category: string }[]
+  >([]);
 
-  // macOS 메뉴 "Preferences" 이벤트 수신
+  // 글로벌 단축키: Cmd/Ctrl+K 로 Command Palette 토글
   useEffect(() => {
-    const unlisten = listen("open-settings", () => setShowSettings(true));
-    return () => { unlisten.then((f) => f()); };
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setShowPalette((v) => !v);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // Palette 열릴 때마다 최신 snippets 로드
+  useEffect(() => {
+    if (!showPalette) return;
+    invoke<{ id: number; title: string; command: string; category: string }[]>(
+      "list_snippets",
+      { query: null },
+    )
+      .then((list) => setPaletteSnippets(list))
+      .catch(() => setPaletteSnippets([]));
+  }, [showPalette]);
+
+  // macOS 메뉴 "Preferences" + View 서브메뉴 이벤트 수신
+  useEffect(() => {
+    const unlistenSettings = listen("open-settings", () => setShowSettings(true));
+    const unlistenLeft = listen("toggle-server-ctx", () => setLeftCollapsed((v) => !v));
+    const unlistenRight = listen("toggle-file-tree", () => setRightCollapsed((v) => !v));
+    const unlistenDrawer = listen<string>("toggle-drawer", (e) => {
+      const tab = e.payload as DrawerTab;
+      setDrawerTab((cur) => (cur === tab ? null : tab));
+    });
+    return () => {
+      unlistenSettings.then((f) => f());
+      unlistenLeft.then((f) => f());
+      unlistenRight.then((f) => f());
+      unlistenDrawer.then((f) => f());
+    };
+  }, []);
+
+  // 현재 활성 탭이 SSH 세션이면 stats 폴링 활성화
+  const currentTabForStats = tabs.find((t) => t.id === activeTabId);
+  const currentSshSessionId =
+    currentTabForStats?.type === "ssh" && activeTabId ? sessionMap[activeTabId] : null;
+  const sshActive = !!currentSshSessionId;
+  const { stats: serverStats } = useServerStats(currentSshSessionId, sshActive);
+
+  // 전역 Transfer state. FileTree 의 다운로드/업로드가 TransferManager 큐를 타게 하고
+  // 진행률·속도·ETA 를 하단 Dock 에서 공유한다. SFTP popout 윈도우는 별도 인스턴스라
+  // 자기 Channel 을 쓰고, 여기는 메인 윈도우 전용.
+  const [transferJobs, setTransferJobs] = useState<TransferJob[]>([]);
+  // 업로드/다운로드 완료 시 FileTree 가 현재 디렉토리를 리로드하도록 증가시키는 카운터.
+  const [fileTreeRefreshKey, setFileTreeRefreshKey] = useState(0);
+  const transferChannel = useMemo(() => {
+    const ch = new Channel<TransferEvent>();
+    ch.onmessage = (event) => {
+      if (event.type === "QueueUpdate") {
+        setTransferJobs(event.data);
+      } else if (event.type === "Progress") {
+        const { job_id, transferred_bytes, speed_bps } = event.data;
+        setTransferJobs((prev) =>
+          prev.map((j) =>
+            j.id === job_id
+              ? { ...j, transferred_bytes, speed_bps, status: "running" }
+              : j,
+          ),
+        );
+      } else if (event.type === "Completed") {
+        setTransferJobs((prev) =>
+          prev.map((j) =>
+            j.id === event.data ? { ...j, status: "completed" } : j,
+          ),
+        );
+        setFileTreeRefreshKey((k) => k + 1);
+      } else if (event.type === "Failed") {
+        setTransferJobs((prev) =>
+          prev.map((j) =>
+            j.id === event.data.job_id
+              ? { ...j, status: "failed", error: event.data.error }
+              : j,
+          ),
+        );
+      }
+    };
+    return ch;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Channel 유실(HMR reload 등) 복구용 polling
+  useEffect(() => {
+    const iv = setInterval(async () => {
+      try {
+        const jobs = await invoke<TransferJob[]>("sftp_transfer_list");
+        setTransferJobs(jobs);
+      } catch {
+        // ignore
+      }
+    }, 2000);
+    return () => clearInterval(iv);
+  }, []);
+
+  const handleCancelTransfer = useCallback(async (jobId: string) => {
+    try {
+      await invoke("sftp_transfer_cancel", { jobId });
+    } catch (err) {
+      console.error("Cancel failed:", err);
+    }
+  }, []);
+
+  const handleClearCompletedTransfers = useCallback(async () => {
+    try {
+      await invoke("sftp_transfer_clear_completed");
+      setTransferJobs((prev) =>
+        prev.filter(
+          (j) =>
+            j.status !== "completed" &&
+            j.status !== "failed" &&
+            j.status !== "cancelled",
+        ),
+      );
+    } catch (err) {
+      console.error("Clear failed:", err);
+    }
+  }, []);
+
+  // popout SFTP 윈도우에 공유할 세션 리스트.
+  // tabs/sessionMap/sftpSessions 변경 시마다 브로드캐스트.
+  useEffect(() => {
+    const list = tabs
+      .filter((t) => t.type === "ssh" && sessionMap[t.id] && sftpSessions[sessionMap[t.id]])
+      .map((t) => ({
+        id: sessionMap[t.id],
+        sftpId: sftpSessions[sessionMap[t.id]].sftpId,
+        label: t.title,
+        homePath: sftpSessions[sessionMap[t.id]].homePath,
+      }));
+    emit("sftp-sessions", list);
+  }, [tabs, sessionMap, sftpSessions]);
+
+  // popout이 뒤늦게 뜰 때 최신 스냅샷을 요청하면 재발송.
+  useEffect(() => {
+    const unlisten = listen("sftp-sessions-request", () => {
+      const list = tabs
+        .filter((t) => t.type === "ssh" && sessionMap[t.id] && sftpSessions[sessionMap[t.id]])
+        .map((t) => ({
+          id: sessionMap[t.id],
+          sftpId: sftpSessions[sessionMap[t.id]].sftpId,
+          label: t.title,
+          homePath: sftpSessions[sessionMap[t.id]].homePath,
+        }));
+      emit("sftp-sessions", list);
+    });
+    return () => { unlisten.then((f) => f()); };
+  }, [tabs, sessionMap, sftpSessions]);
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const activeProfileId = activeTab?.sshConfig?.profileId ?? null;
@@ -101,64 +258,103 @@ function App() {
     setShowConnectDialog(false);
   }, []);
 
+  /** Serial 버튼 클릭 진입점 — 포트 목록 조회 후 SerialConnectDialog 를 띄운다.
+   *  native prompt/alert 은 Tauri 2 webview 에서 차단되기 때문에 전용 모달 사용. */
   const createSerialTab = useCallback(async () => {
     try {
-      const ports = await invoke<{ name: string; port_type: string }[]>("list_serial_ports");
+      const ports = await invoke<SerialPortInfo[]>("list_serial_ports");
       if (ports.length === 0) {
-        alert("No serial ports found");
+        await message("No serial ports found", { title: "Serial", kind: "info" });
         return;
       }
-      const portList = ports.map((p, i) => `${i + 1}) ${p.name} (${p.port_type})`).join("\n");
-      const choice = prompt(`Select port:\n${portList}\n\nEnter number:`);
-      if (!choice) return;
-      const idx = parseInt(choice) - 1;
-      if (idx < 0 || idx >= ports.length) return;
-
-      const baudStr = prompt("Baud rate:", "115200");
-      const baudRate = parseInt(baudStr || "115200") || 115200;
-
-      const id = `tab-${++tabCounter}`;
-      setTabs((prev) => [...prev, {
-        id,
-        title: ports[idx].name,
-        type: "serial" as const,
-        serialConfig: { portName: ports[idx].name, baudRate },
-      } as any]);
-      setActiveTabId(id);
+      setSerialPorts(ports);
     } catch (err) {
-      alert(`Failed: ${err}`);
+      await message(`Failed to list ports: ${err}`, { title: "Serial", kind: "error" });
     }
   }, []);
 
-  const [sftpSessions, setSftpSessions] = useState<Record<string, { sftpId: string; homePath: string }>>({});
+  const handleSerialConnect = useCallback(
+    (portName: string, baudRate: number) => {
+      const id = `tab-${++tabCounter}`;
+      setTabs((prev) => [
+        ...prev,
+        {
+          id,
+          title: portName,
+          type: "serial" as const,
+          serialConfig: { portName, baudRate },
+        } as Tab & { sshConfig?: SshConfig },
+      ]);
+      setActiveTabId(id);
+      setSerialPorts(null);
+    },
+    [],
+  );
 
-  const openSftpTab = useCallback(async (sshTabId: string, sshTabTitle: string) => {
-    const sftpTabId = `sftp-${sshTabId}`;
-    const sshSessionId = sessionMap[sshTabId];
-    if (!sshSessionId) return;
+  const handleTelnetInput = useCallback(
+    (value: string) => {
+      setTelnetPromptOpen(false);
+      if (!value) return;
+      const [host, portStr] = value.includes(":") ? value.split(":") : [value, "23"];
+      createTelnetTab(host.trim(), parseInt(portStr) || 23);
+    },
+    [],
+  );
 
-    // SFTP 세션이 없으면 열기
-    if (!sftpSessions[sshSessionId]) {
-      try {
-        const sftpId = await invoke<string>("sftp_open", { sessionId: sshSessionId });
-        const homePath = await invoke<string>("sftp_get_home_dir", { sftpId });
-        setSftpSessions((prev) => ({ ...prev, [sshSessionId]: { sftpId, homePath } }));
-      } catch (err) {
-        console.error("Failed to open SFTP:", err);
-        return;
+  /** SFTP popout 열기. sshTabId 가 있으면 해당 세션으로, 없으면 빈 popout (내부에서 프로필 선택) */
+  const openSftpPopout = useCallback(async (sshTabId?: string | null, sshTabTitle?: string) => {
+    let label = "sftp-blank";
+    let params = new URLSearchParams({ view: "sftp", label: sshTabTitle || "SFTP" });
+
+    if (sshTabId) {
+      const sshSessionId = sessionMap[sshTabId];
+      if (sshSessionId) {
+        let current = sftpSessions[sshSessionId];
+        if (!current) {
+          try {
+            const sftpId = await invoke<string>("sftp_open", { sessionId: sshSessionId });
+            const homePath = await invoke<string>("sftp_get_home_dir", { sftpId });
+            current = { sftpId, homePath };
+            setSftpSessions((prev) => ({ ...prev, [sshSessionId]: current! }));
+          } catch (err) {
+            console.error("Failed to open SFTP:", err);
+            return;
+          }
+        }
+        label = `sftp-${sshSessionId}`;
+        params = new URLSearchParams({
+          view: "sftp",
+          sftpId: current.sftpId,
+          homePath: current.homePath,
+          sshSessionId,
+          label: sshTabTitle || "SFTP",
+        });
       }
     }
 
-    setTabs((prev) => {
-      if (prev.find((t) => t.id === sftpTabId)) return prev;
-      return [...prev, {
-        id: sftpTabId,
-        title: `SFTP: ${sshTabTitle}`,
-        type: "sftp" as const,
-        linkedSessionId: sshTabId,
-      }];
-    });
-    setActiveTabId(sftpTabId);
+    const existing = await WebviewWindow.getByLabel(label);
+    if (existing) {
+      try {
+        await existing.show();
+        await existing.setFocus();
+      } catch (err) {
+        console.error("Failed to focus popout:", err);
+      }
+      return;
+    }
+
+    try {
+      new WebviewWindow(label, {
+        url: `/?${params.toString()}`,
+        title: sshTabId ? `SFTP — ${sshTabTitle}` : "SFTP",
+        width: 1200,
+        height: 800,
+        minWidth: 800,
+        minHeight: 500,
+      });
+    } catch (err) {
+      console.error("Failed to create popout:", err);
+    }
   }, [sessionMap, sftpSessions]);
 
   const closeTab = useCallback(
@@ -303,6 +499,57 @@ function App() {
     [activeTabId, sessionMap, tabs]
   );
 
+  // Command Palette 에 노출할 항목 — actions / tabs / snippets 를 하나의 검색 가능한 리스트로
+  const paletteItems: PaletteItem[] = [
+    {
+      id: "action:new-ssh",
+      kind: "action",
+      title: "New SSH connection",
+      hint: "⌘N",
+      onSelect: handleNewProfile,
+    },
+    {
+      id: "action:new-local",
+      kind: "action",
+      title: "New Local shell",
+      onSelect: createLocalTab,
+    },
+    {
+      id: "action:connections",
+      kind: "action",
+      title: "Open Connections",
+      onSelect: () => setActiveTabId("connections"),
+    },
+    {
+      id: "action:manage-snippets",
+      kind: "action",
+      title: "Manage Snippets...",
+      onSelect: () => setShowSnippets(true),
+    },
+    {
+      id: "action:open-settings",
+      kind: "action",
+      title: "Open Settings",
+      hint: "⌘,",
+      onSelect: () => setShowSettings(true),
+    },
+    ...tabs.map<PaletteItem>((t) => ({
+      id: `tab:${t.id}`,
+      kind: "tab",
+      title: `Switch to: ${t.title}`,
+      hint: t.type,
+      onSelect: () => setActiveTabId(t.id),
+    })),
+    ...paletteSnippets.map<PaletteItem>((s) => ({
+      id: `snippet:${s.id}`,
+      kind: "snippet",
+      title: s.title,
+      subtitle: s.command,
+      hint: s.category || undefined,
+      onSelect: () => handleExecuteCommand(s.command),
+    })),
+  ];
+
   return (
     <div className="app">
       <TabBar
@@ -313,12 +560,8 @@ function App() {
         onNewLocalTab={createLocalTab}
         onNewSshTab={handleNewProfile}
         onNewSerialTab={createSerialTab}
-        onNewTelnetTab={() => {
-          const input = prompt("Telnet host:port (e.g. 192.168.1.1:23)");
-          if (!input) return;
-          const [host, portStr] = input.includes(":") ? input.split(":") : [input, "23"];
-          createTelnetTab(host.trim(), parseInt(portStr) || 23);
-        }}
+        onNewTelnetTab={() => setTelnetPromptOpen(true)}
+        onOpenSftp={() => openSftpPopout()}
         onOpenSettings={() => setShowSettings(true)}
       />
       <div className="app-body">
@@ -326,12 +569,11 @@ function App() {
           <>
             {leftCollapsed && (
               <button
-                className="panel-show-btn panel-show-left"
+                className="panel-strip panel-strip-left"
                 onClick={() => setLeftCollapsed(false)}
-                title="Show server context"
-              >
-                ▸
-              </button>
+                title="Show server context (⌘\)"
+                aria-label="Show server context"
+              />
             )}
             <ResizablePanel
               side="left"
@@ -369,9 +611,6 @@ function App() {
               onNew={handleNewProfile}
               reloadKey={profileReloadKey}
             />
-          )}
-          {activeTabId === "snippets" && (
-            <SnippetsView onExecute={handleExecuteCommand} />
           )}
           {activeTab?.type === "sftp" && activeTab.linkedSessionId && sessionMap[activeTab.linkedSessionId] && sftpSessions[sessionMap[activeTab.linkedSessionId]] && (
             <SftpView
@@ -411,12 +650,11 @@ function App() {
         </div>
         {activeTabId && activeTab?.type === "ssh" && sessionMap[activeTabId] && rightCollapsed && (
           <button
-            className="panel-show-btn panel-show-right"
+            className="panel-strip panel-strip-right"
             onClick={() => setRightCollapsed(false)}
-            title="Show file tree"
-          >
-            ◂
-          </button>
+            title="Show file tree (⌘⇧\)"
+            aria-label="Show file tree"
+          />
         )}
         {activeTabId && activeTab?.type === "ssh" && sessionMap[activeTabId] && (
           <ResizablePanel
@@ -432,26 +670,39 @@ function App() {
               cdTrackingEnabled={cdTrackingEnabled}
               onCdTrackingChange={setCdTrackingEnabled}
               onCollapse={() => setRightCollapsed(true)}
-              onOpenSftpView={() => openSftpTab(activeTabId!, activeTab?.title || "")}
+              onOpenSftpView={() => openSftpPopout(activeTabId!, activeTab?.title || "")}
+              transferChannel={transferChannel}
+              refreshTrigger={fileTreeRefreshKey}
             />
           </ResizablePanel>
         )}
       </div>
-      {activeTabId && activeTab?.type === "ssh" && sessionMap[activeTabId] && logViewerVisible && (
-        <LogViewer
-          sessionId={sessionMap[activeTabId]}
-          onClose={() => setLogViewerVisible(false)}
-        />
-      )}
-      {activeTabId && activeTab?.type === "ssh" && sessionMap[activeTabId] && (
-        <MonitorBar
-          sessionId={sessionMap[activeTabId]}
-          visible={monitorVisible}
-          onToggle={() => setMonitorVisible((v) => !v)}
-          onToggleLogs={() => setLogViewerVisible((v) => !v)}
-          logViewerActive={logViewerVisible}
-        />
-      )}
+      <StatusBar
+        sessionLabel={sshActive ? activeTab?.title || null : null}
+        sshActive={sshActive}
+        stats={serverStats}
+        transferJobs={transferJobs}
+        activeDrawer={drawerTab}
+        onToggleDrawer={setDrawerTab}
+      >
+        {drawerTab === "monitor" && (
+          <MonitorPanel stats={serverStats} error={null} />
+        )}
+        {drawerTab === "transfers" && (
+          <TransferDock
+            jobs={transferJobs}
+            onCancel={handleCancelTransfer}
+            onClearCompleted={handleClearCompletedTransfers}
+            headless
+          />
+        )}
+        {drawerTab === "logs" && sshActive && activeTabId && (
+          <LogViewer
+            sessionId={sessionMap[activeTabId]}
+            onClose={() => setDrawerTab(null)}
+          />
+        )}
+      </StatusBar>
       {showConnectDialog && (
         <ConnectDialog
           onConnect={createSshTab}
@@ -465,6 +716,59 @@ function App() {
       )}
       {showSettings && (
         <SettingsDialog onClose={() => setShowSettings(false)} />
+      )}
+
+      {showSnippets && (
+        <div
+          className="sn-modal-overlay"
+          onMouseDown={() => setShowSnippets(false)}
+        >
+          <div
+            className="sn-modal-body"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="sn-modal-head">
+              <span className="sn-modal-title">Snippets</span>
+              <button
+                className="sn-modal-close"
+                onClick={() => setShowSnippets(false)}
+              >
+                ✕
+              </button>
+            </div>
+            <SnippetsView
+              onExecute={(cmd) => {
+                handleExecuteCommand(cmd);
+                setShowSnippets(false);
+              }}
+            />
+          </div>
+        </div>
+      )}
+
+      <CommandPalette
+        isOpen={showPalette}
+        onClose={() => setShowPalette(false)}
+        items={paletteItems}
+      />
+
+      {telnetPromptOpen && (
+        <InputDialog
+          title="New Telnet connection"
+          placeholder="host:port (e.g. 192.168.1.1:23)"
+          initial=""
+          confirmLabel="Connect"
+          onConfirm={handleTelnetInput}
+          onCancel={() => setTelnetPromptOpen(false)}
+        />
+      )}
+
+      {serialPorts && (
+        <SerialConnectDialog
+          ports={serialPorts}
+          onConnect={handleSerialConnect}
+          onCancel={() => setSerialPorts(null)}
+        />
       )}
     </div>
   );

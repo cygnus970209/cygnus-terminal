@@ -1,0 +1,73 @@
+.input-dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2000;
+}
+
+.input-dialog {
+  background: var(--bg-secondary, #181825);
+  border: 1px solid var(--border, #313244);
+  border-radius: 8px;
+  padding: 16px;
+  min-width: 360px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+}
+
+.id-title {
+  color: var(--text-primary, #cdd6f4);
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 10px;
+}
+
+.id-input {
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--bg, #1e1e2e);
+  border: 1px solid var(--border, #313244);
+  border-radius: 4px;
+  color: var(--text-primary, #cdd6f4);
+  font-size: 12px;
+  outline: none;
+  box-sizing: border-box;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+.id-input:focus {
+  border-color: var(--accent);
+}
+
+.id-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.id-btn {
+  padding: 5px 14px;
+  border: 1px solid var(--border, #313244);
+  border-radius: 4px;
+  background: none;
+  color: var(--text-primary, #cdd6f4);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.id-btn:hover {
+  border-color: var(--accent);
+}
+
+.id-btn-primary {
+  background: var(--accent);
+  color: var(--bg, #1e1e2e);
+  border-color: var(--accent);
+}
+
+.id-btn-primary:hover {
+  filter: brightness(1.1);
+}

@@ -72,7 +72,7 @@
 }
 
 .sync-field input:focus {
-  border-color: var(--accent, #89b4fa);
+  border-color: var(--accent);
 }
 
 .sync-input-row {
@@ -110,7 +110,7 @@
   cursor: pointer;
 }
 
-.sync-radio input { accent-color: var(--accent, #89b4fa); }
+.sync-radio input { accent-color: var(--accent); }
 
 .sync-preview-btn, .sync-execute-btn {
   width: 100%;
@@ -132,7 +132,7 @@
 .sync-preview-btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .sync-execute-btn {
-  background: var(--accent, #89b4fa);
+  background: var(--accent);
   color: var(--bg-primary, #1e1e2e);
 }
 
@@ -176,7 +176,7 @@
   font-weight: 600;
 }
 
-.sync-action-upload { color: var(--accent, #89b4fa); }
+.sync-action-upload { color: var(--accent); }
 .sync-action-download { color: var(--success, #a6e3a1); }
 
 .sync-path {
@@ -219,7 +219,7 @@
 
 .sync-progress-fill {
   height: 100%;
-  background: var(--accent, #89b4fa);
+  background: var(--accent);
   border-radius: 2px;
   transition: width 0.3s;
 }

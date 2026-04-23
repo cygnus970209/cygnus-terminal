@@ -1,0 +1,60 @@
+.sftp-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border, #313244);
+  background: var(--bg-secondary, #181825);
+  flex-shrink: 0;
+}
+
+.tb-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-primary, #cdd6f4);
+  font-size: 11px;
+  border-radius: 4px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tb-btn:hover:not(:disabled) {
+  background: var(--border, #313244);
+  border-color: var(--border, #313244);
+}
+
+.tb-btn:disabled {
+  color: var(--text-dim, #585b70);
+  cursor: not-allowed;
+}
+
+.tb-btn.tb-danger:hover:not(:disabled) {
+  color: var(--error, #f38ba8);
+  border-color: var(--error, #f38ba8);
+  background: rgba(243, 139, 168, 0.1);
+}
+
+.tb-icon {
+  font-size: 13px;
+}
+
+.tb-sep {
+  width: 1px;
+  background: var(--border, #313244);
+  height: 18px;
+  margin: 0 4px;
+}
+
+.tb-spacer {
+  flex: 1;
+}
+
+.tb-focus-hint {
+  font-size: 10px;
+  color: var(--text-muted, #6c7086);
+  padding: 2px 8px;
+}

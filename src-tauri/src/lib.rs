@@ -27,7 +27,7 @@ use serial::SerialManager;
 use telnet::TelnetManager;
 use transfer::TransferManager;
 use watcher::FileWatcherManager;
-use tauri::menu::{MenuBuilder, MenuItemBuilder};
+use tauri::menu::{MenuBuilder, MenuItemBuilder, SubmenuBuilder};
 use tauri::{Emitter, Manager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -35,9 +35,28 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_drag::init())
         .on_menu_event(|app, event| {
-            if event.id() == "preferences" {
-                let _ = app.emit("open-settings", ());
+            match event.id().as_ref() {
+                "preferences" => {
+                    let _ = app.emit("open-settings", ());
+                }
+                "toggle-server-ctx" => {
+                    let _ = app.emit("toggle-server-ctx", ());
+                }
+                "toggle-file-tree" => {
+                    let _ = app.emit("toggle-file-tree", ());
+                }
+                "toggle-monitor" => {
+                    let _ = app.emit("toggle-drawer", "monitor");
+                }
+                "toggle-transfers" => {
+                    let _ = app.emit("toggle-drawer", "transfers");
+                }
+                "toggle-logs" => {
+                    let _ = app.emit("toggle-drawer", "logs");
+                }
+                _ => {}
             }
         })
         .setup(|app| {
@@ -45,8 +64,40 @@ pub fn run() {
             let preferences = MenuItemBuilder::with_id("preferences", "Preferences")
                 .accelerator("CmdOrCtrl+,")
                 .build(app)?;
+            let toggle_server_ctx = MenuItemBuilder::with_id(
+                "toggle-server-ctx",
+                "Toggle Server Context",
+            )
+            .accelerator("CmdOrCtrl+\\")
+            .build(app)?;
+            let toggle_file_tree = MenuItemBuilder::with_id(
+                "toggle-file-tree",
+                "Toggle File Tree",
+            )
+            .accelerator("CmdOrCtrl+Shift+\\")
+            .build(app)?;
+            let toggle_monitor =
+                MenuItemBuilder::with_id("toggle-monitor", "Monitor")
+                    .accelerator("CmdOrCtrl+1")
+                    .build(app)?;
+            let toggle_transfers =
+                MenuItemBuilder::with_id("toggle-transfers", "Transfers")
+                    .accelerator("CmdOrCtrl+2")
+                    .build(app)?;
+            let toggle_logs = MenuItemBuilder::with_id("toggle-logs", "Logs")
+                .accelerator("CmdOrCtrl+3")
+                .build(app)?;
+            let view_submenu = SubmenuBuilder::new(app, "View")
+                .item(&toggle_server_ctx)
+                .item(&toggle_file_tree)
+                .separator()
+                .item(&toggle_monitor)
+                .item(&toggle_transfers)
+                .item(&toggle_logs)
+                .build()?;
             let menu = MenuBuilder::new(app)
                 .item(&preferences)
+                .item(&view_submenu)
                 .build()?;
             app.set_menu(menu)?;
             let app_data_dir = app
@@ -96,6 +147,9 @@ pub fn run() {
             commands::delete_path_bookmark,
             commands::get_local_home_dir,
             commands::list_local_dir,
+            commands::is_local_dir,
+            commands::local_exists,
+            commands::drag_temp_path,
             commands::sftp_open,
             commands::sftp_list_dir,
             commands::sftp_get_home_dir,
@@ -104,6 +158,8 @@ pub fn run() {
             commands::sftp_delete,
             commands::sftp_rename,
             commands::sftp_mkdir,
+            commands::sftp_mkdir_p,
+            commands::sftp_exists,
             commands::sftp_copy_between,
             commands::sftp_upload_bytes,
             commands::sftp_close,
@@ -135,6 +191,12 @@ pub fn run() {
             commands::write_telnet,
             commands::resize_telnet,
             commands::close_telnet,
+            commands::sftp_transfer_upload,
+            commands::sftp_transfer_download,
+            commands::sftp_transfer_server_to_server,
+            commands::sftp_transfer_cancel,
+            commands::sftp_transfer_list,
+            commands::sftp_transfer_clear_completed,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

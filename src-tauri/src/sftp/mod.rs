@@ -1,4 +1,4 @@
-use russh_sftp::client::SftpSession;
+use russh_sftp::client::{fs::File, SftpSession};
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -14,6 +14,7 @@ pub struct FileEntry {
     pub permissions: Option<u32>,
 }
 
+#[derive(Clone)]
 pub struct SftpManager {
     sessions: Arc<Mutex<HashMap<String, SftpSession>>>,
 }
@@ -183,6 +184,32 @@ impl SftpManager {
         Ok(metadata.size.unwrap_or(0))
     }
 
+    /// Open a remote file for reading. Returns a handle implementing AsyncRead + AsyncSeek
+    /// so callers can stream in chunks (see transfer::TransferManager).
+    pub async fn open_read(&self, sftp_id: &str, path: &str) -> Result<File, String> {
+        let sessions = self.sessions.lock().await;
+        let sftp = sessions
+            .get(sftp_id)
+            .ok_or_else(|| format!("SFTP session not found: {sftp_id}"))?;
+        sftp.open(path)
+            .await
+            .map_err(|e| format!("Failed to open for read: {e}"))
+    }
+
+    /// Open a remote file for writing (CREATE | TRUNCATE | WRITE).
+    pub async fn open_write(&self, sftp_id: &str, path: &str) -> Result<File, String> {
+        let sessions = self.sessions.lock().await;
+        let sftp = sessions
+            .get(sftp_id)
+            .ok_or_else(|| format!("SFTP session not found: {sftp_id}"))?;
+        sftp.create(path)
+            .await
+            .map_err(|e| format!("Failed to open for write: {e}"))
+    }
+
+    /// Server-to-server copy using 64KB chunk streaming.
+    /// Holds two open SFTP file handles (one per session) and pipes bytes through
+    /// a client-side buffer, so memory usage stays bounded regardless of file size.
     pub async fn copy_between(
         &self,
         src_sftp_id: &str,
@@ -190,26 +217,30 @@ impl SftpManager {
         dst_sftp_id: &str,
         dst_path: &str,
     ) -> Result<u64, String> {
-        let sessions = self.sessions.lock().await;
-        let src = sessions
-            .get(src_sftp_id)
-            .ok_or_else(|| format!("Source SFTP not found: {src_sftp_id}"))?;
-        let dst = sessions
-            .get(dst_sftp_id)
-            .ok_or_else(|| format!("Dest SFTP not found: {dst_sftp_id}"))?;
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-        let data = src
-            .read(src_path)
+        let mut src = self.open_read(src_sftp_id, src_path).await?;
+        let mut dst = self.open_write(dst_sftp_id, dst_path).await?;
+
+        let mut buf = vec![0u8; 64 * 1024];
+        let mut total: u64 = 0;
+        loop {
+            let n = src
+                .read(&mut buf)
+                .await
+                .map_err(|e| format!("Failed to read source chunk: {e}"))?;
+            if n == 0 {
+                break;
+            }
+            dst.write_all(&buf[..n])
+                .await
+                .map_err(|e| format!("Failed to write dest chunk: {e}"))?;
+            total += n as u64;
+        }
+        dst.shutdown()
             .await
-            .map_err(|e| format!("Failed to read source: {e}"))?;
-
-        let size = data.len() as u64;
-
-        dst.write(dst_path, &data)
-            .await
-            .map_err(|e| format!("Failed to write destination: {e}"))?;
-
-        Ok(size)
+            .map_err(|e| format!("Failed to close dest: {e}"))?;
+        Ok(total)
     }
 
     pub fn clone_sessions(&self) -> Arc<Mutex<HashMap<String, SftpSession>>> {
