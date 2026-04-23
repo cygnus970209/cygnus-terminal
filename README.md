@@ -7,148 +7,205 @@
 
 # Cygnus Terminal
 
-**Server Cockpit** - A modern and simple SSH terminal client that remembers your servers.
+**An all-in-one terminal for developers** — terminal, SFTP, monitoring, and port forwarding in a single window.
 
-Cygnus is not just another SSH client. It builds a persistent relationship with every server you connect to -- remembering your command history, bookmarked paths, frequently used snippets, and server health metrics. All in a lightweight ~30MB native binary.
-
-## Motivation
-
-I'm a backend developer who works with SSH daily. I kept thinking "this could be a bit more convenient" while switching between tools. Around the same time, I wanted to learn Rust -- so I combined the two and started building this as a side project. It's still rough around the edges, but it's been a great way to learn.
+Cygnus handles SSH, Telnet, and Serial in one place, and remembers per-server command history, bookmarks, and snippets. Ships as a ~30MB native binary.
 
 ---
 
-## Why Cygnus?
+## Motivation
 
-| Pain Point | Cygnus Solution |
-|---|---|
-| Switching between terminal, SFTP client, and monitoring tools | All-in-one: terminal + file manager + monitor |
-| Forgetting commands you ran last week on a server | Per-server command history with search |
-| Typing the same deploy commands repeatedly | Command bookmarks + snippet library |
-| No idea if the server is healthy before running commands | Real-time CPU/RAM/Disk monitoring |
-| Managing SSH tunnels via command line | Visual port forwarding manager |
+I'm a backend developer who lives in SSH sessions. Small frustrations piled up over the years, and around the same time I wanted to learn Rust, so I started this as a side project. Still rough around the edges, but it has been a great learning playground.
 
-## Features
+---
 
-### Core Terminal
-- Multi-tab SSH & local shell sessions
-- xterm.js with 256-color support and Catppuccin theme
-- RSA-SHA2 / Ed25519 / ECDSA key authentication
-- Jump Host (ProxyJump) support
-- SSH Agent Forwarding
-- Known Hosts verification
+## ✨ Features
 
-### Server Memory
-- **Command History** -- auto-captured per server, searchable, tab-completion aware
-- **Command Bookmarks** -- save frequently used commands per server
-- **Path Bookmarks** -- one-click `cd` to saved directories
-- **Snippet Library** -- global command templates with categories
+### 🖥 Multi-Protocol Terminal
 
-### File Management
-- **SFTP File Tree** -- browse remote files with breadcrumb navigation
-- **Drag & Drop Upload** -- drop files onto the tree to upload
-- **Download** -- right-click any file to save locally
-- **cd Tracking** -- file tree follows your terminal directory changes
+Multiple protocols share the same tab bar. Jump between sessions with ⌘+number.
 
-### Server Monitoring
-- **Real-time Metrics** -- CPU, RAM, Disk usage with color-coded gauges
-- **Load Average & Uptime** -- at a glance
-- **Non-intrusive** -- runs on a separate SSH channel, no terminal interference
+- **SSH** — RSA-SHA2 / Ed25519 / ECDSA key auth, Jump Host (ProxyJump), Agent Forwarding, Known Hosts verification
+- **Telnet** — for legacy gear
+- **Serial (COM/TTY)** — router and embedded debugging, baud rate presets (9600 to 921600)
+- **Local PTY** — your system shell
+- xterm.js based, 256-color, Catppuccin theme, native ⌘C/V clipboard
 
-### Port Forwarding
-- **Visual Manager** -- add/remove forwards with a click
-- **Local Forward** -- `localhost:port` tunneled through SSH to remote
-- **Live Status** -- see active/stopped state
+### 🧠 Server Memory
 
-### Multi-Tail Log Viewer
-- Monitor multiple log files simultaneously
-- Tabbed view with auto-scroll
-- Separate SSH channels per log stream
+Each server keeps its own workflow context, so you don't lose what you ran last week on prod.
 
-### Data & Settings
-- **AES-256-GCM Encryption** -- passwords secured with OS Keychain master key
-- **Export/Import** -- backup profiles and bookmarks as JSON
-- **Resizable Panels** -- drag to resize, collapse with one click
+- **Command History** — auto-captured per server, searchable, prompt-pattern aware
+- **Command Bookmarks** — save deploy/restart one-liners per server
+- **Path Bookmarks** — one-click `cd` to saved directories
+- **Snippet Library** — global templates with categories
 
-## Tech Stack
+### 📂 SFTP — Dual-Panel File Manager
+
+Pops out into its own window with a dual-panel layout. Either side can host local or remote, and dragging moves files across.
+
+- **Dual Panel** — local↔local, remote↔remote, local↔remote, and **server↔server** transfers
+- **Drag & Drop** — Finder ↔ panel both ways, panel ↔ panel both ways
+- **Context Menu** — right-click for upload, download, rename, delete; multi-select supported
+- **Transfer Dock** — progress, throughput, and a cancel button per job
+- **Conflict Dialog** — Keep Both / Replace / Skip on name clashes, decided per file when transferring folders
+- **Folder Sync** — local↔remote synchronization with a diff preview before execution
+- **Local Editor Integration** — open a remote file in your local editor; saving auto-uploads via a file watcher
+
+### 📊 Server Monitor
+
+Glance at server health before you run commands. Runs on a dedicated SSH channel so the terminal stays untouched.
+
+- **Real-time Metrics** — CPU, RAM, Disk usage with color-coded gauges
+- **Load Average / Uptime** — at a glance
+- Toggle from the StatusBar drawer (⌘1)
+
+### 🔀 Port Forwarding
+
+Visual manager for SSH tunnels.
+
+- **Local Forward** — `localhost:port` routed through SSH to a remote service
+- **Live Status** — active / stopped indicator
+
+### 📜 Multi-Tail Log Viewer
+
+Stream multiple log files side by side. Each log gets its own SSH channel.
+
+- Per-tab auto-scroll
+- Lives in the StatusBar drawer Logs tab (⌘3)
+
+### ⚡ Workflow & UX
+
+- **Command Palette** (⌘K) — switch tabs, connect profiles, fire snippets, search command history from one input
+- **macOS Menu Integration** — toggle Server Context, File Tree, and drawer panels from the View menu
+- **Resizable Panels** — drag to resize, one click to collapse
+- **Cygnus Blue** design system — Catppuccin Mocha base with a developer-cockpit feel
+
+### 🔐 Security & Sync
+
+- **AES-256-GCM** master key stored in the OS Keychain (macOS Keychain / Windows Credential Manager)
+- **Export / Import** — back up profiles, bookmarks, and snippets as JSON
+- **Auto Update** — when a new release lands on GitHub, the app surfaces it and replaces itself in place
+
+---
+
+## 🛠 Tech Stack
 
 | Layer | Technology |
 |---|---|
-| Framework | Tauri 2.0 |
-| Backend | Rust (russh, rusqlite, aes-gcm, keyring) |
+| Framework | Tauri 2.0 (WKWebView / WebView2) |
+| Backend | Rust — `russh`, `russh-sftp`, `rusqlite`, `aes-gcm`, `keyring`, `serialport` |
 | Frontend | React 19 + TypeScript |
 | Terminal | xterm.js 6.0 |
 | Database | SQLite (WAL mode, versioned migrations) |
-| SFTP | russh-sftp |
-| Build | Vite 7 |
+| Build / Release | Vite 7, GitHub Actions, Tauri Updater (minisign) |
 
-## Architecture
+## 🏗 Architecture
 
 ```
 +------------------------------------------+
 |              React Frontend              |
-|  TabBar | Terminal | FileTree | Monitor  |
+|  TabBar | Terminal | SFTP popout |       |
+|  CommandPalette | StatusBar drawer       |
 +------------------+-----+-----------------+
                    | IPC |
 +------------------+-----+-----------------+
 |              Rust Backend                |
-|  SSH  | PTY | SFTP | Monitor | Forward   |
-|  DB (SQLite) | Crypto (AES+Keychain)     |
+|  PTY | SSH | Telnet | Serial | SFTP      |
+|  Monitor | Forward | Tail | Watcher      |
+|  Sync | Transfer Queue                   |
+|  DB (SQLite) | Crypto (AES + Keychain)   |
 +------------------------------------------+
 ```
 
-## Getting Started
+---
 
-### Prerequisites
+## 🚀 Getting Started
 
-- [Rust](https://rustup.rs/) 1.75+
-- [Node.js](https://nodejs.org/) 18+
-- [Tauri CLI](https://tauri.app/start/)
+### Users (download a binary)
+
+Grab the installer for your OS from [Releases](https://github.com/cygnus970209/cygnus-terminal/releases/latest).
+
+- macOS (Apple Silicon): `.dmg` or `.app.tar.gz`
+- Windows (x64): `.msi` or `.exe`
+
+> If macOS blocks the first launch as a "damaged" file:
+> ```bash
+> xattr -rd com.apple.quarantine /Applications/cygnus-terminal.app
+> ```
 
 ### Development
 
+#### Prerequisites
+
+- [Rust](https://rustup.rs/) 1.75+
+- [Node.js](https://nodejs.org/) 18+ (or [Bun](https://bun.sh/))
+
+#### Run
+
 ```bash
 # Install dependencies
-npm install
+npm install   # or: bun install
 
 # Run in development mode
 npm run tauri dev
 
-# Build for production
+# Production build
 npm run tauri build
 ```
 
-### Project Structure
+---
+
+## 📁 Project Structure
 
 ```
 src/                          # React frontend
-  types/                      # Shared TypeScript types
   components/
-    terminal/                 # Terminal, MonitorBar, LogViewer
-    connection/               # ConnectDialog, ConnectionsView, ServerContext
-    files/                    # FileTree (SFTP)
-    common/                   # TabBar, ResizablePanel, Settings
-    snippets/                 # SnippetsView
+    terminal/                 # xterm + session handlers
+    sftp/                     # SftpView, FilePanel, ConflictDialog
+    files/                    # FileTree (in-app sidebar)
+    connection/               # ConnectDialog, ServerContext
+    common/                   # CommandPalette, StatusBar, UpdateBanner ...
+    snippets/                 # SnippetsView (surfaced via Command Palette)
 
 src-tauri/                    # Rust backend
   src/
-    commands/                 # Tauri IPC commands (pty, ssh, profile, services)
-    ssh/                      # SSH connection manager
-    db/                       # SQLite (profiles, history, bookmarks, snippets)
-    sftp/                     # SFTP file operations
-    monitor/                  # Server metrics collection
-    forward/                  # Port forwarding
-    tail/                     # Log file streaming
+    commands/                 # Tauri IPC commands
+    ssh/  telnet/  serial/    # protocol session managers
+    pty/                      # local shell
+    sftp/                     # SFTP handles + directory ops
+    transfer/                 # chunked upload/download queue
+    sync/                     # local↔remote folder diff (compute_diff)
+    monitor/                  # CPU/RAM/Disk collector
+    forward/                  # port forwarding
+    tail/                     # log file streaming
+    watcher/                  # local file watcher → auto-upload
     crypto/                   # AES-256-GCM + OS Keychain
-    pty/                      # Local shell (PTY)
+    db/                       # SQLite + migrations
 ```
 
-## Roadmap
+---
 
-- [ ] UI/UX improvements
-- [ ] AI Assistant (error log analysis, natural language to commands)
-- [ ] SFTP enhancements (drag between servers, directory sync)
-- [ ] Telnet protocol support
-- [ ] Serial port (COM/TTY) support
+## 🗺 Roadmap
+
+**Recently shipped**
+- ✓ Telnet protocol
+- ✓ Serial port (COM/TTY)
+- ✓ SFTP dual panel + Transfer Dock + Conflict Dialog
+- ✓ Folder sync (local↔remote with diff preview)
+- ✓ Auto-updater + GitHub Releases CI
+- ✓ Command Palette (⌘K)
+- ✓ Local editor integration with file-watcher auto-upload
+
+**Next up**
+- [ ] Password Manager — profile-aware auto-detect for sudo / mysql / passphrase prompts
+- [ ] Apple code signing & notarization
+- [ ] Linux build (.deb / AppImage)
+- [ ] Persistent background port forwarding
+- [ ] AI assistant — error log analysis, natural language to commands
+- [ ] Team-shared profile vault (E2E encrypted, git-backed)
+
+---
 
 ## License
 
