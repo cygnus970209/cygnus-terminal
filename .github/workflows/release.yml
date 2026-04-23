@@ -54,10 +54,13 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # 서명/공증 관련 시크릿은 선택. 없으면 un-signed bundle 생성.
-          # macOS: APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
-          #        APPLE_ID, APPLE_TEAM_ID, APPLE_PASSWORD (app-specific pwd)
-          # Windows: WINDOWS_CERTIFICATE, WINDOWS_CERTIFICATE_PASSWORD
+          # Updater artifact 서명용 — Settings → Secrets 에 TAURI_SIGNING_PRIVATE_KEY /
+          # TAURI_SIGNING_PRIVATE_KEY_PASSWORD 두 개 등록 필요.
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # (선택) OS 레벨 code signing 시크릿은 나중에:
+          # APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
+          # APPLE_ID, APPLE_TEAM_ID, APPLE_PASSWORD, WINDOWS_CERTIFICATE, ...
         with:
           tagName: ${{ inputs.tag || github.ref_name }}
           releaseName: 'Cygnus Terminal ${{ inputs.tag || github.ref_name }}'
@@ -66,6 +69,10 @@ jobs:
 
             - macOS (Apple Silicon): `.dmg` or `.app.tar.gz`
             - Windows (x64): `.msi` or `.exe`
+
+            이미 설치된 버전이 있다면 앱 내 업데이터가 자동으로 업그레이드합니다.
           releaseDraft: true
           prerelease: false
+          includeUpdaterJson: true
+          updaterJsonPreferNsis: false
           args: ${{ matrix.bundle-args }}

@@ -32,7 +32,15 @@ use tauri::{Emitter, Manager};
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+    // updater + process 는 desktop 전용. 모바일 빌드에 포함 안 되게 cfg 가드.
+    #[cfg(desktop)]
+    {
+        builder = builder
+            .plugin(tauri_plugin_updater::Builder::new().build())
+            .plugin(tauri_plugin_process::init());
+    }
+    builder
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_drag::init())
@@ -55,6 +63,9 @@ pub fn run() {
                 }
                 "toggle-logs" => {
                     let _ = app.emit("toggle-drawer", "logs");
+                }
+                "updater-check" => {
+                    let _ = app.emit("updater-check", ());
                 }
                 _ => {}
             }
@@ -87,6 +98,9 @@ pub fn run() {
             let toggle_logs = MenuItemBuilder::with_id("toggle-logs", "Logs")
                 .accelerator("CmdOrCtrl+3")
                 .build(app)?;
+            let updater_check =
+                MenuItemBuilder::with_id("updater-check", "Check for Updates...")
+                    .build(app)?;
             let view_submenu = SubmenuBuilder::new(app, "View")
                 .item(&toggle_server_ctx)
                 .item(&toggle_file_tree)
@@ -94,6 +108,8 @@ pub fn run() {
                 .item(&toggle_monitor)
                 .item(&toggle_transfers)
                 .item(&toggle_logs)
+                .separator()
+                .item(&updater_check)
                 .build()?;
             let menu = MenuBuilder::new(app)
                 .item(&preferences)

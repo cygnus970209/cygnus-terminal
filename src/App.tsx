@@ -15,6 +15,7 @@ import { useServerStats } from "./hooks/useServerStats";
 import CommandPalette, { PaletteItem } from "./components/common/CommandPalette";
 import InputDialog from "./components/sftp/InputDialog";
 import SerialConnectDialog, { SerialPortInfo } from "./components/common/SerialConnectDialog";
+import UpdateBanner from "./components/common/UpdateBanner";
 import { message } from "@tauri-apps/plugin-dialog";
 import ConnectionsView from "./components/connection/ConnectionsView";
 import ConnectDialog from "./components/connection/ConnectDialog";
@@ -552,6 +553,7 @@ function App() {
 
   return (
     <div className="app">
+      <UpdateBanner />
       <TabBar
         tabs={tabs}
         activeTabId={activeTabId}

@@ -1,0 +1,81 @@
+.ub-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 14px;
+  background: linear-gradient(180deg, rgba(122, 162, 247, 0.18), rgba(122, 162, 247, 0.08));
+  border-bottom: 1px solid var(--accent);
+  font-size: 12px;
+  color: var(--text-primary);
+  position: relative;
+  flex-shrink: 0;
+}
+
+.ub-text {
+  flex: 1;
+}
+
+.ub-text strong {
+  color: var(--accent);
+  font-family: var(--font-mono);
+}
+
+.ub-meta {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.ub-err {
+  color: var(--error);
+}
+
+.ub-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.ub-btn {
+  border: 1px solid var(--border);
+  background: none;
+  color: var(--text-primary);
+  padding: 3px 12px;
+  font-size: 11px;
+  border-radius: var(--r-md);
+  cursor: pointer;
+  font-family: var(--font-sans);
+}
+
+.ub-btn-primary {
+  background: var(--accent);
+  color: var(--bg-primary);
+  border-color: var(--accent);
+}
+
+.ub-btn-primary:hover {
+  filter: brightness(1.08);
+}
+
+.ub-btn-ghost:hover {
+  border-color: var(--border-hover);
+}
+
+.ub-progress {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 2px;
+  background: transparent;
+}
+
+.ub-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 0.1s linear;
+}
+
+.ub-phase-error {
+  background: linear-gradient(180deg, rgba(243, 139, 168, 0.18), rgba(243, 139, 168, 0.06));
+  border-bottom-color: var(--error);
+}
