@@ -50,6 +50,18 @@ jobs:
       - name: Install frontend deps
         run: bun install --frozen-lockfile
 
+      # DEBUG: Secret 이 실제 저장된 길이 확인 — 값 자체는 마스킹되지만 길이는 찍힘.
+      # 로컬 `printf '%s' '비번' | wc -c` 와 비교해 1~2 바이트 차이면 trailing newline / 공백.
+      # 원인 확인되면 이 step 지워도 됨.
+      - name: Debug secret lengths
+        shell: bash
+        run: |
+          echo "key bytes: ${#TAURI_KEY}"
+          echo "pwd bytes: ${#TAURI_PWD}"
+        env:
+          TAURI_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_PWD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+
       - name: Build Tauri bundle
         uses: tauri-apps/tauri-action@v0
         env:
