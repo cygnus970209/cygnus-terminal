@@ -5,6 +5,7 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { SshConfig } from "../../types";
+import { extractCommand } from "../../utils/promptParser";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalProps {
@@ -247,16 +248,16 @@ export default function Terminal({
             const cursorLine = buffer.cursorY + buffer.baseY;
             const line = buffer.getLine(cursorLine);
             if (line) {
-              const text = line.translateToString(true).trim();
-              // 다양한 프롬프트 패턴: $, #, >, %, ❯, →, ), ] 뒤의 텍스트
-              const promptMatch = text.match(/[$#>%❯→\])\x1b]*\s+(.+)/)
-                || text.match(/[$#>%]\s*(.+)/);
-              let cmd = promptMatch ? promptMatch[1].trim() : "";
-              // 프롬프트 없이 커서 위치 기반 fallback
+              const text = line.translateToString(true);
+              // Right-most prompt 종결 문자(`$ # > % ❯ →`) 뒤의 명령어만 추출.
+              // Amazon Linux 식 `[ec2-user@host ~]$ ls` 처럼 prompt 안에 공백이 있어도
+              // 잘리지 않는다. 자세한 정규식 근거는 utils/promptParser.ts 주석 참조.
+              let cmd = extractCommand(text) ?? "";
+              // prompt regex 가 실패하면 cursor 위치 기반 fallback (PS1 에 prompt 종결 문자가
+              // 없는 비표준 환경 대비). 이 경로에서는 prompt 잔여물이 남을 수 있어 보수적으로만 사용.
               if (!cmd && buffer.cursorX > 0) {
                 const cursorPos = buffer.cursorX;
                 const rawText = line.translateToString(false);
-                // 커서 위치까지의 텍스트에서 마지막 공백 이후 추출 시도
                 const beforeCursor = rawText.substring(0, cursorPos).trim();
                 if (beforeCursor.length > 0) {
                   cmd = beforeCursor;

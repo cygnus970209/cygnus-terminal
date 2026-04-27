@@ -143,7 +143,10 @@ export default function ConnectDialog({
     e?.preventDefault?.();
     if (!host || !username) return;
 
-    await handleSave();
+    // 새 프로필을 저장한 경우 그 id 를 SshConfig 에 실어 보낸다.
+    // profileId 가 비면 App 의 ServerContext (left sidebar) 가 conditional render
+    // 단계에서 떨어져 첫 접속 시 패널이 안 뜨는 회귀를 만든다.
+    const saved = await handleSave();
 
     onConnect({
       host,
@@ -152,6 +155,7 @@ export default function ConnectDialog({
       authType,
       password: authType === "password" ? password : undefined,
       keyPath: authType === "key" ? keyPath : undefined,
+      profileId: isEdit ? editProfile?.id : saved?.id,
       jumpHost: buildJumpHostConfig(),
       agentForward,
     });
