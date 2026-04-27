@@ -1,10 +1,10 @@
-import { useState, useCallback, useRef, useEffect, useMemo } from "react";
-import { invoke, Channel } from "@tauri-apps/api/core";
-import { listen, emit } from "@tauri-apps/api/event";
+import { useState, useCallback, useRef, useEffect } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { emit } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { Profile, SshConfig, Tab } from "./types";
 import TransferDock from "./components/sftp/TransferDock";
-import { TransferEvent, TransferJob } from "./types/sftp";
+import { TransferJob } from "./types/sftp";
 import TabBar from "./components/common/TabBar";
 import ResizablePanel from "./components/common/ResizablePanel";
 import SettingsDialog from "./components/common/SettingsDialog";
@@ -13,6 +13,9 @@ import LogViewer from "./components/terminal/LogViewer";
 import MonitorPanel from "./components/terminal/MonitorPanel";
 import StatusBar, { DrawerTab } from "./components/common/StatusBar";
 import { useServerStats } from "./hooks/useServerStats";
+import { useInvokeState } from "./hooks/useInvokeState";
+import { useTauriListener } from "./hooks/useTauriListener";
+import { useTransferChannel } from "./hooks/useTransferChannel";
 import CommandPalette, { PaletteItem } from "./components/common/CommandPalette";
 import InputDialog from "./components/sftp/InputDialog";
 import SerialConnectDialog, { SerialPortInfo } from "./components/common/SerialConnectDialog";
@@ -67,9 +70,11 @@ function App() {
   const [serialPorts, setSerialPorts] = useState<SerialPortInfo[] | null>(null);
   // SSH host key 확인 큐. 연속 연결 시 여러 개가 쌓일 수 있어 FIFO 로 하나씩 처리.
   const [hostKeyPrompts, setHostKeyPrompts] = useState<HostKeyPromptPayload[]>([]);
-  const [paletteSnippets, setPaletteSnippets] = useState<
-    { id: number; title: string; command: string; category: string }[]
-  >([]);
+  const { data: paletteSnippets, reload: reloadPaletteSnippets } =
+    useInvokeState<{ id: number; title: string; command: string; category: string }[]>(
+      "list_snippets",
+      []
+    );
 
   // 글로벌 단축키: Cmd/Ctrl+K 로 Command Palette 토글
   useEffect(() => {
@@ -86,71 +91,52 @@ function App() {
   // Palette 열릴 때마다 최신 snippets 로드
   useEffect(() => {
     if (!showPalette) return;
-    invoke<{ id: number; title: string; command: string; category: string }[]>(
-      "list_snippets",
-      { query: null },
-    )
-      .then((list) => setPaletteSnippets(list))
-      .catch(() => setPaletteSnippets([]));
-  }, [showPalette]);
+    reloadPaletteSnippets({ query: null });
+  }, [showPalette, reloadPaletteSnippets]);
 
   // macOS 메뉴 "Preferences" + View 서브메뉴 이벤트 수신
-  useEffect(() => {
-    const unlistenSettings = listen("open-settings", () => setShowSettings(true));
-    const unlistenLeft = listen("toggle-server-ctx", () => setLeftCollapsed((v) => !v));
-    const unlistenRight = listen("toggle-file-tree", () => setRightCollapsed((v) => !v));
-    const unlistenDrawer = listen<string>("toggle-drawer", (e) => {
-      const tab = e.payload as DrawerTab;
-      setDrawerTab((cur) => (cur === tab ? null : tab));
-    });
-    return () => {
-      unlistenSettings.then((f) => f());
-      unlistenLeft.then((f) => f());
-      unlistenRight.then((f) => f());
-      unlistenDrawer.then((f) => f());
-    };
-  }, []);
+  useTauriListener("open-settings", () => setShowSettings(true));
+  useTauriListener("toggle-server-ctx", () => setLeftCollapsed((v) => !v));
+  useTauriListener("toggle-file-tree", () => setRightCollapsed((v) => !v));
+  useTauriListener<string>("toggle-drawer", (e) => {
+    const tab = e.payload as DrawerTab;
+    setDrawerTab((cur) => (cur === tab ? null : tab));
+  });
 
   // SSH host key 이벤트 구독:
   //  - ssh-host-key-prompt: 처음 보는 호스트. 확인 다이얼로그로 사용자 승인 필요.
   //  - ssh-host-key-rejected: 변경/DB 에러/사용자 거절로 인해 연결이 차단됨.
-  useEffect(() => {
-    const unlistenPrompt = listen<HostKeyPromptPayload>("ssh-host-key-prompt", (e) => {
-      setHostKeyPrompts((prev) => [...prev, e.payload]);
-    });
-    const unlistenRejected = listen<{
-      host: string;
-      port: number;
-      reason: string;
-      stored_type?: string;
-      new_type?: string;
-      new_fingerprint?: string;
-      detail?: string;
-    }>("ssh-host-key-rejected", (e) => {
-      const p = e.payload;
-      if (p.reason === "changed") {
-        message(
-          `⚠️ Host key CHANGED for ${p.host}:${p.port}\n\n` +
-            `Previously trusted: ${p.stored_type}\n` +
-            `Now presenting:     ${p.new_type}\n` +
-            `New fingerprint:    ${p.new_fingerprint}\n\n` +
-            `This may indicate a man-in-the-middle attack. The connection was refused.\n\n` +
-            `If you know the server key was rotated legitimately, remove the old entry from the known hosts DB and reconnect.`,
-          { title: "SSH Host Key Changed", kind: "error" },
-        ).catch(() => {});
-      } else if (p.reason === "db_error") {
-        message(
-          `Could not verify host key for ${p.host}:${p.port} (${p.detail}). Connection refused.`,
-          { title: "SSH Verification Failed", kind: "error" },
-        ).catch(() => {});
-      }
-      // user_rejected_or_timeout 은 사용자 의도이므로 별도 알림 없음.
-    });
-    return () => {
-      unlistenPrompt.then((f) => f());
-      unlistenRejected.then((f) => f());
-    };
-  }, []);
+  useTauriListener<HostKeyPromptPayload>("ssh-host-key-prompt", (e) => {
+    setHostKeyPrompts((prev) => [...prev, e.payload]);
+  });
+  useTauriListener<{
+    host: string;
+    port: number;
+    reason: string;
+    stored_type?: string;
+    new_type?: string;
+    new_fingerprint?: string;
+    detail?: string;
+  }>("ssh-host-key-rejected", (e) => {
+    const p = e.payload;
+    if (p.reason === "changed") {
+      message(
+        `⚠️ Host key CHANGED for ${p.host}:${p.port}\n\n` +
+          `Previously trusted: ${p.stored_type}\n` +
+          `Now presenting:     ${p.new_type}\n` +
+          `New fingerprint:    ${p.new_fingerprint}\n\n` +
+          `This may indicate a man-in-the-middle attack. The connection was refused.\n\n` +
+          `If you know the server key was rotated legitimately, remove the old entry from the known hosts DB and reconnect.`,
+        { title: "SSH Host Key Changed", kind: "error" },
+      ).catch(() => {});
+    } else if (p.reason === "db_error") {
+      message(
+        `Could not verify host key for ${p.host}:${p.port} (${p.detail}). Connection refused.`,
+        { title: "SSH Verification Failed", kind: "error" },
+      ).catch(() => {});
+    }
+    // user_rejected_or_timeout 은 사용자 의도이므로 별도 알림 없음.
+  });
 
   // 현재 활성 탭이 SSH 세션이면 stats 폴링 활성화
   const currentTabForStats = tabs.find((t) => t.id === activeTabId);
@@ -162,43 +148,11 @@ function App() {
   // 전역 Transfer state. FileTree 의 다운로드/업로드가 TransferManager 큐를 타게 하고
   // 진행률·속도·ETA 를 하단 Dock 에서 공유한다. SFTP popout 윈도우는 별도 인스턴스라
   // 자기 Channel 을 쓰고, 여기는 메인 윈도우 전용.
-  const [transferJobs, setTransferJobs] = useState<TransferJob[]>([]);
   // 업로드/다운로드 완료 시 FileTree 가 현재 디렉토리를 리로드하도록 증가시키는 카운터.
   const [fileTreeRefreshKey, setFileTreeRefreshKey] = useState(0);
-  const transferChannel = useMemo(() => {
-    const ch = new Channel<TransferEvent>();
-    ch.onmessage = (event) => {
-      if (event.type === "QueueUpdate") {
-        setTransferJobs(event.data);
-      } else if (event.type === "Progress") {
-        const { job_id, transferred_bytes, speed_bps } = event.data;
-        setTransferJobs((prev) =>
-          prev.map((j) =>
-            j.id === job_id
-              ? { ...j, transferred_bytes, speed_bps, status: "running" }
-              : j,
-          ),
-        );
-      } else if (event.type === "Completed") {
-        setTransferJobs((prev) =>
-          prev.map((j) =>
-            j.id === event.data ? { ...j, status: "completed" } : j,
-          ),
-        );
-        setFileTreeRefreshKey((k) => k + 1);
-      } else if (event.type === "Failed") {
-        setTransferJobs((prev) =>
-          prev.map((j) =>
-            j.id === event.data.job_id
-              ? { ...j, status: "failed", error: event.data.error }
-              : j,
-          ),
-        );
-      }
-    };
-    return ch;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const { transferJobs, setTransferJobs, transferChannel } = useTransferChannel({
+    onCompleted: () => setFileTreeRefreshKey((k) => k + 1),
+  });
 
   // Channel 유실(HMR reload 등) 복구용 polling
   useEffect(() => {
@@ -252,20 +206,17 @@ function App() {
   }, [tabs, sessionMap, sftpSessions]);
 
   // popout이 뒤늦게 뜰 때 최신 스냅샷을 요청하면 재발송.
-  useEffect(() => {
-    const unlisten = listen("sftp-sessions-request", () => {
-      const list = tabs
-        .filter((t) => t.type === "ssh" && sessionMap[t.id] && sftpSessions[sessionMap[t.id]])
-        .map((t) => ({
-          id: sessionMap[t.id],
-          sftpId: sftpSessions[sessionMap[t.id]].sftpId,
-          label: t.title,
-          homePath: sftpSessions[sessionMap[t.id]].homePath,
-        }));
-      emit("sftp-sessions", list);
-    });
-    return () => { unlisten.then((f) => f()); };
-  }, [tabs, sessionMap, sftpSessions]);
+  useTauriListener("sftp-sessions-request", () => {
+    const list = tabs
+      .filter((t) => t.type === "ssh" && sessionMap[t.id] && sftpSessions[sessionMap[t.id]])
+      .map((t) => ({
+        id: sessionMap[t.id],
+        sftpId: sftpSessions[sessionMap[t.id]].sftpId,
+        label: t.title,
+        homePath: sftpSessions[sessionMap[t.id]].homePath,
+      }));
+    emit("sftp-sessions", list);
+  });
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const activeProfileId = activeTab?.sshConfig?.profileId ?? null;

@@ -7,6 +7,7 @@ import {
   PortForward,
 } from "../../types/server-context";
 import { HISTORY_REFRESH_INTERVAL_MS } from "../../constants";
+import { useInvokeState } from "../../hooks/useInvokeState";
 import "./ServerContext.css";
 
 interface ServerContextProps {
@@ -25,17 +26,13 @@ export default function ServerContext({
   onCaptureCurrentPath,
 }: ServerContextProps) {
   const [activeTab, setActiveTab] = useState<TabType>("history");
-  const [history, setHistory] = useState<CommandHistoryEntry[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
-  const [commandBookmarks, setCommandBookmarks] = useState<CommandBookmark[]>([]);
-  const [pathBookmarks, setPathBookmarks] = useState<PathBookmark[]>([]);
   const [newBookmarkCmd, setNewBookmarkCmd] = useState("");
   const [newBookmarkLabel, setNewBookmarkLabel] = useState("");
   const [showAddBookmark, setShowAddBookmark] = useState(false);
   const [newPath, setNewPath] = useState("");
   const [newPathLabel, setNewPathLabel] = useState("");
   const [showAddPath, setShowAddPath] = useState(false);
-  const [forwards, setForwards] = useState<PortForward[]>([]);
   const [showAddForward, setShowAddForward] = useState(false);
   const [fwdLocalPort, setFwdLocalPort] = useState("");
   const [fwdRemoteHost, setFwdRemoteHost] = useState("localhost");
@@ -47,54 +44,28 @@ export default function ServerContext({
     entry: CommandHistoryEntry;
   } | null>(null);
 
-  const loadHistory = useCallback(async () => {
-    try {
-      const entries = await invoke<CommandHistoryEntry[]>(
-        "search_command_history",
-        {
-          profileId,
-          query: searchQuery || null,
-          limit: 100,
-        }
-      );
-      setHistory(entries);
-    } catch (err) {
-      console.error("Failed to load history:", err);
-    }
-  }, [profileId, searchQuery]);
+  const { data: history, reload: reloadHistory } =
+    useInvokeState<CommandHistoryEntry[]>("search_command_history", []);
+  const { data: commandBookmarks, reload: reloadCommandBookmarks } =
+    useInvokeState<CommandBookmark[]>("list_command_bookmarks", []);
+  const { data: pathBookmarks, reload: reloadPathBookmarks } =
+    useInvokeState<PathBookmark[]>("list_path_bookmarks", []);
+  const { data: forwards, reload: reloadForwards } =
+    useInvokeState<PortForward[]>("forward_list", []);
 
-  const loadCommandBookmarks = useCallback(async () => {
-    try {
-      const bookmarks = await invoke<CommandBookmark[]>(
-        "list_command_bookmarks",
-        { profileId }
-      );
-      setCommandBookmarks(bookmarks);
-    } catch (err) {
-      console.error("Failed to load command bookmarks:", err);
-    }
-  }, [profileId]);
-
-  const loadPathBookmarks = useCallback(async () => {
-    try {
-      const bookmarks = await invoke<PathBookmark[]>(
-        "list_path_bookmarks",
-        { profileId }
-      );
-      setPathBookmarks(bookmarks);
-    } catch (err) {
-      console.error("Failed to load path bookmarks:", err);
-    }
-  }, [profileId]);
-
-  const loadForwards = useCallback(async () => {
-    try {
-      const list = await invoke<PortForward[]>("forward_list");
-      setForwards(list);
-    } catch (err) {
-      console.error("Failed to load forwards:", err);
-    }
-  }, []);
+  const loadHistory = useCallback(
+    () => reloadHistory({ profileId, query: searchQuery || null, limit: 100 }),
+    [reloadHistory, profileId, searchQuery]
+  );
+  const loadCommandBookmarks = useCallback(
+    () => reloadCommandBookmarks({ profileId }),
+    [reloadCommandBookmarks, profileId]
+  );
+  const loadPathBookmarks = useCallback(
+    () => reloadPathBookmarks({ profileId }),
+    [reloadPathBookmarks, profileId]
+  );
+  const loadForwards = useCallback(() => reloadForwards(), [reloadForwards]);
 
   useEffect(() => {
     if (activeTab === "history") loadHistory();

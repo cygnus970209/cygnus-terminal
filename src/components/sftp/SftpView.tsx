@@ -12,7 +12,8 @@ import ConflictDialog, { ConflictAction, ConflictResolution } from "./ConflictDi
 import InputDialog from "./InputDialog";
 import SyncDialog from "./SyncDialog";
 import { Profile } from "../../types";
-import { FileEntry, TransferEvent, TransferJob } from "../../types/sftp";
+import { FileEntry, TransferJob } from "../../types/sftp";
+import { useTransferChannel } from "../../hooks/useTransferChannel";
 import "./SftpView.css";
 
 interface SftpViewProps {
@@ -138,7 +139,6 @@ export default function SftpView({
   }, [localHome]);
 
   const [focused, setFocused] = useState<"left" | "right">("left");
-  const [transferJobs, setTransferJobs] = useState<TransferJob[]>([]);
   const [toast, setToast] = useState<string | null>(null);
   const [showSync, setShowSync] = useState(false);
   const [ctxMenu, setCtxMenu] = useState<{
@@ -259,49 +259,20 @@ export default function SftpView({
   }, []);
 
   // Transfer Channel (컴포넌트 생애 동안 유지)
-  const transferChannel = useMemo(() => {
-    const ch = new Channel<TransferEvent>();
-    ch.onmessage = (event) => {
-      if (event.type === "QueueUpdate") {
-        setTransferJobs(event.data);
-      } else if (event.type === "Progress") {
-        const { job_id, transferred_bytes, speed_bps } = event.data;
-        setTransferJobs((prev) =>
-          prev.map((j) =>
-            j.id === job_id
-              ? { ...j, transferred_bytes, speed_bps, status: "running" }
-              : j,
-          ),
-        );
-      } else if (event.type === "Completed") {
-        setTransferJobs((prev) =>
-          prev.map((j) =>
-            j.id === event.data ? { ...j, status: "completed" } : j,
-          ),
-        );
-        // drag-out 준비 완료 알림
-        const remotePath = pendingDragJobsRef.current.get(event.data);
-        if (remotePath) {
-          pendingDragJobsRef.current.delete(event.data);
-          const name = remotePath.split("/").pop() || remotePath;
-          showToast(`Drag ready: ${name} — drag it now from the list`);
-        }
-        leftHandle.current?.refresh();
-        rightHandle.current?.refresh();
-      } else if (event.type === "Failed") {
-        setTransferJobs((prev) =>
-          prev.map((j) =>
-            j.id === event.data.job_id
-              ? { ...j, status: "failed", error: event.data.error }
-              : j,
-          ),
-        );
-        showToast(`Failed: ${event.data.error}`);
+  const { transferJobs, setTransferJobs, transferChannel } = useTransferChannel({
+    onCompleted: (jobId) => {
+      // drag-out 준비 완료 알림
+      const remotePath = pendingDragJobsRef.current.get(jobId);
+      if (remotePath) {
+        pendingDragJobsRef.current.delete(jobId);
+        const name = remotePath.split("/").pop() || remotePath;
+        showToast(`Drag ready: ${name} — drag it now from the list`);
       }
-    };
-    return ch;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+      leftHandle.current?.refresh();
+      rightHandle.current?.refresh();
+    },
+    onFailed: (_jobId, error) => showToast(`Failed: ${error}`),
+  });
 
   const handleCancelTransfer = useCallback(async (jobId: string) => {
     try {

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { check, Update, DownloadEvent } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { listen } from "@tauri-apps/api/event";
+import { useTauriListener } from "../../hooks/useTauriListener";
 import "./UpdateBanner.css";
 
 type Phase = "idle" | "checking" | "available" | "downloading" | "ready" | "error";
@@ -56,12 +56,7 @@ export default function UpdateBanner() {
   }, []);
 
   // View 메뉴의 "Check for updates" 이벤트 구독 (수동)
-  useEffect(() => {
-    const un = listen("updater-check", () => runCheck(true));
-    return () => {
-      un.then((f) => f());
-    };
-  }, []);
+  useTauriListener("updater-check", () => runCheck(true));
 
   const handleInstall = async () => {
     if (!update) return;

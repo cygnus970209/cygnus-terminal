@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { listen } from "@tauri-apps/api/event";
+import { useTauriListener } from "../hooks/useTauriListener";
 import SftpView from "../components/sftp/SftpView";
 import SftpConnectView from "./SftpConnectView";
 import "../App.css";
@@ -49,16 +49,13 @@ export default function SftpPopoutApp({
   }, [session]);
 
   // 메인 윈도우가 emit 하는 세션 목록 구독
+  useTauriListener<AvailableSession[]>("sftp-sessions", (event) => {
+    setAvailable(event.payload);
+  });
   useEffect(() => {
-    const unlistenP = listen<AvailableSession[]>("sftp-sessions", (event) => {
-      setAvailable(event.payload);
-    });
     import("@tauri-apps/api/event").then(({ emit }) => {
       emit("sftp-sessions-request", {});
     });
-    return () => {
-      unlistenP.then((un) => un());
-    };
   }, []);
 
   if (!session) {
