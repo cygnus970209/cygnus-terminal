@@ -3,19 +3,16 @@ import { invoke, Channel } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { ask, save } from "@tauri-apps/plugin-dialog";
 import { startDrag } from "@crabnebula/tauri-plugin-drag";
-import FilePanel, {
-  DragPayload,
-  FileEntry,
-  FilePanelHandle,
-} from "./FilePanel";
+import FilePanel, { DragPayload, FilePanelHandle } from "./FilePanel";
 import { bumpName, joinPath } from "../../utils/path";
-import TransferDock, { TransferJob, TransferEvent } from "./TransferDock";
+import TransferDock from "./TransferDock";
 import Toolbar from "./Toolbar";
 import ContextMenu, { MenuItem } from "./ContextMenu";
 import ConflictDialog, { ConflictAction, ConflictResolution } from "./ConflictDialog";
 import InputDialog from "./InputDialog";
 import SyncDialog from "./SyncDialog";
 import { Profile } from "../../types";
+import { FileEntry, TransferEvent, TransferJob } from "../../types/sftp";
 import "./SftpView.css";
 
 interface SftpViewProps {

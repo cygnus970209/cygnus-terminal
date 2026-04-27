@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Profile, SshConfig, JumpHostConfig } from "../../types";
+import { DEFAULT_SSH_PORT } from "../../constants";
 import "./ConnectDialog.css";
 
 interface ConnectDialogProps {
@@ -54,7 +55,7 @@ export default function ConnectDialog({
           const jh = JSON.parse(editProfile.jump_host);
           setUseJumpHost(true);
           setJumpHost(jh.host || "");
-          setJumpPort(String(jh.port || 22));
+          setJumpPort(String(jh.port || DEFAULT_SSH_PORT));
           setJumpUsername(jh.username || "");
           setJumpAuthType(jh.auth_type || "password");
           setJumpKeyPath(jh.key_path || "");
@@ -71,7 +72,7 @@ export default function ConnectDialog({
     if (!useJumpHost || !jumpHost) return undefined;
     return JSON.stringify({
       host: jumpHost,
-      port: parseInt(jumpPort) || 22,
+      port: parseInt(jumpPort) || DEFAULT_SSH_PORT,
       username: jumpUsername,
       auth_type: jumpAuthType,
       password: jumpAuthType === "password" ? jumpPassword : undefined,
@@ -83,7 +84,7 @@ export default function ConnectDialog({
     if (!useJumpHost || !jumpHost) return undefined;
     return {
       host: jumpHost,
-      port: parseInt(jumpPort) || 22,
+      port: parseInt(jumpPort) || DEFAULT_SSH_PORT,
       username: jumpUsername,
       auth_type: jumpAuthType,
       password: jumpAuthType === "password" ? jumpPassword : undefined,
@@ -103,7 +104,7 @@ export default function ConnectDialog({
           req: {
             name: name || `${username}@${host}`,
             host,
-            port: parseInt(port) || 22,
+            port: parseInt(port) || DEFAULT_SSH_PORT,
             username,
             auth_type: authType,
             password: authType === "password" && password ? password : undefined,
@@ -120,7 +121,7 @@ export default function ConnectDialog({
           req: {
             name: name || `${username}@${host}`,
             host,
-            port: parseInt(port) || 22,
+            port: parseInt(port) || DEFAULT_SSH_PORT,
             username,
             auth_type: authType,
             password: authType === "password" ? password : undefined,
@@ -150,7 +151,7 @@ export default function ConnectDialog({
 
     onConnect({
       host,
-      port: parseInt(port) || 22,
+      port: parseInt(port) || DEFAULT_SSH_PORT,
       username,
       authType,
       password: authType === "password" ? password : undefined,

@@ -1,6 +1,6 @@
 import { ReactNode } from "react";
 import { ServerStats } from "../../hooks/useServerStats";
-import { TransferJob } from "../sftp/TransferDock";
+import { TransferJob } from "../../types/sftp";
 import "./StatusBar.css";
 
 export type DrawerTab = "monitor" | "transfers" | "logs" | null;

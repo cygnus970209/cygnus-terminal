@@ -1,6 +1,7 @@
 import { useState, useCallback } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { formatBytes } from "../../utils/format";
 import "./SyncDialog.css";
 
 interface SyncEntry {
@@ -25,13 +26,6 @@ interface SyncDialogProps {
   sftpId: string;
   remoteBasePath: string;
   onClose: () => void;
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
-  return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
 }
 
 export default function SyncDialog({ sftpId, remoteBasePath, onClose }: SyncDialogProps) {
@@ -169,7 +163,7 @@ export default function SyncDialog({ sftpId, remoteBasePath, onClose }: SyncDial
           {plan && (
             <div className="sync-plan">
               <div className="sync-plan-summary">
-                {plan.total_files} files, {formatSize(plan.total_bytes)}
+                {plan.total_files} files, {formatBytes(plan.total_bytes)}
               </div>
               <div className="sync-plan-list">
                 {plan.entries.map((e) => (
@@ -179,7 +173,7 @@ export default function SyncDialog({ sftpId, remoteBasePath, onClose }: SyncDial
                     </span>
                     <span className="sync-path">{e.relative_path}</span>
                     <span className="sync-reason">{e.reason}</span>
-                    <span className="sync-size">{formatSize(e.size)}</span>
+                    <span className="sync-size">{formatBytes(e.size)}</span>
                   </div>
                 ))}
                 {plan.entries.length === 0 && (

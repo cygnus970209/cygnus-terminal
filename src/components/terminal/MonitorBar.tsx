@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { formatBytes } from "../../utils/format";
 import "./MonitorBar.css";
 
 interface ServerStats {
@@ -20,13 +21,6 @@ interface MonitorBarProps {
   onToggle: () => void;
   onToggleLogs?: () => void;
   logViewerActive?: boolean;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(0)} KB`;
-  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
-  return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
 }
 
 function usageColor(pct: number): string {

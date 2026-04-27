@@ -1,32 +1,7 @@
 import { useState, useMemo } from "react";
+import { TransferJob } from "../../types/sftp";
+import { formatBytes, formatEta, formatSpeed } from "../../utils/format";
 import "./TransferDock.css";
-
-export interface TransferJob {
-  id: string;
-  job_type: string;
-  source_path: string;
-  dest_path: string;
-  file_name: string;
-  total_bytes: number;
-  transferred_bytes: number;
-  status: string;
-  error: string | null;
-  speed_bps: number;
-}
-
-export type TransferEvent =
-  | { type: "QueueUpdate"; data: TransferJob[] }
-  | {
-      type: "Progress";
-      data: {
-        job_id: string;
-        transferred_bytes: number;
-        total_bytes: number;
-        speed_bps: number;
-      };
-    }
-  | { type: "Completed"; data: string }
-  | { type: "Failed"; data: { job_id: string; error: string } };
 
 interface Props {
   jobs: TransferJob[];
@@ -36,25 +11,8 @@ interface Props {
   headless?: boolean;
 }
 
-function formatBytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 ** 2) return `${(n / 1024).toFixed(1)} KB`;
-  if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} MB`;
-  return `${(n / 1024 ** 3).toFixed(2)} GB`;
-}
-
-function formatSpeed(bps: number): string {
-  return `${formatBytes(bps)}/s`;
-}
-
-function formatEta(job: TransferJob): string {
-  if (job.speed_bps === 0 || job.total_bytes === 0) return "";
-  const remaining = Math.max(0, job.total_bytes - job.transferred_bytes);
-  const secs = remaining / job.speed_bps;
-  if (!isFinite(secs)) return "";
-  if (secs < 60) return `${Math.ceil(secs)}s`;
-  if (secs < 3600) return `${Math.floor(secs / 60)}m ${Math.ceil(secs % 60)}s`;
-  return `${Math.floor(secs / 3600)}h ${Math.floor((secs % 3600) / 60)}m`;
+function jobEta(job: TransferJob): string {
+  return formatEta(Math.max(0, job.total_bytes - job.transferred_bytes), job.speed_bps);
 }
 
 function JobRow({ job, onCancel }: { job: TransferJob; onCancel: (id: string) => void }) {
@@ -86,10 +44,10 @@ function JobRow({ job, onCancel }: { job: TransferJob; onCancel: (id: string) =>
             <>
               <span className="td-dot">·</span>
               {formatSpeed(job.speed_bps)}
-              {formatEta(job) && (
+              {jobEta(job) && (
                 <>
                   <span className="td-dot">·</span>
-                  {formatEta(job)}
+                  {jobEta(job)}
                 </>
               )}
             </>

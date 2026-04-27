@@ -1,16 +1,10 @@
 import { ServerStats } from "../../hooks/useServerStats";
+import { formatBytes } from "../../utils/format";
 import "./MonitorPanel.css";
 
 interface Props {
   stats: ServerStats | null;
   error: string | null;
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(0)} KB`;
-  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
-  return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
 }
 
 function usageColor(pct: number): string {

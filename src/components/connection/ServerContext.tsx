@@ -1,38 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import {
+  CommandBookmark,
+  CommandHistoryEntry,
+  PathBookmark,
+  PortForward,
+} from "../../types/server-context";
+import { HISTORY_REFRESH_INTERVAL_MS } from "../../constants";
 import "./ServerContext.css";
-
-interface CommandHistoryEntry {
-  id: number;
-  profile_id: number;
-  command: string;
-  executed_at: string;
-}
-
-interface CommandBookmark {
-  id: number;
-  profile_id: number;
-  command: string;
-  label: string | null;
-  sort_order: number;
-  created_at: string;
-}
-
-interface PathBookmark {
-  id: number;
-  profile_id: number;
-  path: string;
-  label: string | null;
-  created_at: string;
-}
-
-interface PortForward {
-  id: string;
-  local_port: number;
-  remote_host: string;
-  remote_port: number;
-  status: string;
-}
 
 interface ServerContextProps {
   profileId: number;
@@ -192,7 +167,7 @@ export default function ServerContext({
   // 히스토리는 주기적 새로고침
   useEffect(() => {
     if (activeTab !== "history") return;
-    const interval = setInterval(loadHistory, 3000);
+    const interval = setInterval(loadHistory, HISTORY_REFRESH_INTERVAL_MS);
     return () => clearInterval(interval);
   }, [activeTab, loadHistory]);
 

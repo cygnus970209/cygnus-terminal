@@ -1,15 +1,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { FileEntry } from "../../types/sftp";
+import { formatBytes, formatDate } from "../../utils/format";
 import "./FilePanel.css";
-
-export interface FileEntry {
-  name: string;
-  path: string;
-  is_dir: boolean;
-  size: number;
-  modified: number | null;
-  permissions: number | null;
-}
 
 export interface FilePanelHandle {
   currentPath: string;
@@ -46,18 +39,6 @@ interface FilePanelProps {
     pos: { x: number; y: number },
   ) => void;
   registerHandle?: (handle: FilePanelHandle) => void;
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(1)} KB`;
-  if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(1)} MB`;
-  return `${(bytes / 1024 ** 3).toFixed(1)} GB`;
-}
-
-function formatDate(epoch: number | null): string {
-  if (!epoch) return "";
-  return new Date(epoch * 1000).toLocaleString();
 }
 
 export default function FilePanel({
@@ -369,7 +350,7 @@ export default function FilePanel({
                 <span className="fp-icon">{entry.is_dir ? "📁" : "📄"}</span>
                 {entry.name}
               </span>
-              <span className="fp-col-size">{!entry.is_dir && formatSize(entry.size)}</span>
+              <span className="fp-col-size">{!entry.is_dir && formatBytes(entry.size)}</span>
               <span className="fp-col-date">{formatDate(entry.modified)}</span>
             </div>
           );

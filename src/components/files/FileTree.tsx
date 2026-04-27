@@ -1,17 +1,9 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
-import { TransferEvent } from "../sftp/TransferDock";
+import { FileEntry, TransferEvent } from "../../types/sftp";
+import { formatBytes } from "../../utils/format";
 import "./FileTree.css";
-
-interface FileEntry {
-  name: string;
-  path: string;
-  is_dir: boolean;
-  size: number;
-  modified: number | null;
-  permissions: number | null;
-}
 
 interface FileTreeProps {
   sessionId: string;
@@ -27,14 +19,6 @@ interface FileTreeProps {
 
 interface ExpandedDirs {
   [path: string]: FileEntry[];
-}
-
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} K`;
-  if (bytes < 1024 * 1024 * 1024)
-    return `${(bytes / (1024 * 1024)).toFixed(1)} M`;
-  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} G`;
 }
 
 export default function FileTree({
@@ -288,7 +272,7 @@ export default function FileTree({
           </span>
           <span className="ft-name">{entry.name}</span>
           {!entry.is_dir && (
-            <span className="ft-size">{formatSize(entry.size)}</span>
+            <span className="ft-size">{formatBytes(entry.size, { short: true })}</span>
           )}
         </div>
         {isExpanded &&
