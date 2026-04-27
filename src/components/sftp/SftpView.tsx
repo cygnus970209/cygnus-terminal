@@ -4,16 +4,25 @@ import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { ask, save } from "@tauri-apps/plugin-dialog";
 import { startDrag } from "@crabnebula/tauri-plugin-drag";
 import FilePanel, { DragPayload, FilePanelHandle } from "./FilePanel";
-import { bumpName, joinPath } from "../../utils/path";
+import { joinPath } from "../../utils/path";
 import TransferDock from "./TransferDock";
 import Toolbar from "./Toolbar";
 import ContextMenu, { MenuItem } from "./ContextMenu";
-import ConflictDialog, { ConflictAction, ConflictResolution } from "./ConflictDialog";
+import ConflictDialog from "./ConflictDialog";
 import InputDialog from "./InputDialog";
 import SyncDialog from "./SyncDialog";
 import { Profile } from "../../types";
 import { FileEntry, TransferJob } from "../../types/sftp";
 import { useTransferChannel } from "../../hooks/useTransferChannel";
+import { useConflictResolver } from "../../hooks/useConflictResolver";
+import { useDragDrop } from "../../hooks/useDragDrop";
+import {
+  createEnqueuers,
+  dispatchDownload,
+  dispatchS2S,
+  dispatchUpload,
+  type DispatchResult,
+} from "../../services/transferService";
 import "./SftpView.css";
 
 interface SftpViewProps {
@@ -32,68 +41,6 @@ type PanelSource =
   | { mode: "local"; sftpId: null; homePath: string; label: string }
   | { mode: "remote"; sftpId: string; homePath: string; label: string };
 
-
-// 원격 디렉토리를 재귀 탐색해 파일 전체 목록을 만든다.
-async function listRemoteRecursive(
-  sftpId: string,
-  basePath: string,
-): Promise<{ path: string; relative: string }[]> {
-  const out: { path: string; relative: string }[] = [];
-  async function walk(cur: string, relPrefix: string) {
-    const children = await invoke<FileEntry[]>("sftp_list_dir", {
-      sftpId,
-      path: cur,
-    });
-    for (const c of children) {
-      const rel = relPrefix ? `${relPrefix}/${c.name}` : c.name;
-      if (c.is_dir) {
-        await walk(c.path, rel);
-      } else {
-        out.push({ path: c.path, relative: rel });
-      }
-    }
-  }
-  await walk(basePath, "");
-  return out;
-}
-
-async function findFreeName(
-  checker: (path: string) => Promise<boolean>,
-  candidate: string,
-): Promise<string> {
-  let path = candidate;
-  // 과도한 반복 방지 (999 개 정도면 충분히 상식적)
-  for (let i = 0; i < 1000; i++) {
-    const exists = await checker(path);
-    if (!exists) return path;
-    path = bumpName(path);
-  }
-  return path;
-}
-
-const remoteExists = (sftpId: string) => (path: string) =>
-  invoke<boolean>("sftp_exists", { sftpId, path });
-const localExists = () => (path: string) =>
-  invoke<boolean>("local_exists", { path });
-
-async function listLocalRecursive(
-  basePath: string,
-): Promise<{ path: string; relative: string }[]> {
-  const out: { path: string; relative: string }[] = [];
-  async function walk(cur: string, relPrefix: string) {
-    const children = await invoke<FileEntry[]>("list_local_dir", { path: cur });
-    for (const c of children) {
-      const rel = relPrefix ? `${relPrefix}/${c.name}` : c.name;
-      if (c.is_dir) {
-        await walk(c.path, rel);
-      } else {
-        out.push({ path: c.path, relative: rel });
-      }
-    }
-  }
-  await walk(basePath, "");
-  return out;
-}
 
 export default function SftpView({
   sftpId,
@@ -146,13 +93,7 @@ export default function SftpView({
     y: number;
     items: MenuItem[];
   } | null>(null);
-  const [conflict, setConflict] = useState<{
-    fileName: string;
-    remaining: number;
-    resolve: (r: ConflictResolution) => void;
-  } | null>(null);
-  // "Apply to all" 동안 유지되는 선택. null 이면 매번 묻는다.
-  const blanketRef = useRef<ConflictAction | null>(null);
+  const { conflict, resolvePath, resetBlanket } = useConflictResolver();
   const [inputDialog, setInputDialog] = useState<{
     title: string;
     initial: string;
@@ -183,71 +124,13 @@ export default function SftpView({
     [],
   );
 
-  // dispatchTransfer 내부에서 호출. 업로드 대상이 이미 존재하면 어떻게 할지 결정.
-  const resolveConflict = useCallback(
-    (fileName: string, remaining: number): Promise<ConflictResolution> => {
-      if (blanketRef.current) {
-        return Promise.resolve({ action: blanketRef.current, applyToAll: true });
-      }
-      return new Promise((resolve) => {
-        setConflict({
-          fileName,
-          remaining,
-          resolve: (r) => {
-            if (r.applyToAll) blanketRef.current = r.action;
-            setConflict(null);
-            resolve(r);
-          },
-        });
-      });
-    },
-    [],
-  );
-
-  // 충돌 체크 후 최종 경로 결정. 대상이 remote 든 local 든 checker 만 바뀐다.
-  // Returns null → skip. 컴포넌트 레벨이라 dispatchTransfer / handleExternalDrop 모두 재사용.
-  const resolvePath = useCallback(
-    async (
-      checker: (path: string) => Promise<boolean>,
-      desiredPath: string,
-      displayName: string,
-      remainingHint: number,
-    ): Promise<string | null> => {
-      const exists = await checker(desiredPath);
-      if (!exists) return desiredPath;
-      const res = await resolveConflict(displayName, remainingHint);
-      if (res.action === "skip") return null;
-      if (res.action === "replace") return desiredPath;
-      return await findFreeName(checker, desiredPath);
-    },
-    [resolveConflict],
-  );
-
-  // dragPayload 는 drop 시점에 최신 값을 확실히 읽어야 하므로 ref 로 관리.
-  // state 는 리렌더 타이밍상 drop 이벤트와 엇갈릴 수 있다.
-  const dragPayloadRef = useRef<DragPayload | null>(null);
-  const setDragPayload = useCallback((p: DragPayload | null) => {
-    dragPayloadRef.current = p;
-  }, []);
-
-  // Drag-out 준비 상태. 우클릭 "Drag to desktop" 으로 temp 에 다운로드해 둔 파일은
-  // 사용자 HTML5 drag 제스처가 시작되는 순간 plugin.startDrag(tempPath) 를 호출해서
-  // OS native drag 로 넘긴다. plugin.startDrag 는 macOS 에서 마우스 제스처 컨텍스트
-  // 안에서만 drag session 을 시작할 수 있으므로 이 시점 분리가 필수다.
-  const preparedDragsRef = useRef<Map<string, string>>(new Map()); // remotePath → tempPath
-  const pendingDragJobsRef = useRef<Map<string, string>>(new Map()); // jobId → remotePath
-
-  // drop 없이 drag 제스처가 끝났을 때 ref 정리 — 다음 drag 가 stale payload 를 쓰지 않도록.
-  // 단, native drop 이벤트는 dragend 이후에 발화될 수 있어서 약간 지연 정리한다.
-  useEffect(() => {
-    const onEnd = () => {
-      setTimeout(() => {
-        dragPayloadRef.current = null;
-      }, 50);
-    };
-    window.addEventListener("dragend", onEnd);
-    return () => window.removeEventListener("dragend", onEnd);
-  }, []);
+  // 드래그-드롭 상태 (refs + dragend cleanup)
+  const {
+    dragPayloadRef,
+    setDragPayload,
+    preparedDragsRef,
+    pendingDragJobsRef,
+  } = useDragDrop();
 
   const leftHandle = useRef<FilePanelHandle | null>(null);
   const rightHandle = useRef<FilePanelHandle | null>(null);
@@ -399,75 +282,23 @@ export default function SftpView({
     [sessionsList, connectProfile],
   );
 
-  // 전송 enqueue 헬퍼
-  const enqueueUpload = useCallback(
-    async (local: string, remote: string, dstSftpId: string) => {
-      try {
-        await invoke("sftp_transfer_upload", {
-          sftpId: dstSftpId,
-          localPath: local,
-          remotePath: remote,
-          onEvent: transferChannel,
-        });
-      } catch (err) {
-        showToast(`Enqueue upload failed: ${err}`);
-      }
-    },
+  // 전송 enqueue 헬퍼 (channel + error 핸들러를 한번 바인드)
+  const enqueuers = useMemo(
+    () => createEnqueuers({ channel: transferChannel, onError: showToast }),
     [transferChannel, showToast],
   );
 
-  const enqueueDownload = useCallback(
-    async (remote: string, local: string, srcSftpId: string) => {
-      try {
-        await invoke("sftp_transfer_download", {
-          sftpId: srcSftpId,
-          remotePath: remote,
-          localPath: local,
-          onEvent: transferChannel,
-        });
-      } catch (err) {
-        showToast(`Enqueue download failed: ${err}`);
-      }
-    },
-    [transferChannel, showToast],
-  );
-
-  const enqueueS2S = useCallback(
-    async (
-      srcId: string,
-      srcPath: string,
-      dstId: string,
-      dstPath: string,
-    ) => {
-      try {
-        await invoke("sftp_transfer_server_to_server", {
-          srcSftpId: srcId,
-          srcPath,
-          dstSftpId: dstId,
-          dstPath,
-          onEvent: transferChannel,
-        });
-      } catch (err) {
-        showToast(`Enqueue copy failed: ${err}`);
-      }
-    },
-    [transferChannel, showToast],
-  );
-
-  // 드래그 드롭에서 호출되는 실제 전송 디스패처 (폴더 재귀 포함)
+  // 드래그 드롭에서 호출되는 실제 전송 디스패처. 케이스 분기 후 transferService 로 위임.
   //
-  // Remote 쪽 충돌 처리: 업로드/s2s 의 대상 경로가 이미 존재하면 resolveConflict 로 사용자 선택.
-  // - Replace: 덮어쓰기 (기존 경로로 enqueue)
-  // - Keep Both: 빈 번호 찾아 `file (N).ext` 로 rename
-  // - Skip: 그 파일만 건너뜀
-  // "Apply to all" 이 체크되면 blanketRef 로 다음 충돌에도 같은 선택을 자동 적용.
+  // 충돌 처리: 대상 경로가 이미 존재하면 resolveConflict (useConflictResolver) 로 사용자 선택.
+  // - Replace: 덮어쓰기 / Keep Both: 빈 번호로 rename / Skip: 건너뜀
+  // - "Apply to all" 시 dispatch 끝까지 같은 선택 유지. 다음 dispatch 에서 resetBlanket.
   const dispatchTransfer = useCallback(
     async (
       source: DragPayload,
       target: { mode: "local" | "remote"; sftpId: string | null; path: string },
     ) => {
-      // 한 번의 dispatch 가 끝나면 blanket 정책은 리셋 (다음 drag 에는 다시 물어봄)
-      blanketRef.current = null;
+      resetBlanket();
 
       // 동일 패널 내부 드롭은 무시
       if (
@@ -478,138 +309,41 @@ export default function SftpView({
         return;
       }
 
+      const ctx = { resolvePath, enqueuers };
+      let result: DispatchResult;
 
-      let queued = 0;
-      let skipped = 0;
-      for (let i = 0; i < source.entries.length; i++) {
-        const entry = source.entries[i];
-        const destChild = joinPath(target.path, entry.name);
-        const remainingHint = source.entries.length - i - 1;
-
-        // CASE 1: local → remote
-        if (source.sourceMode === "local" && target.mode === "remote" && target.sftpId) {
-          const finalChild = await resolvePath(
-            remoteExists(target.sftpId),
-            destChild,
-            entry.name,
-            remainingHint,
-          );
-          if (finalChild === null) {
-            skipped++;
-            continue;
-          }
-          if (entry.is_dir) {
-            // 폴더: 내부 파일 각각 원격 존재 체크.
-            // 최상위에서 Keep Both → finalChild=`project (1)/` 라 내부는 자연스럽게 충돌 없음.
-            // 최상위에서 Replace → finalChild=`project/` 이면 내부 파일만 충돌 가능. blanketRef 가
-            // dispatch 동안 유지되므로 "Apply to all" 체크 시 반복 묻지 않는다.
-            const files = await listLocalRecursive(entry.path);
-            for (let j = 0; j < files.length; j++) {
-              const f = files[j];
-              const remotePath = `${finalChild}/${f.relative}`;
-              const resolved = await resolvePath(
-                remoteExists(target.sftpId),
-                remotePath,
-                f.relative,
-                files.length - j - 1,
-              );
-              if (resolved === null) {
-                skipped++;
-                continue;
-              }
-              const parent = resolved.substring(0, resolved.lastIndexOf("/"));
-              try {
-                await invoke("sftp_mkdir_p", { sftpId: target.sftpId, path: parent });
-              } catch {}
-              await enqueueUpload(f.path, resolved, target.sftpId);
-              queued++;
-            }
-          } else {
-            await enqueueUpload(entry.path, finalChild, target.sftpId);
-            queued++;
-          }
-        }
-        // CASE 2: remote → local — 로컬 충돌도 같은 dialog 로 처리
-        else if (source.sourceMode === "remote" && target.mode === "local" && source.sourceSftpId) {
-          const finalChild = await resolvePath(
-            localExists(),
-            destChild,
-            entry.name,
-            remainingHint,
-          );
-          if (finalChild === null) {
-            skipped++;
-            continue;
-          }
-          if (entry.is_dir) {
-            const files = await listRemoteRecursive(source.sourceSftpId, entry.path);
-            for (let j = 0; j < files.length; j++) {
-              const f = files[j];
-              const localPath = `${finalChild}/${f.relative}`;
-              const resolved = await resolvePath(
-                localExists(),
-                localPath,
-                f.relative,
-                files.length - j - 1,
-              );
-              if (resolved === null) {
-                skipped++;
-                continue;
-              }
-              await enqueueDownload(f.path, resolved, source.sourceSftpId);
-              queued++;
-            }
-          } else {
-            await enqueueDownload(entry.path, finalChild, source.sourceSftpId);
-            queued++;
-          }
-        }
-        // CASE 3: remote → remote (server-to-server)
-        else if (source.sourceMode === "remote" && target.mode === "remote" && source.sourceSftpId && target.sftpId) {
-          const finalChild = await resolvePath(
-            remoteExists(target.sftpId),
-            destChild,
-            entry.name,
-            remainingHint,
-          );
-          if (finalChild === null) {
-            skipped++;
-            continue;
-          }
-          if (entry.is_dir) {
-            const files = await listRemoteRecursive(source.sourceSftpId, entry.path);
-            for (let j = 0; j < files.length; j++) {
-              const f = files[j];
-              const dstPath = `${finalChild}/${f.relative}`;
-              const resolved = await resolvePath(
-                remoteExists(target.sftpId),
-                dstPath,
-                f.relative,
-                files.length - j - 1,
-              );
-              if (resolved === null) {
-                skipped++;
-                continue;
-              }
-              const parent = resolved.substring(0, resolved.lastIndexOf("/"));
-              try {
-                await invoke("sftp_mkdir_p", { sftpId: target.sftpId, path: parent });
-              } catch {}
-              await enqueueS2S(source.sourceSftpId, f.path, target.sftpId, resolved);
-              queued++;
-            }
-          } else {
-            await enqueueS2S(source.sourceSftpId, entry.path, target.sftpId, finalChild);
-            queued++;
-          }
-        }
-        // CASE 4: local → local (지원 안 함)
-        else {
-          showToast("Local → local transfer not supported");
-          return;
-        }
+      if (source.sourceMode === "local" && target.mode === "remote" && target.sftpId) {
+        result = await dispatchUpload(source.entries, target.sftpId, target.path, ctx);
+      } else if (
+        source.sourceMode === "remote" &&
+        target.mode === "local" &&
+        source.sourceSftpId
+      ) {
+        result = await dispatchDownload(
+          source.entries,
+          source.sourceSftpId,
+          target.path,
+          ctx,
+        );
+      } else if (
+        source.sourceMode === "remote" &&
+        target.mode === "remote" &&
+        source.sourceSftpId &&
+        target.sftpId
+      ) {
+        result = await dispatchS2S(
+          source.entries,
+          source.sourceSftpId,
+          target.sftpId,
+          target.path,
+          ctx,
+        );
+      } else {
+        showToast("Local → local transfer not supported");
+        return;
       }
 
+      const { queued, skipped } = result;
       if (queued > 0) {
         showToast(
           `Queued ${queued} file${queued > 1 ? "s" : ""}` +
@@ -619,7 +353,7 @@ export default function SftpView({
         showToast(`Skipped ${skipped} conflict${skipped > 1 ? "s" : ""}`);
       }
     },
-    [enqueueUpload, enqueueDownload, enqueueS2S, showToast, resolvePath],
+    [enqueuers, showToast, resolvePath, resetBlanket],
   );
 
   // 패널 HTML5 드롭 핸들러. Tauri webview 에서 native drop 이 이벤트를 삼키는 환경이 많아
@@ -919,64 +653,34 @@ export default function SftpView({
         return;
       }
       const targetBase = targetHandle.current?.currentPath || targetSrc.homePath;
-      blanketRef.current = null;
-      let queued = 0;
-      let skipped = 0;
-      for (let i = 0; i < paths.length; i++) {
-        const abs = paths[i];
+      resetBlanket();
+
+      // 외부 OS 경로를 FileEntry[] 로 변환 (is_local_dir 로 디렉토리 여부 확인).
+      // 변환 실패한 항목은 skip 토스트 후 제외.
+      const entries: FileEntry[] = [];
+      for (const abs of paths) {
         const name = abs.split("/").pop() || abs;
-        const destChild = joinPath(targetBase, name);
-        const remainingHint = paths.length - i - 1;
-
-        // 충돌 체크
-        const checker = remoteExists(targetSrc.sftpId);
-        const exists = await checker(destChild);
-        let finalChild = destChild;
-        if (exists) {
-          const res = await resolveConflict(name, remainingHint);
-          if (res.action === "skip") {
-            skipped++;
-            continue;
-          }
-          if (res.action === "keep-both") {
-            finalChild = await findFreeName(checker, destChild);
-          }
-        }
-
-        let isDir = false;
         try {
-          isDir = await invoke<boolean>("is_local_dir", { path: abs });
+          const isDir = await invoke<boolean>("is_local_dir", { path: abs });
+          entries.push({
+            name,
+            path: abs,
+            is_dir: isDir,
+            size: 0,
+            modified: null,
+            permissions: null,
+          });
         } catch (err) {
           showToast(`Skip ${name}: ${err}`);
-          continue;
-        }
-        if (isDir) {
-          const files = await listLocalRecursive(abs);
-          for (let j = 0; j < files.length; j++) {
-            const f = files[j];
-            const remotePath = `${finalChild}/${f.relative}`;
-            const resolved = await resolvePath(
-              checker,
-              remotePath,
-              f.relative,
-              files.length - j - 1,
-            );
-            if (resolved === null) {
-              skipped++;
-              continue;
-            }
-            const parent = resolved.substring(0, resolved.lastIndexOf("/"));
-            try {
-              await invoke("sftp_mkdir_p", { sftpId: targetSrc.sftpId, path: parent });
-            } catch {}
-            await enqueueUpload(f.path, resolved, targetSrc.sftpId);
-            queued++;
-          }
-        } else {
-          await enqueueUpload(abs, finalChild, targetSrc.sftpId);
-          queued++;
         }
       }
+
+      const { queued, skipped } = await dispatchUpload(
+        entries,
+        targetSrc.sftpId,
+        targetBase,
+        { resolvePath, enqueuers },
+      );
       if (queued > 0) {
         showToast(
           `Queued ${queued} file${queued > 1 ? "s" : ""}` +
@@ -986,7 +690,17 @@ export default function SftpView({
         showToast(`Skipped ${skipped} conflict${skipped > 1 ? "s" : ""}`);
       }
     },
-    [leftSrc, rightSrc, handleFor, pickSideByPosition, enqueueUpload, showToast, focused, resolveConflict, resolvePath],
+    [
+      leftSrc,
+      rightSrc,
+      handleFor,
+      pickSideByPosition,
+      enqueuers,
+      showToast,
+      focused,
+      resolvePath,
+      resetBlanket,
+    ],
   );
 
   // 내부 drag 도 native drop 이벤트로 귀결된다. paths 가 비어있으면 내부 drag (HTML5
