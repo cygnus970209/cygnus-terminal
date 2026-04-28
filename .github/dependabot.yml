@@ -1,0 +1,40 @@
+version: 2
+updates:
+  # Rust deps (src-tauri/)
+  - package-ecosystem: cargo
+    directory: /src-tauri
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: "Asia/Seoul"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps(cargo)"
+    ignore:
+      # glib 0.18.x — Tauri/wry 의 gtk 0.18 백엔드가 묶고 있는 transitive dep.
+      # 0.20 fix 라인으로 가려면 Tauri 가 gtk 0.20 으로 마이그레이션해야 함 (업스트림 대기).
+      # Linux 빌드를 하지 않으므로 macOS/Windows 산출물에는 포함되지 않는다.
+      # 업스트림이 0.20 으로 올라가면 이 ignore 자동 해제.
+      - dependency-name: "glib"
+        versions: ["< 0.20.0"]
+
+  # JavaScript / npm deps
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: "Asia/Seoul"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "deps(npm)"
+
+  # GitHub Actions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    commit-message:
+      prefix: "deps(actions)"
