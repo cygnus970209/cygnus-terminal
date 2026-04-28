@@ -2,6 +2,12 @@ import { useEffect, useRef, useCallback } from "react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
+import { useTheme } from "../../hooks/useTheme";
+import {
+  parseOsc7Path,
+  SHELL_INTEGRATION_TIMEOUT_MS,
+  type ShellIntegrationStatus,
+} from "../../utils/osc7";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { SshConfig } from "../../types";
@@ -20,6 +26,10 @@ interface TerminalProps {
   onRegisterCapturePath?: (tabId: string, fn: () => Promise<string | null>) => void;
   onRegisterBufferCheck?: (tabId: string, fn: () => boolean) => void;
   onCdDetected?: () => void;
+  /** OSC 7 또는 fallback 으로 cwd 가 갱신될 때 호출 (활성 탭의 FileTree 경로 동기화용). */
+  onCwdChanged?: (tabId: string, path: string) => void;
+  /** Shell integration 감지 상태 변화 시 호출. */
+  onShellIntegrationChange?: (tabId: string, status: ShellIntegrationStatus) => void;
 }
 
 interface PtyEventOutput {
@@ -46,13 +56,19 @@ export default function Terminal({
   onRegisterCapturePath,
   onRegisterBufferCheck,
   onCdDetected,
+  onCwdChanged,
+  onShellIntegrationChange,
 }: TerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const fitAddonRef = useRef<FitAddon | null>(null);
+  const shellIntegrationRef = useRef<ShellIntegrationStatus>("unknown");
+  const lastCwdRef = useRef<string | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const bufferRef = useRef<string>("");
   const rafRef = useRef<number | null>(null);
+
+  const { theme } = useTheme();
 
   const flushBuffer = useCallback(() => {
     if (bufferRef.current && xtermRef.current) {
@@ -85,30 +101,34 @@ export default function Terminal({
       cursorBlink: true,
       fontSize: 14,
       fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
-      theme: {
-        background: "#1e1e2e",
-        foreground: "#cdd6f4",
-        cursor: "#f5e0dc",
-        selectionBackground: "#585b70",
-        black: "#45475a",
-        red: "#f38ba8",
-        green: "#a6e3a1",
-        yellow: "#f9e2af",
-        blue: "#7aa2f7",
-        magenta: "#f5c2e7",
-        cyan: "#94e2d5",
-        white: "#bac2de",
-        brightBlack: "#585b70",
-        brightRed: "#f38ba8",
-        brightGreen: "#a6e3a1",
-        brightYellow: "#f9e2af",
-        brightBlue: "#7aa2f7",
-        brightMagenta: "#f5c2e7",
-        brightCyan: "#94e2d5",
-        brightWhite: "#a6adc8",
-      },
+      theme: theme.colors,
       allowProposedApi: true,
     });
+
+    // OSC 7 (shell directory hint) 수신 — 셸이 활성화한 경우 prompt 그릴 때마다 cwd 가 들어온다.
+    // race-free 한 cd 추적 채널. 미감지 시 timeout 후 pwd fallback 으로 전환.
+    const oscHandler = xterm.parser.registerOscHandler(7, (data) => {
+      const path = parseOsc7Path(data);
+      if (!path) return false;
+
+      if (shellIntegrationRef.current !== "detected") {
+        shellIntegrationRef.current = "detected";
+        onShellIntegrationChange?.(tabId, "detected");
+      }
+
+      if (path !== lastCwdRef.current) {
+        lastCwdRef.current = path;
+        onCwdChanged?.(tabId, path);
+      }
+      return false; // 기본 처리도 계속 (다른 OSC handler 있을 가능성)
+    });
+
+    const oscTimeoutId = setTimeout(() => {
+      if (shellIntegrationRef.current === "unknown") {
+        shellIntegrationRef.current = "timeout";
+        onShellIntegrationChange?.(tabId, "timeout");
+      }
+    }, SHELL_INTEGRATION_TIMEOUT_MS);
 
     const fitAddon = new FitAddon();
     const webLinksAddon = new WebLinksAddon();
@@ -229,7 +249,19 @@ export default function Terminal({
 
         onRegisterCapturePath?.(tabId, async () => {
           if (!sessionIdRef.current || isAlternateBuffer()) return null;
-          const cursorBefore = xterm.buffer.active.cursorY + xterm.buffer.active.baseY;
+
+          // Race condition 가드 — 사용자가 이미 다음 명령을 타이핑 중이면 skip.
+          // 우리 `pwd\r` 가 PTY stdin 에서 사용자 입력과 합쳐지면
+          // `cd ` + `pwd\r` → `cd pwd` 같은 의도치 않은 명령이 실행된다.
+          // 다음 cd 감지 시 다시 호출되므로 기능 손실은 없음.
+          const buffer = xterm.buffer.active;
+          const promptLine = buffer.getLine(buffer.cursorY + buffer.baseY);
+          if (promptLine) {
+            const userTyped = extractCommand(promptLine.translateToString(true));
+            if (userTyped && userTyped.length > 0) return null;
+          }
+
+          const cursorBefore = buffer.cursorY + buffer.baseY;
           await invoke(writeCmd, { sessionId: sessionIdRef.current, data: "pwd\r" });
           await new Promise((r) => setTimeout(r, 500));
           const outputLine = xterm.buffer.active.getLine(cursorBefore + 1);
@@ -299,13 +331,24 @@ export default function Terminal({
     return () => {
       window.removeEventListener("resize", handleResize);
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
+      clearTimeout(oscTimeoutId);
+      oscHandler.dispose();
       if (sessionIdRef.current) {
         const closeCmd = type === "ssh" ? "close_ssh" : type === "telnet" ? "close_telnet" : type === "serial" ? "close_serial" : "close_pty";
         invoke(closeCmd, { sessionId: sessionIdRef.current });
       }
       xterm.dispose();
     };
+    // 마운트 시 1회만 — theme 변경은 아래 별도 effect 로 처리.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // 테마 변경 시 xterm 에 즉시 반영
+  useEffect(() => {
+    if (xtermRef.current) {
+      xtermRef.current.options.theme = theme.colors;
+    }
+  }, [theme]);
 
   return (
     <div
@@ -313,7 +356,7 @@ export default function Terminal({
       style={{
         width: "100%",
         height: "100%",
-        backgroundColor: "#1e1e2e",
+        backgroundColor: theme.colors.background ?? "#1e1e2e",
         display: isActive ? "block" : "none",
       }}
     />

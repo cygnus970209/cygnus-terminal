@@ -1,0 +1,75 @@
+.theme-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  margin-top: 8px;
+}
+
+.theme-card {
+  position: relative;
+  padding: 14px;
+  border: 1px solid #45475a;
+  border-radius: 8px;
+  cursor: pointer;
+  text-align: left;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  font-size: 11px;
+  transition: border-color 120ms ease-out, transform 120ms ease-out;
+}
+
+.theme-card:hover {
+  border-color: #7aa2f7;
+}
+
+.theme-card-selected {
+  border-color: #7aa2f7;
+  box-shadow: 0 0 0 1px #7aa2f7;
+}
+
+.theme-card-preview {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.theme-card-prompt {
+  margin-right: 6px;
+  font-weight: 700;
+}
+
+.theme-card-cursor {
+  display: inline-block;
+  width: 7px;
+  height: 12px;
+  margin-left: 2px;
+  vertical-align: middle;
+  animation: theme-cursor-blink 1s step-end infinite;
+}
+
+@keyframes theme-cursor-blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+.theme-card-name {
+  color: inherit;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  font-size: 12px;
+  margin-bottom: 6px;
+}
+
+.theme-card-swatches {
+  display: flex;
+  gap: 3px;
+}
+
+.theme-card-swatch {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}

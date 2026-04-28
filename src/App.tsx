@@ -16,6 +16,7 @@ import { useServerStats } from "./hooks/useServerStats";
 import { useInvokeState } from "./hooks/useInvokeState";
 import { useTauriListener } from "./hooks/useTauriListener";
 import { useTransferChannel } from "./hooks/useTransferChannel";
+import { type ShellIntegrationStatus } from "./utils/osc7";
 import CommandPalette, { PaletteItem } from "./components/common/CommandPalette";
 import InputDialog from "./components/sftp/InputDialog";
 import SerialConnectDialog, { SerialPortInfo } from "./components/common/SerialConnectDialog";
@@ -60,6 +61,10 @@ function App() {
 
   const [cdTrackingEnabled, setCdTrackingEnabled] = useState(true);
   const [fileTreePath, setFileTreePath] = useState<string | null>(null);
+  // 탭별 shell integration 상태 (OSC 7 감지 여부). FileTree indicator 와 pwd fallback 게이트에 사용.
+  const [shellIntegrationByTab, setShellIntegrationByTab] = useState<
+    Record<string, ShellIntegrationStatus>
+  >({});
   const [leftCollapsed, setLeftCollapsed] = useState(false);
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [drawerTab, setDrawerTab] = useState<DrawerTab>(null);
@@ -76,16 +81,19 @@ function App() {
       []
     );
 
-  // 글로벌 단축키: Cmd/Ctrl+K 로 Command Palette 토글
+  // 글로벌 단축키: Cmd/Ctrl+K 로 Command Palette 토글.
+  // capturing phase 로 등록 — xterm textarea 같은 자식이 stopPropagation 해도 가로채인다.
+  // e.code 사용 — 한영 IME 상태와 무관하게 물리 K 키를 잡는다.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      if ((e.metaKey || e.ctrlKey) && e.code === "KeyK") {
         e.preventDefault();
+        e.stopPropagation();
         setShowPalette((v) => !v);
       }
     };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
   }, []);
 
   // Palette 열릴 때마다 최신 snippets 로드
@@ -470,13 +478,32 @@ function App() {
 
   const handleCdDetected = useCallback(async () => {
     if (!cdTrackingEnabled || !activeTabId) return;
-    // cd 실행 후 잠시 대기 → pwd 캡처 → 파일 트리 이동
+    // OSC 7 가 활성이면 셸이 prompt 마다 cwd 를 알려주므로 pwd 폴백 불필요 (race 방지).
+    if (shellIntegrationByTab[activeTabId] === "detected") return;
+    // cd 실행 후 잠시 대기 → pwd 캡처 → 파일 트리 이동 (fallback 경로)
     await new Promise((r) => setTimeout(r, 800));
     const fn = capturePathFns.current[activeTabId];
     if (!fn) return;
     const path = await fn();
     if (path) setFileTreePath(path);
-  }, [cdTrackingEnabled, activeTabId]);
+  }, [cdTrackingEnabled, activeTabId, shellIntegrationByTab]);
+
+  const handleCwdChanged = useCallback(
+    (tabId: string, path: string) => {
+      // 활성 탭의 cwd 변경만 FileTree 에 반영. 다른 탭은 무시 (사용자 보고 있는 화면이 아님).
+      if (tabId !== activeTabId) return;
+      if (!cdTrackingEnabled) return;
+      setFileTreePath(path);
+    },
+    [activeTabId, cdTrackingEnabled],
+  );
+
+  const handleShellIntegrationChange = useCallback(
+    (tabId: string, status: ShellIntegrationStatus) => {
+      setShellIntegrationByTab((prev) => ({ ...prev, [tabId]: status }));
+    },
+    [],
+  );
 
   const handleExecuteCommand = useCallback(
     (command: string) => {
@@ -642,6 +669,8 @@ function App() {
                 onRegisterCapturePath={handleRegisterCapturePath}
                 onRegisterBufferCheck={handleRegisterBufferCheck}
                 onCdDetected={handleCdDetected}
+                onCwdChanged={handleCwdChanged}
+                onShellIntegrationChange={handleShellIntegrationChange}
               />
             ))}
           </div>
@@ -667,6 +696,7 @@ function App() {
               navigateToPath={fileTreePath}
               cdTrackingEnabled={cdTrackingEnabled}
               onCdTrackingChange={setCdTrackingEnabled}
+              shellIntegration={shellIntegrationByTab[activeTabId] ?? "unknown"}
               onCollapse={() => setRightCollapsed(true)}
               onOpenSftpView={() => openSftpPopout(activeTabId!, activeTab?.title || "")}
               transferChannel={transferChannel}

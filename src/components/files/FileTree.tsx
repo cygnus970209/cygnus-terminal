@@ -3,6 +3,7 @@ import { invoke, Channel } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { FileEntry, TransferEvent } from "../../types/sftp";
 import { formatBytes } from "../../utils/format";
+import { type ShellIntegrationStatus } from "../../utils/osc7";
 import "./FileTree.css";
 
 interface FileTreeProps {
@@ -10,12 +11,34 @@ interface FileTreeProps {
   navigateToPath?: string | null;
   cdTrackingEnabled: boolean;
   onCdTrackingChange: (enabled: boolean) => void;
+  /**
+   * 현재 활성 탭의 OSC 7 감지 상태.
+   * - detected: 셸이 매 prompt 마다 cwd 를 알려줘 race-free 추적 가능
+   * - timeout: pwd polling 으로 fallback (race 가드 있음)
+   * - unknown: 아직 첫 prompt 수신 전
+   */
+  shellIntegration?: ShellIntegrationStatus;
   onCollapse?: () => void;
   onOpenSftpView?: () => void;
   transferChannel?: Channel<TransferEvent>;
   /** 값이 바뀔 때마다 현재 디렉토리를 리로드한다. 업로드 완료 후 파일 목록 갱신용. */
   refreshTrigger?: number;
 }
+
+const SHELL_INTEGRATION_LABELS: Record<ShellIntegrationStatus, { dot: string; tip: string }> = {
+  detected: {
+    dot: "ft-track-dot-ok",
+    tip: "Shell integration: OSC 7 detected. Race-free cd tracking.",
+  },
+  timeout: {
+    dot: "ft-track-dot-warn",
+    tip: "Shell integration not detected. Using pwd polling fallback.\nFor race-free tracking, add to your remote ~/.bashrc:\nPROMPT_COMMAND='printf \"\\033]7;file://%s%s\\033\\\\\" \"$HOSTNAME\" \"$PWD\"'",
+  },
+  unknown: {
+    dot: "ft-track-dot-pending",
+    tip: "Shell integration: probing...",
+  },
+};
 
 interface ExpandedDirs {
   [path: string]: FileEntry[];
@@ -26,11 +49,13 @@ export default function FileTree({
   navigateToPath,
   cdTrackingEnabled,
   onCdTrackingChange,
+  shellIntegration = "unknown",
   onCollapse,
   onOpenSftpView,
   transferChannel,
   refreshTrigger,
 }: FileTreeProps) {
+  const statusLabel = SHELL_INTEGRATION_LABELS[shellIntegration];
   const [sftpId, setSftpId] = useState<string | null>(null);
   const [currentPath, setCurrentPath] = useState<string>("/");
   const [entries, setEntries] = useState<FileEntry[]>([]);
@@ -317,13 +342,17 @@ export default function FileTree({
     >
       <div className="ft-header">
         <span className="ft-title">Files</span>
-        <label className="ft-track-toggle" title="Sync with terminal cd">
+        <label className="ft-track-toggle" title={statusLabel.tip}>
           <input
             type="checkbox"
             checked={cdTrackingEnabled}
             onChange={(e) => onCdTrackingChange(e.target.checked)}
           />
           <span className="ft-track-label">cd</span>
+          <span
+            className={`ft-track-dot ${statusLabel.dot}`}
+            aria-label={`Shell integration: ${shellIntegration}`}
+          />
         </label>
         <button className="ft-btn" onClick={handleMkdir} title="New Folder">
           +📁

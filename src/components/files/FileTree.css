@@ -55,6 +55,27 @@
   font-weight: 600;
 }
 
+.ft-track-dot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  margin-left: 2px;
+  transition: background-color 120ms ease-out;
+}
+
+.ft-track-dot-ok {
+  background: #a6e3a1; /* green — OSC 7 detected */
+}
+
+.ft-track-dot-warn {
+  background: #f9e2af; /* yellow — fallback to pwd polling */
+}
+
+.ft-track-dot-pending {
+  background: #585b70; /* dim — probing */
+}
+
 .ft-btn {
   background: none;
   border: none;
