@@ -1,5 +1,6 @@
 import { ReactNode, useState } from "react";
 import ThemeTab from "./settings/ThemeTab";
+import TerminalTab from "./settings/TerminalTab";
 import DataTab from "./settings/DataTab";
 import ShortcutsTab from "./settings/ShortcutsTab";
 import AboutTab from "./settings/AboutTab";
@@ -18,6 +19,7 @@ interface TabDef {
 /** 새 설정 영역 추가는 이 배열에 entry 1개 + 컴포넌트 1개. */
 const TABS: TabDef[] = [
   { id: "theme", label: "Theme", render: () => <ThemeTab /> },
+  { id: "terminal", label: "Terminal", render: () => <TerminalTab /> },
   { id: "data", label: "Data", render: () => <DataTab /> },
   { id: "shortcuts", label: "Shortcuts", render: () => <ShortcutsTab /> },
   { id: "about", label: "About", render: () => <AboutTab /> },

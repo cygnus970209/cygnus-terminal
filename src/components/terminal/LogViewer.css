@@ -177,7 +177,7 @@
 .lv-content {
   flex: 1;
   overflow-y: auto;
-  padding: 4px 10px;
+  padding: 4px 0;
   font-family: 'JetBrains Mono', 'Fira Code', monospace;
   font-size: 11px;
 }
@@ -196,6 +196,49 @@
   line-height: 1.5;
   white-space: pre-wrap;
   word-break: break-all;
+  padding: 0 10px 0 6px;
+  border-left: 4px solid transparent;
+}
+
+/* 라인 레벨별 좌측 border + 살짝의 배경 — 스크롤 중에도 한눈에 식별. */
+.lv-line-error {
+  border-left-color: #f38ba8;
+  background: rgba(243, 139, 168, 0.06);
+}
+
+.lv-line-warn {
+  border-left-color: #f9e2af;
+  background: rgba(249, 226, 175, 0.04);
+}
+
+.lv-line-info {
+  border-left-color: rgba(122, 162, 247, 0.5);
+}
+
+.lv-line-debug {
+  border-left-color: #45475a;
+  color: #6c7086;
+}
+
+/* 매치된 키워드 토큰 — bold + 색. 라인 본문 색 위에 덧칠. */
+.lv-tok {
+  font-weight: 700;
+}
+
+.lv-tok-error {
+  color: #f38ba8;
+}
+
+.lv-tok-warn {
+  color: #f9e2af;
+}
+
+.lv-tok-info {
+  color: #7aa2f7;
+}
+
+.lv-tok-debug {
+  color: #6c7086;
 }
 
 .lv-empty {

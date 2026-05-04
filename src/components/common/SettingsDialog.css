@@ -165,3 +165,55 @@
   font-size: 11px;
   font-family: var(--font-sans);
 }
+
+.settings-checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 8px 0;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  color: #cdd6f4;
+  font-size: 12px;
+}
+
+.settings-checkbox-row input[type="checkbox"] {
+  margin-top: 2px;
+  accent-color: #7aa2f7;
+}
+
+.settings-checkbox-row strong {
+  display: block;
+  font-weight: 600;
+  margin-bottom: 2px;
+}
+
+.settings-checkbox-hint {
+  display: block;
+  color: #6c7086;
+  font-size: 11px;
+  font-weight: 400;
+}
+
+.settings-checkbox-hint code,
+.settings-desc code {
+  background: #313244;
+  color: #a6adc8;
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 10px;
+}
+
+.settings-code {
+  background: #11111b;
+  border: 1px solid #313244;
+  border-radius: 4px;
+  padding: 8px 10px;
+  margin: 8px 0;
+  color: #a6adc8;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 11px;
+  line-height: 1.5;
+  overflow-x: auto;
+}

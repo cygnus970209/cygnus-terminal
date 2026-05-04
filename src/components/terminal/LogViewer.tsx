@@ -1,6 +1,27 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
+import { detectLogLevel } from "../../utils/logLevel";
 import "./LogViewer.css";
+
+/**
+ * 로그 라인 한 줄을 렌더 — 레벨 키워드(ERROR/WARN/INFO/DEBUG ...)를 감지해
+ * 라인에 lv-line-${level} 클래스 + 매치 토큰에 lv-tok-${level} span 부여.
+ */
+function LogLine({ line }: { line: string }) {
+  const match = detectLogLevel(line);
+  if (!match) {
+    return <div className="lv-line">{line}</div>;
+  }
+  const before = line.slice(0, match.start);
+  const after = line.slice(match.end);
+  return (
+    <div className={`lv-line lv-line-${match.level}`}>
+      {before}
+      <span className={`lv-tok lv-tok-${match.level}`}>{match.token}</span>
+      {after}
+    </div>
+  );
+}
 
 interface TailLine {
   tail_id: string;
@@ -179,9 +200,7 @@ export default function LogViewer({ sessionId, onClose }: LogViewerProps) {
       <div className="lv-content" ref={logRef}>
         {activeStream ? (
           activeStream.lines.map((line, i) => (
-            <div key={i} className="lv-line">
-              {line}
-            </div>
+            <LogLine key={i} line={line} />
           ))
         ) : (
           <div className="lv-empty">

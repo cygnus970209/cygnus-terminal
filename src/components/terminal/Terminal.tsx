@@ -3,6 +3,8 @@ import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { useTheme } from "../../hooks/useTheme";
+import { useHighlightSettings } from "../../hooks/useHighlightSettings";
+import { transformChunk } from "../../utils/ansiHighlight";
 import {
   parseOsc7Path,
   SHELL_INTEGRATION_TIMEOUT_MS,
@@ -69,10 +71,21 @@ export default function Terminal({
   const rafRef = useRef<number | null>(null);
 
   const { theme } = useTheme();
+  const { settings: highlightSettings } = useHighlightSettings();
+
+  // closure freshness 회피 — settings 변경 시에도 flushBuffer 는 stable 유지.
+  const highlightSettingsRef = useRef(highlightSettings);
+  highlightSettingsRef.current = highlightSettings;
 
   const flushBuffer = useCallback(() => {
     if (bufferRef.current && xtermRef.current) {
-      xtermRef.current.write(bufferRef.current);
+      let data = bufferRef.current;
+      // alternate buffer (vi/less/top/man) 에서는 자체 화면을 그리므로 손대면 깨짐.
+      // primary buffer 의 stream 출력에서만 transform.
+      if (xtermRef.current.buffer.active.type !== "alternate") {
+        data = transformChunk(data, highlightSettingsRef.current);
+      }
+      xtermRef.current.write(data);
       bufferRef.current = "";
     }
     rafRef.current = null;
@@ -140,6 +153,18 @@ export default function Terminal({
 
     xtermRef.current = xterm;
     fitAddonRef.current = fitAddon;
+
+    // 컨테이너 크기 변화 감지 — 사이드 패널 collapse/expand 시에도 자동으로 xterm grid 재계산.
+    // window resize 만 듣는 기존 핸들러는 panel toggle 을 못 잡는다.
+    // contentRect.width 가 0 이면 (탭 비활성으로 display:none 등) skip — fit 결과 cols=0 으로 깨짐 방지.
+    const resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.contentRect.width > 0) {
+          requestAnimationFrame(() => fitAddonRef.current?.fit());
+        }
+      }
+    });
+    resizeObserver.observe(terminalRef.current);
 
     // Copy / Paste 단축키. xterm 은 기본 clipboard 연동이 없어서 직접 붙인다.
     //  macOS: ⌘C copy (선택 있을 때만), ⌘V paste
@@ -330,6 +355,7 @@ export default function Terminal({
 
     return () => {
       window.removeEventListener("resize", handleResize);
+      resizeObserver.disconnect();
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
       clearTimeout(oscTimeoutId);
       oscHandler.dispose();
