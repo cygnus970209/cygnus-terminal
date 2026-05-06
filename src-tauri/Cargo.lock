@@ -1166,7 +1166,7 @@ dependencies = [
  "notify 7.0.0",
  "notify-debouncer-mini",
  "portable-pty",
- "rand 0.8.6",
+ "rand 0.10.1",
  "rusqlite",
  "russh",
  "russh-sftp",
