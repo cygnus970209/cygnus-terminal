@@ -1,0 +1,49 @@
+.log-popout-app {
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: #1e1e2e;
+}
+
+.log-popout-select {
+  height: 100vh;
+  background: #1e1e2e;
+  padding: 24px;
+  font-family: var(--font-sans);
+}
+
+.log-popout-select h2 {
+  color: #cdd6f4;
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 16px;
+}
+
+.log-popout-empty {
+  color: #585b70;
+  font-size: 12px;
+}
+
+.log-popout-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.log-popout-item {
+  padding: 12px 14px;
+  text-align: left;
+  background: #181825;
+  border: 1px solid #313244;
+  border-radius: 6px;
+  color: #cdd6f4;
+  font-size: 13px;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  transition: border-color 120ms ease-out, background 120ms ease-out;
+}
+
+.log-popout-item:hover {
+  border-color: #7aa2f7;
+  background: #232338;
+}

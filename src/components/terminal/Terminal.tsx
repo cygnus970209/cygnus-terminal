@@ -4,7 +4,13 @@ import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { useTheme } from "../../hooks/useTheme";
 import { useHighlightSettings } from "../../hooks/useHighlightSettings";
+import { useTerminalNotifySettings } from "../../hooks/useTerminalNotifySettings";
 import { transformChunk } from "../../utils/ansiHighlight";
+import {
+  isPermissionGranted,
+  requestPermission,
+  sendNotification,
+} from "@tauri-apps/plugin-notification";
 import {
   parseOsc7Path,
   SHELL_INTEGRATION_TIMEOUT_MS,
@@ -46,6 +52,37 @@ interface PtyEventExit {
 
 type PtyEvent = PtyEventOutput | PtyEventExit;
 
+function formatElapsed(ms: number): string {
+  const total = Math.round(ms / 1000);
+  if (total < 60) return `${total}s`;
+  if (total < 3600) {
+    const m = Math.floor(total / 60);
+    const s = total % 60;
+    return s > 0 ? `${m}m ${s}s` : `${m}m`;
+  }
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  return m > 0 ? `${h}h ${m}m` : `${h}h`;
+}
+
+async function sendCompletionNotification(command: string, elapsedMs: number) {
+  try {
+    let granted = await isPermissionGranted();
+    if (!granted) {
+      const perm = await requestPermission();
+      granted = perm === "granted";
+    }
+    if (!granted) return;
+    const truncated = command.length > 60 ? command.slice(0, 60) + "..." : command;
+    sendNotification({
+      title: "Command completed",
+      body: `${truncated}  ·  ${formatElapsed(elapsedMs)}`,
+    });
+  } catch (err) {
+    console.error("Failed to send notification:", err);
+  }
+}
+
 export default function Terminal({
   tabId,
   type,
@@ -72,10 +109,23 @@ export default function Terminal({
 
   const { theme } = useTheme();
   const { settings: highlightSettings } = useHighlightSettings();
+  const { settings: notifySettings } = useTerminalNotifySettings();
 
-  // closure freshness 회피 — settings 변경 시에도 flushBuffer 는 stable 유지.
+  // closure freshness 회피 — settings 변경 시에도 stable 유지.
   const highlightSettingsRef = useRef(highlightSettings);
   highlightSettingsRef.current = highlightSettings;
+  const notifySettingsRef = useRef(notifySettings);
+  notifySettingsRef.current = notifySettings;
+  const isActiveRef = useRef(isActive);
+  isActiveRef.current = isActive;
+
+  // 명령 실행 상태 추적 — Enter 시 running 진입, OSC 7 (다음 prompt) 시 idle 복귀.
+  // 알림은 "running → idle" 전환 시점에 elapsed 가 threshold 이상이고 창이 비활성일 때만.
+  const runStateRef = useRef<{
+    state: "idle" | "running" | "unknown";
+    startedAt: number;
+    command: string;
+  }>({ state: "unknown", startedAt: 0, command: "" });
 
   const flushBuffer = useCallback(() => {
     if (bufferRef.current && xtermRef.current) {
@@ -119,7 +169,7 @@ export default function Terminal({
     });
 
     // OSC 7 (shell directory hint) 수신 — 셸이 활성화한 경우 prompt 그릴 때마다 cwd 가 들어온다.
-    // race-free 한 cd 추적 채널. 미감지 시 timeout 후 pwd fallback 으로 전환.
+    // race-free 한 cd 추적 채널 + 명령 완료 알림 트리거 두 가지 역할.
     const oscHandler = xterm.parser.registerOscHandler(7, (data) => {
       const path = parseOsc7Path(data);
       if (!path) return false;
@@ -133,6 +183,25 @@ export default function Terminal({
         lastCwdRef.current = path;
         onCwdChanged?.(tabId, path);
       }
+
+      // 명령 완료 알림 — "running → idle" 전환 시점.
+      const rs = runStateRef.current;
+      if (rs.state === "running") {
+        const elapsedMs = Date.now() - rs.startedAt;
+        const ns = notifySettingsRef.current;
+        const inactive = !isActiveRef.current || !document.hasFocus();
+        if (
+          ns.enabled &&
+          inactive &&
+          elapsedMs >= ns.thresholdSeconds * 1000
+        ) {
+          void sendCompletionNotification(rs.command, elapsedMs);
+        }
+        runStateRef.current = { state: "idle", startedAt: 0, command: "" };
+      } else if (rs.state === "unknown") {
+        runStateRef.current = { state: "idle", startedAt: 0, command: "" };
+      }
+
       return false; // 기본 처리도 계속 (다른 OSC handler 있을 가능성)
     });
 
@@ -325,6 +394,12 @@ export default function Terminal({
                 if (cmd.match(/^cd\s|^cd$/)) {
                   onCdDetected?.();
                 }
+                // 명령 실행 시작 — 알림 elapsed 측정 시작점.
+                runStateRef.current = {
+                  state: "running",
+                  startedAt: Date.now(),
+                  command: cmd,
+                };
               }
             }
           }

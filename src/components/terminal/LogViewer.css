@@ -8,6 +8,12 @@
   flex-shrink: 0;
 }
 
+/* popout 윈도우 — 화면 가득 채움 */
+.logviewer-full {
+  height: 100%;
+  flex: 1;
+}
+
 .lv-header {
   display: flex;
   align-items: center;
@@ -239,6 +245,217 @@
 
 .lv-tok-debug {
   color: #6c7086;
+}
+
+/* 검색 매치 토큰 — 노란 배경 강조 */
+.lv-tok-search {
+  background: #fab387;
+  color: #11111b;
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+/* 알림 매치 라인 — 빨강 좌측 굵은 막대 + 살짝의 배경 */
+.lv-line-alert {
+  border-left: 4px solid #f5a97f;
+  background: rgba(245, 169, 127, 0.1);
+}
+
+/* 헤더 검색 input */
+.lv-search {
+  background: #11111b;
+  border: 1px solid #313244;
+  border-radius: 4px;
+  color: #cdd6f4;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-family: var(--font-sans);
+  width: 160px;
+  transition: border-color 120ms ease-out, width 120ms ease-out;
+}
+
+.lv-search:focus {
+  outline: none;
+  border-color: #7aa2f7;
+  width: 200px;
+}
+
+.lv-search::placeholder {
+  color: #585b70;
+}
+
+/* 레벨 필터 chips */
+.lv-chips {
+  display: flex;
+  gap: 4px;
+}
+
+.lv-chip {
+  background: transparent;
+  border: 1px solid #313244;
+  border-radius: 3px;
+  color: #585b70;
+  padding: 2px 6px;
+  font-size: 9px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-weight: 600;
+  cursor: pointer;
+  letter-spacing: 0.3px;
+  transition: all 120ms ease-out;
+}
+
+.lv-chip:hover {
+  border-color: #45475a;
+}
+
+.lv-chip-on {
+  border-color: currentColor;
+}
+
+.lv-chip-error.lv-chip-on { color: #f38ba8; background: rgba(243, 139, 168, 0.1); }
+.lv-chip-warn.lv-chip-on { color: #f9e2af; background: rgba(249, 226, 175, 0.1); }
+.lv-chip-info.lv-chip-on { color: #7aa2f7; background: rgba(122, 162, 247, 0.1); }
+.lv-chip-debug.lv-chip-on { color: #a6adc8; background: rgba(166, 173, 200, 0.08); }
+.lv-chip-other.lv-chip-on { color: #cdd6f4; background: rgba(205, 214, 244, 0.06); }
+
+/* 카운터 */
+.lv-count {
+  color: #585b70;
+  font-size: 10px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  margin-left: auto;
+}
+
+.lv-btn-on {
+  background: rgba(122, 162, 247, 0.15);
+  color: #7aa2f7;
+}
+
+/* 알림 패널 */
+.lv-alerts-panel {
+  border-bottom: 1px solid #313244;
+  background: #11111b;
+  padding: 6px 10px;
+}
+
+.lv-alerts-form {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.lv-alerts-form input {
+  flex: 1;
+  background: #1e1e2e;
+  border: 1px solid #313244;
+  border-radius: 3px;
+  color: #cdd6f4;
+  padding: 3px 6px;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+
+.lv-alerts-form input:first-child {
+  flex: 2;
+}
+
+.lv-alerts-form input:focus {
+  outline: none;
+  border-color: #7aa2f7;
+}
+
+.lv-alerts-empty {
+  color: #585b70;
+  font-size: 11px;
+  font-family: var(--font-sans);
+  padding: 4px 0;
+  font-style: italic;
+}
+
+.lv-alerts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-height: 120px;
+  overflow-y: auto;
+}
+
+.lv-alert-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  font-size: 11px;
+}
+
+.lv-alert-item input[type="checkbox"] {
+  accent-color: #7aa2f7;
+  margin: 0;
+}
+
+.lv-alert-label {
+  color: #cdd6f4;
+  font-family: var(--font-sans);
+  min-width: 80px;
+}
+
+.lv-alert-pattern {
+  color: #a6adc8;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 10px;
+  background: #1e1e2e;
+  border: 1px solid #313244;
+  border-radius: 3px;
+  padding: 1px 5px;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lv-alert-del {
+  background: none;
+  border: none;
+  color: #6c7086;
+  cursor: pointer;
+  font-size: 14px;
+  line-height: 1;
+  padding: 0 4px;
+}
+
+.lv-alert-del:hover {
+  color: #f38ba8;
+}
+
+/* 알림 토스트 — 우측 하단 */
+.lv-toast {
+  position: absolute;
+  bottom: 12px;
+  right: 12px;
+  background: #f5a97f;
+  color: #11111b;
+  padding: 6px 12px;
+  border-radius: 4px;
+  font-size: 11px;
+  font-family: var(--font-sans);
+  font-weight: 600;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  animation: lv-toast-in 200ms ease-out;
+}
+
+@keyframes lv-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.logviewer {
+  position: relative;
 }
 
 .lv-empty {

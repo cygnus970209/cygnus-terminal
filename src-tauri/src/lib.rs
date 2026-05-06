@@ -45,6 +45,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_drag::init())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .plugin(tauri_plugin_notification::init())
         .on_menu_event(|app, event| {
             match event.id().as_ref() {
                 "preferences" => {
@@ -210,6 +211,7 @@ pub fn run() {
             commands::delete_snippet,
             commands::tail_start,
             commands::tail_stop,
+            commands::journal_start,
             commands::open_in_editor,
             commands::stop_file_watch,
             commands::sync_preview,

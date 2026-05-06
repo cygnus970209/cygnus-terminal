@@ -47,15 +47,49 @@ impl TailManager {
         lines: u32,
         event_channel: Channel<TailEvent>,
     ) -> Result<(), String> {
+        let cmd = format!("tail -n {} -f {}", lines, path);
+        self.start_with_cmd(tail_id, path, cmd, session_id, ssh_manager, event_channel)
+            .await
+    }
+
+    /// journalctl 기반 follow. `args` 는 `journalctl` 뒤에 그대로 붙는다 (예: `-fu nginx`).
+    /// 사용자가 follow 플래그를 명시하지 않으면 cat 모드가 되어 즉시 종료될 수 있음.
+    pub async fn start_journal(
+        &self,
+        tail_id: &str,
+        args: &str,
+        session_id: &str,
+        ssh_manager: &SshManager,
+        event_channel: Channel<TailEvent>,
+    ) -> Result<(), String> {
+        let cmd = format!("journalctl {}", args);
+        // label 은 args 자체 — UI 의 tab 이름에 사용됨.
+        let label = if args.is_empty() {
+            "journalctl"
+        } else {
+            args
+        };
+        self.start_with_cmd(tail_id, label, cmd, session_id, ssh_manager, event_channel)
+            .await
+    }
+
+    /// 내부 — SSH 채널 열고 임의 명령 실행 후 stdout/stderr 를 stream 으로 emit.
+    async fn start_with_cmd(
+        &self,
+        tail_id: &str,
+        label: &str,
+        cmd: String,
+        session_id: &str,
+        ssh_manager: &SshManager,
+        event_channel: Channel<TailEvent>,
+    ) -> Result<(), String> {
         let ssh = ssh_manager.clone_inner();
         let tail_id_owned = tail_id.to_string();
-        let path_owned = path.to_string();
-        let session_id_owned = session_id.to_string();
+        let label_owned = label.to_string();
 
-        // SSH 채널 열고 tail -f 실행
         let sessions = ssh.lock().await;
         let session = sessions
-            .get(&session_id_owned)
+            .get(session_id)
             .ok_or("SSH session not found")?;
 
         let mut channel = session
@@ -64,7 +98,6 @@ impl TailManager {
             .await
             .map_err(|e| format!("Channel open failed: {e}"))?;
 
-        let cmd = format!("tail -n {} -f {}", lines, path_owned);
         channel
             .exec(true, cmd.as_str())
             .await
@@ -73,7 +106,7 @@ impl TailManager {
         drop(sessions);
 
         let tid = tail_id_owned.clone();
-        let p = path_owned.clone();
+        let lbl = label_owned.clone();
 
         let handle = tokio::spawn(async move {
             loop {
@@ -82,7 +115,7 @@ impl TailManager {
                         let content = String::from_utf8_lossy(&data).to_string();
                         let _ = event_channel.send(TailEvent::Line(TailLine {
                             tail_id: tid.clone(),
-                            path: p.clone(),
+                            path: lbl.clone(),
                             content,
                         }));
                     }
@@ -100,9 +133,9 @@ impl TailManager {
         });
 
         self.tails.lock().await.insert(
-            tail_id.to_string(),
+            tail_id_owned,
             TailTask {
-                path: path_owned,
+                path: label_owned,
                 handle,
             },
         );

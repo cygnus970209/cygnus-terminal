@@ -463,6 +463,29 @@ pub async fn tail_stop(
     tail_manager.stop(&tail_id).await
 }
 
+#[tauri::command]
+pub async fn journal_start(
+    session_id: String,
+    args: String,
+    on_event: Channel<TailEvent>,
+    ssh_manager: State<'_, SshManager>,
+    tail_manager: State<'_, TailManager>,
+) -> Result<String, String> {
+    // 같은 세션의 같은 args 를 두 번 시작해도 별 stream 으로 나뉘게 timestamp 추가.
+    let tail_id = format!(
+        "journal-{}-{}",
+        session_id.chars().take(8).collect::<String>(),
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0)
+    );
+    tail_manager
+        .start_journal(&tail_id, &args, &session_id, &ssh_manager, on_event)
+        .await?;
+    Ok(tail_id)
+}
+
 // ── File Watcher (Edit & Auto-Upload) ──
 
 #[tauri::command]

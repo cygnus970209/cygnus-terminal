@@ -362,6 +362,45 @@ function App() {
     }
   }, [sessionMap, sftpSessions]);
 
+  /** LogViewer popout 열기. 활성 SSH 세션 기준으로 윈도우 생성 (기존 있으면 focus). */
+  const openLogPopout = useCallback(async () => {
+    if (!activeTabId) return;
+    const sshSessionId = sessionMap[activeTabId];
+    const tab = tabs.find((t) => t.id === activeTabId);
+    if (!sshSessionId || !tab) return;
+
+    const label = `log-${sshSessionId}`;
+    const params = new URLSearchParams({
+      view: "log",
+      sshSessionId,
+      label: tab.title,
+    });
+
+    const existing = await WebviewWindow.getByLabel(label);
+    if (existing) {
+      try {
+        await existing.show();
+        await existing.setFocus();
+      } catch (err) {
+        console.error("Failed to focus log popout:", err);
+      }
+      return;
+    }
+
+    try {
+      new WebviewWindow(label, {
+        url: `/?${params.toString()}`,
+        title: `Logs — ${tab.title}`,
+        width: 900,
+        height: 600,
+        minWidth: 600,
+        minHeight: 300,
+      });
+    } catch (err) {
+      console.error("Failed to create log popout:", err);
+    }
+  }, [activeTabId, sessionMap, tabs]);
+
   const closeTab = useCallback(
     (id: string) => {
       if (id === "connections" || id === "snippets") return;
@@ -728,6 +767,7 @@ function App() {
           <LogViewer
             sessionId={sessionMap[activeTabId]}
             onClose={() => setDrawerTab(null)}
+            onPopout={openLogPopout}
           />
         )}
       </StatusBar>
