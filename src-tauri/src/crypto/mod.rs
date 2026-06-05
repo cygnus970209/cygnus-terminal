@@ -3,7 +3,6 @@ use aes_gcm::{
     Aes256Gcm, Nonce,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use rand::RngCore;
 
 const KEYRING_SERVICE: &str = "com.intocns.cygnus-terminal";
 const KEYRING_USER: &str = "master-key";
@@ -25,8 +24,7 @@ impl CryptoManager {
         let cipher = Aes256Gcm::new_from_slice(&self.master_key)
             .map_err(|e| format!("Failed to create cipher: {e}"))?;
 
-        let mut nonce_bytes = [0u8; 12];
-        rand::thread_rng().fill_bytes(&mut nonce_bytes);
+        let nonce_bytes: [u8; 12] = rand::random();
         let nonce = Nonce::from_slice(&nonce_bytes);
 
         let ciphertext = cipher
@@ -66,8 +64,7 @@ impl CryptoManager {
 
     #[doc(hidden)]
     pub fn new_random() -> Self {
-        let mut key = [0u8; KEY_SIZE];
-        rand::thread_rng().fill_bytes(&mut key);
+        let key: [u8; KEY_SIZE] = rand::random();
         Self { master_key: key }
     }
 
@@ -88,8 +85,7 @@ impl CryptoManager {
             }
             Err(keyring::Error::NoEntry) => {
                 // 새 마스터 키 생성
-                let mut key = [0u8; KEY_SIZE];
-                rand::thread_rng().fill_bytes(&mut key);
+                let key: [u8; KEY_SIZE] = rand::random();
                 let encoded = BASE64.encode(&key);
                 entry
                     .set_password(&encoded)

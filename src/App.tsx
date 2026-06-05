@@ -28,6 +28,7 @@ import ConnectDialog from "./components/connection/ConnectDialog";
 import ServerContext from "./components/connection/ServerContext";
 import FileTree from "./components/files/FileTree";
 import SnippetsView from "./components/snippets/SnippetsView";
+import VaultView from "./components/vault/VaultView";
 import SftpView from "./components/sftp/SftpView";
 import "./App.css";
 
@@ -71,6 +72,7 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
   const [showSnippets, setShowSnippets] = useState(false);
+  const [showVault, setShowVault] = useState(false);
   const [telnetPromptOpen, setTelnetPromptOpen] = useState(false);
   const [serialPorts, setSerialPorts] = useState<SerialPortInfo[] | null>(null);
   // SSH host key 확인 큐. 연속 연결 시 여러 개가 쌓일 수 있어 FIFO 로 하나씩 처리.
@@ -590,6 +592,12 @@ function App() {
       onSelect: () => setShowSnippets(true),
     },
     {
+      id: "action:manage-vault",
+      kind: "action",
+      title: "Manage Vault...",
+      onSelect: () => setShowVault(true),
+    },
+    {
       id: "action:open-settings",
       kind: "action",
       title: "Open Settings",
@@ -810,6 +818,29 @@ function App() {
                 setShowSnippets(false);
               }}
             />
+          </div>
+        </div>
+      )}
+
+      {showVault && (
+        <div
+          className="sn-modal-overlay"
+          onMouseDown={() => setShowVault(false)}
+        >
+          <div
+            className="sn-modal-body"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="sn-modal-head">
+              <span className="sn-modal-title">Vault</span>
+              <button
+                className="sn-modal-close"
+                onClick={() => setShowVault(false)}
+              >
+                ✕
+              </button>
+            </div>
+            <VaultView onClose={() => setShowVault(false)} />
           </div>
         </div>
       )}

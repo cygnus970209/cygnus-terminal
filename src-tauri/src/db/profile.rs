@@ -17,6 +17,7 @@ pub struct Profile {
     pub sort_order: i32,
     pub jump_host: Option<String>,
     pub agent_forward: bool,
+    pub environment: String, // 'development' | 'staging' | 'production'
     pub created_at: String,
     pub updated_at: String,
 }
@@ -33,6 +34,7 @@ pub struct CreateProfileRequest {
     pub group_name: Option<String>,
     pub jump_host: Option<String>,
     pub agent_forward: Option<bool>,
+    pub environment: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -47,6 +49,7 @@ pub struct UpdateProfileRequest {
     pub group_name: Option<String>,
     pub jump_host: Option<String>,
     pub agent_forward: Option<bool>,
+    pub environment: Option<String>,
 }
 
 impl Database {
@@ -60,10 +63,18 @@ impl Database {
             _ => None,
         };
 
+        let environment = req.environment.unwrap_or_else(|| "development".to_string());
+        if !matches!(
+            environment.as_str(),
+            "development" | "staging" | "production"
+        ) {
+            return Err(format!("Invalid environment: {environment}"));
+        }
+
         let conn = self.conn();
         conn.execute(
-            "INSERT INTO profiles (name, host, port, username, auth_type, password, key_path, group_name, jump_host, agent_forward)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            "INSERT INTO profiles (name, host, port, username, auth_type, password, key_path, group_name, jump_host, agent_forward, environment)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
             rusqlite::params![
                 req.name,
                 req.host,
@@ -75,6 +86,7 @@ impl Database {
                 req.group_name.unwrap_or_default(),
                 req.jump_host,
                 req.agent_forward.unwrap_or(false),
+                environment,
             ],
         ).map_err(|e| format!("Failed to create profile: {e}"))?;
 
@@ -86,7 +98,7 @@ impl Database {
     pub fn get_profile(&self, id: i64, crypto: &CryptoManager) -> Result<Profile, String> {
         let conn = self.conn();
         conn.query_row(
-            "SELECT id, name, host, port, username, auth_type, password, key_path, group_name, sort_order, jump_host, agent_forward, created_at, updated_at
+            "SELECT id, name, host, port, username, auth_type, password, key_path, group_name, sort_order, jump_host, agent_forward, environment, created_at, updated_at
              FROM profiles WHERE id = ?1",
             [id],
             |row| {
@@ -103,8 +115,9 @@ impl Database {
                     sort_order: row.get(9)?,
                     jump_host: row.get(10)?,
                     agent_forward: row.get(11)?,
-                    created_at: row.get(12)?,
-                    updated_at: row.get(13)?,
+                    environment: row.get(12)?,
+                    created_at: row.get(13)?,
+                    updated_at: row.get(14)?,
                 })
             },
         )
@@ -116,7 +129,7 @@ impl Database {
         let conn = self.conn();
         let mut stmt = conn
             .prepare(
-                "SELECT id, name, host, port, username, auth_type, password, key_path, group_name, sort_order, jump_host, agent_forward, created_at, updated_at
+                "SELECT id, name, host, port, username, auth_type, password, key_path, group_name, sort_order, jump_host, agent_forward, environment, created_at, updated_at
                  FROM profiles ORDER BY sort_order, name",
             )
             .map_err(|e| format!("Failed to prepare query: {e}"))?;
@@ -136,8 +149,9 @@ impl Database {
                     sort_order: row.get(9)?,
                     jump_host: row.get(10)?,
                     agent_forward: row.get(11)?,
-                    created_at: row.get(12)?,
-                    updated_at: row.get(13)?,
+                    environment: row.get(12)?,
+                    created_at: row.get(13)?,
+                    updated_at: row.get(14)?,
                 })
             })
             .map_err(|e| format!("Failed to query profiles: {e}"))?;
@@ -158,6 +172,7 @@ impl Database {
                 sort_order: row.sort_order,
                 jump_host: row.jump_host,
                 agent_forward: row.agent_forward,
+                environment: row.environment,
                 created_at: row.created_at,
                 updated_at: row.updated_at,
             });
@@ -221,6 +236,16 @@ impl Database {
         if let Some(agent_forward) = req.agent_forward {
             sets.push("agent_forward = ?");
             params.push(Box::new(agent_forward));
+        }
+        if let Some(ref environment) = req.environment {
+            if !matches!(
+                environment.as_str(),
+                "development" | "staging" | "production"
+            ) {
+                return Err(format!("Invalid environment: {environment}"));
+            }
+            sets.push("environment = ?");
+            params.push(Box::new(environment.clone()));
         }
 
         if sets.is_empty() {
@@ -287,6 +312,7 @@ struct ProfileRow {
     sort_order: i32,
     jump_host: Option<String>,
     agent_forward: bool,
+    environment: String,
     created_at: String,
     updated_at: String,
 }
@@ -311,6 +337,7 @@ impl ProfileRow {
             sort_order: self.sort_order,
             jump_host: self.jump_host,
             agent_forward: self.agent_forward,
+            environment: self.environment,
             created_at: self.created_at,
             updated_at: self.updated_at,
         })

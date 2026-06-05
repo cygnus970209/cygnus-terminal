@@ -11,6 +11,7 @@ pub mod sync;
 pub mod tail;
 pub mod telnet;
 pub mod transfer;
+pub mod vault;
 pub mod watcher;
 
 use std::sync::Arc;
@@ -230,6 +231,12 @@ pub fn run() {
             commands::sftp_transfer_cancel,
             commands::sftp_transfer_list,
             commands::sftp_transfer_clear_completed,
+            commands::vault_create,
+            commands::vault_list,
+            commands::vault_get,
+            commands::vault_update,
+            commands::vault_delete,
+            commands::vault_link_server,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
