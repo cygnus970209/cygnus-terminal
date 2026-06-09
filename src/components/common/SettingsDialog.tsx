@@ -1,6 +1,7 @@
 import { ReactNode, useState } from "react";
 import ThemeTab from "./settings/ThemeTab";
 import TerminalTab from "./settings/TerminalTab";
+import VaultPromptsTab from "./settings/VaultPromptsTab";
 import DataTab from "./settings/DataTab";
 import ShortcutsTab from "./settings/ShortcutsTab";
 import AboutTab from "./settings/AboutTab";
@@ -20,6 +21,7 @@ interface TabDef {
 const TABS: TabDef[] = [
   { id: "theme", label: "Theme", render: () => <ThemeTab /> },
   { id: "terminal", label: "Terminal", render: () => <TerminalTab /> },
+  { id: "autofill", label: "Autofill", render: () => <VaultPromptsTab /> },
   { id: "data", label: "Data", render: () => <DataTab /> },
   { id: "shortcuts", label: "Shortcuts", render: () => <ShortcutsTab /> },
   { id: "about", label: "About", render: () => <AboutTab /> },

@@ -310,6 +310,42 @@ impl Database {
         self.get_vault_item(vault_item_id)
     }
 
+    /// 항목의 평문 secret을 복호화해 반환하고 `last_used_at`을 갱신한다.
+    /// reveal/inject 경로 전용 — list/get은 절대 평문을 반환하지 않는다.
+    /// 로컬 암호화 저장(`cygnus` source)만 지원하며, 값이 없거나 외부 소스면 에러.
+    pub fn reveal_vault_secret(
+        &self,
+        id: i64,
+        crypto: &CryptoManager,
+    ) -> Result<String, String> {
+        let conn = self.conn();
+        let (source, encrypted) = conn
+            .query_row(
+                "SELECT source, encrypted_value FROM vault_items WHERE id = ?1",
+                [id],
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, Option<String>>(1)?)),
+            )
+            .map_err(|e| format!("Vault item not found: {e}"))?;
+
+        if source != SOURCE_CYGNUS {
+            return Err(format!(
+                "Cannot reveal secret for external source '{source}'"
+            ));
+        }
+        let encrypted = encrypted
+            .filter(|s| !s.is_empty())
+            .ok_or("Vault item has no stored value")?;
+        let secret = crypto.decrypt(&encrypted)?;
+
+        conn.execute(
+            "UPDATE vault_items SET last_used_at = CURRENT_TIMESTAMP WHERE id = ?1",
+            [id],
+        )
+        .map_err(|e| format!("Failed to update last_used_at: {e}"))?;
+
+        Ok(secret)
+    }
+
     fn list_vault_servers(
         &self,
         vault_item_id: i64,

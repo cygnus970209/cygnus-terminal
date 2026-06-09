@@ -237,6 +237,7 @@ pub fn run() {
             commands::vault_update,
             commands::vault_delete,
             commands::vault_link_server,
+            commands::vault_inject,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
