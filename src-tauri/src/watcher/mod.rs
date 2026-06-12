@@ -30,6 +30,12 @@ pub struct FileWatcherManager {
     watches: Arc<Mutex<HashMap<String, WatchEntry>>>,
 }
 
+impl Default for FileWatcherManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FileWatcherManager {
     pub fn new() -> Self {
         Self {

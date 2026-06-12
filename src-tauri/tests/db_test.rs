@@ -42,7 +42,7 @@ fn migration_version_recorded() {
         })
         .unwrap();
 
-    assert_eq!(version, 5);
+    assert_eq!(version, cygnus_terminal_lib::db::migration::latest_version());
 }
 
 #[test]
@@ -66,6 +66,7 @@ fn make_password_profile() -> CreateProfileRequest {
         group_name: Some("Production".to_string()),
         jump_host: None,
         agent_forward: None,
+        environment: None,
     }
 }
 
@@ -81,6 +82,7 @@ fn make_key_profile() -> CreateProfileRequest {
         group_name: None,
         jump_host: None,
         agent_forward: None,
+        environment: None,
     }
 }
 
@@ -150,6 +152,7 @@ fn update_profile_partial() {
                 group_name: None,
                 jump_host: None,
                 agent_forward: None,
+                environment: None,
             },
             &crypto,
         )
@@ -183,6 +186,7 @@ fn update_profile_password() {
                 group_name: None,
                 jump_host: None,
                 agent_forward: None,
+                environment: None,
             },
             &crypto,
         )
@@ -313,4 +317,129 @@ fn save_host_key_upsert() {
         status,
         cygnus_terminal_lib::db::known_host::HostKeyStatus::Trusted
     ));
+}
+
+// ── Jump host 암호화 ──
+
+const JUMP_HOST_JSON: &str =
+    r#"{"host":"bastion.example.com","port":22,"username":"jump","auth_type":"password","password":"jump-secret"}"#;
+
+fn make_jump_host_profile() -> CreateProfileRequest {
+    CreateProfileRequest {
+        name: "Behind Bastion".to_string(),
+        host: "10.0.0.5".to_string(),
+        port: 22,
+        username: "admin".to_string(),
+        auth_type: "password".to_string(),
+        password: Some("secret123".to_string()),
+        key_path: None,
+        group_name: None,
+        jump_host: Some(JUMP_HOST_JSON.to_string()),
+        agent_forward: None,
+        environment: None,
+    }
+}
+
+#[test]
+fn jump_host_stored_encrypted_in_db() {
+    let (db, crypto) = setup();
+    let profile = db.create_profile(make_jump_host_profile(), &crypto).unwrap();
+
+    let raw: String = db
+        .conn()
+        .query_row(
+            "SELECT jump_host FROM profiles WHERE id = ?1",
+            [profile.id],
+            |row| row.get(0),
+        )
+        .unwrap();
+
+    // DB 에는 평문 JSON 이 아닌 암호문(base64)이 저장되어야 한다.
+    assert!(!raw.starts_with('{'));
+    assert!(!raw.contains("jump-secret"));
+}
+
+#[test]
+fn get_profile_decrypts_jump_host() {
+    let (db, crypto) = setup();
+    let profile = db.create_profile(make_jump_host_profile(), &crypto).unwrap();
+
+    let fetched = db.get_profile(profile.id, &crypto).unwrap();
+    assert_eq!(fetched.jump_host.as_deref(), Some(JUMP_HOST_JSON));
+}
+
+#[test]
+fn list_profiles_strips_jump_host_password() {
+    let (db, crypto) = setup();
+    db.create_profile(make_jump_host_profile(), &crypto).unwrap();
+
+    let profiles = db.list_profiles(&crypto).unwrap();
+    let jh = profiles[0].jump_host.as_deref().unwrap();
+
+    // 목록에서는 호스트 정보는 유지하되 비밀번호는 제거된다.
+    assert!(jh.contains("bastion.example.com"));
+    assert!(!jh.contains("jump-secret"));
+}
+
+#[test]
+fn update_with_empty_jump_host_clears_it() {
+    let (db, crypto) = setup();
+    let profile = db.create_profile(make_jump_host_profile(), &crypto).unwrap();
+
+    let updated = db
+        .update_profile(
+            profile.id,
+            cygnus_terminal_lib::db::profile::UpdateProfileRequest {
+                name: None,
+                host: None,
+                port: None,
+                username: None,
+                auth_type: None,
+                password: None,
+                key_path: None,
+                group_name: None,
+                jump_host: Some(String::new()),
+                agent_forward: None,
+                environment: None,
+            },
+            &crypto,
+        )
+        .unwrap();
+
+    assert!(updated.jump_host.is_none());
+}
+
+#[test]
+fn migrate_plaintext_jump_hosts_encrypts_legacy_rows() {
+    let (db, crypto) = setup();
+    let profile = db.create_profile(make_jump_host_profile(), &crypto).unwrap();
+
+    // 레거시 상태 재현: 평문 JSON 을 직접 저장
+    db.conn()
+        .execute(
+            "UPDATE profiles SET jump_host = ?1 WHERE id = ?2",
+            rusqlite::params![JUMP_HOST_JSON, profile.id],
+        )
+        .unwrap();
+
+    let migrated = db.migrate_plaintext_jump_hosts(&crypto).unwrap();
+    assert_eq!(migrated, 1);
+
+    // 마이그레이션 후 DB 값은 암호문, get 은 평문 복원
+    let raw: String = db
+        .conn()
+        .query_row(
+            "SELECT jump_host FROM profiles WHERE id = ?1",
+            [profile.id],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert!(!raw.starts_with('{'));
+    assert_eq!(
+        db.get_profile(profile.id, &crypto).unwrap().jump_host.as_deref(),
+        Some(JUMP_HOST_JSON)
+    );
+
+    // 멱등성: 두 번째 실행은 아무것도 바꾸지 않는다
+    assert_eq!(db.migrate_plaintext_jump_hosts(&crypto).unwrap(), 0);
 }

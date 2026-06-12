@@ -202,8 +202,7 @@ function App() {
   }, []);
 
   // popout SFTP 윈도우에 공유할 세션 리스트.
-  // tabs/sessionMap/sftpSessions 변경 시마다 브로드캐스트.
-  useEffect(() => {
+  const broadcastSftpSessions = useCallback(() => {
     const list = tabs
       .filter((t) => t.type === "ssh" && sessionMap[t.id] && sftpSessions[sessionMap[t.id]])
       .map((t) => ({
@@ -215,18 +214,13 @@ function App() {
     emit("sftp-sessions", list);
   }, [tabs, sessionMap, sftpSessions]);
 
+  // tabs/sessionMap/sftpSessions 변경 시마다 브로드캐스트.
+  useEffect(() => {
+    broadcastSftpSessions();
+  }, [broadcastSftpSessions]);
+
   // popout이 뒤늦게 뜰 때 최신 스냅샷을 요청하면 재발송.
-  useTauriListener("sftp-sessions-request", () => {
-    const list = tabs
-      .filter((t) => t.type === "ssh" && sessionMap[t.id] && sftpSessions[sessionMap[t.id]])
-      .map((t) => ({
-        id: sessionMap[t.id],
-        sftpId: sftpSessions[sessionMap[t.id]].sftpId,
-        label: t.title,
-        homePath: sftpSessions[sessionMap[t.id]].homePath,
-      }));
-    emit("sftp-sessions", list);
-  });
+  useTauriListener("sftp-sessions-request", broadcastSftpSessions);
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const activeProfileId = activeTab?.sshConfig?.profileId ?? null;

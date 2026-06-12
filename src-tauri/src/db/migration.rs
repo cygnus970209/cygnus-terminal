@@ -5,6 +5,11 @@ struct Migration {
     sql: &'static str,
 }
 
+/// 마이그레이션 목록 기준 최신 스키마 버전.
+pub fn latest_version() -> u32 {
+    MIGRATIONS.last().map(|m| m.version).unwrap_or(0)
+}
+
 const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,

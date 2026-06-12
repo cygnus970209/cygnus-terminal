@@ -80,7 +80,7 @@ impl PtyManager {
                         break;
                     }
                     Ok(n) => {
-                        let data = String::from_utf8_lossy(&buf[..n]).to_string();
+                        let data = String::from_utf8_lossy(&buf[..n]).into_owned();
                         if channel.send(PtyEvent::Output(data)).is_err() {
                             break;
                         }

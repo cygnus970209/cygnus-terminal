@@ -63,6 +63,12 @@ impl Database {
             _ => None,
         };
 
+        // jump_host JSON 은 비밀번호를 포함할 수 있으므로 password 와 동일하게 암호화 저장.
+        let encrypted_jump_host = match &req.jump_host {
+            Some(jh) if !jh.is_empty() => Some(crypto.encrypt(jh)?),
+            _ => None,
+        };
+
         let environment = req.environment.unwrap_or_else(|| "development".to_string());
         if !matches!(
             environment.as_str(),
@@ -84,7 +90,7 @@ impl Database {
                 encrypted_password,
                 req.key_path,
                 req.group_name.unwrap_or_default(),
-                req.jump_host,
+                encrypted_jump_host,
                 req.agent_forward.unwrap_or(false),
                 environment,
             ],
@@ -125,7 +131,7 @@ impl Database {
         .and_then(|row| row.into_profile(crypto))
     }
 
-    pub fn list_profiles(&self, _crypto: &CryptoManager) -> Result<Vec<Profile>, String> {
+    pub fn list_profiles(&self, crypto: &CryptoManager) -> Result<Vec<Profile>, String> {
         let conn = self.conn();
         let mut stmt = conn
             .prepare(
@@ -170,7 +176,7 @@ impl Database {
                 key_path: row.key_path,
                 group_name: row.group_name,
                 sort_order: row.sort_order,
-                jump_host: row.jump_host,
+                jump_host: sanitized_jump_host(row.jump_host.as_deref(), crypto),
                 agent_forward: row.agent_forward,
                 environment: row.environment,
                 created_at: row.created_at,
@@ -231,7 +237,12 @@ impl Database {
         }
         if let Some(ref jump_host) = req.jump_host {
             sets.push("jump_host = ?");
-            params.push(Box::new(jump_host.clone()));
+            if jump_host.is_empty() {
+                // password 와 동일한 규칙: 빈 문자열 = 제거
+                params.push(Box::new(None::<String>));
+            } else {
+                params.push(Box::new(crypto.encrypt(jump_host)?));
+            }
         }
         if let Some(agent_forward) = req.agent_forward {
             sets.push("agent_forward = ?");
@@ -285,6 +296,35 @@ impl Database {
         self.get_profile(id, crypto)
     }
 
+    /// 레거시 평문 jump_host 를 암호화 저장으로 일괄 전환. 앱 시작 시 1회 호출 (멱등).
+    pub fn migrate_plaintext_jump_hosts(&self, crypto: &CryptoManager) -> Result<usize, String> {
+        let conn = self.conn();
+        let mut stmt = conn
+            .prepare("SELECT id, jump_host FROM profiles WHERE jump_host IS NOT NULL AND jump_host != ''")
+            .map_err(|e| format!("Failed to prepare jump_host migration query: {e}"))?;
+
+        let rows: Vec<(i64, String)> = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+            .map_err(|e| format!("Failed to query jump_host rows: {e}"))?
+            .collect::<Result<_, _>>()
+            .map_err(|e| format!("Failed to read jump_host row: {e}"))?;
+        drop(stmt);
+
+        let mut migrated = 0;
+        for (id, jh) in rows {
+            if is_plaintext_jump_host(&jh) {
+                let encrypted = crypto.encrypt(&jh)?;
+                conn.execute(
+                    "UPDATE profiles SET jump_host = ?1 WHERE id = ?2",
+                    rusqlite::params![encrypted, id],
+                )
+                .map_err(|e| format!("Failed to encrypt jump_host for profile {id}: {e}"))?;
+                migrated += 1;
+            }
+        }
+        Ok(migrated)
+    }
+
     pub fn delete_profile(&self, id: i64) -> Result<(), String> {
         let conn = self.conn();
         let affected = conn
@@ -324,6 +364,18 @@ impl ProfileRow {
             _ => None,
         };
 
+        let jump_host = match self.jump_host {
+            Some(ref jh) if !jh.is_empty() => {
+                if is_plaintext_jump_host(jh) {
+                    // 마이그레이션 전 레거시 평문 — 그대로 반환 (앱 시작 시 암호화 마이그레이션됨)
+                    Some(jh.clone())
+                } else {
+                    Some(crypto.decrypt(jh)?)
+                }
+            }
+            _ => None,
+        };
+
         Ok(Profile {
             id: self.id,
             name: self.name,
@@ -335,11 +387,32 @@ impl ProfileRow {
             key_path: self.key_path,
             group_name: self.group_name,
             sort_order: self.sort_order,
-            jump_host: self.jump_host,
+            jump_host,
             agent_forward: self.agent_forward,
             environment: self.environment,
             created_at: self.created_at,
             updated_at: self.updated_at,
         })
     }
+}
+
+/// 암호문은 base64(nonce+ciphertext)라 `{` 로 시작할 수 없다 — 평문 JSON 과 구분 가능.
+fn is_plaintext_jump_host(value: &str) -> bool {
+    value.trim_start().starts_with('{')
+}
+
+/// 목록 조회용 jump_host — 복호화 후 JSON 에서 password 필드를 제거해 반환.
+/// 목록에서는 jump host 의 호스트/포트/사용자명만 필요하고 비밀번호는 노출하지 않는다.
+fn sanitized_jump_host(raw: Option<&str>, crypto: &CryptoManager) -> Option<String> {
+    let raw = raw.filter(|s| !s.is_empty())?;
+    let plain = if is_plaintext_jump_host(raw) {
+        raw.to_string()
+    } else {
+        crypto.decrypt(raw).ok()?
+    };
+    let mut value: serde_json::Value = serde_json::from_str(&plain).ok()?;
+    if let Some(obj) = value.as_object_mut() {
+        obj.remove("password");
+    }
+    serde_json::to_string(&value).ok()
 }
