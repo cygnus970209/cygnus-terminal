@@ -24,6 +24,7 @@ import {
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { SshConfig } from "../../types";
+import { TERMINAL_SCROLLBACK_LINES } from "../../constants";
 import { extractCommand } from "../../utils/promptParser";
 import "@xterm/xterm/css/xterm.css";
 
@@ -238,6 +239,7 @@ export default function Terminal({
       fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
       theme: theme.colors,
       allowProposedApi: true,
+      scrollback: TERMINAL_SCROLLBACK_LINES,
     });
 
     // OSC 7 (shell directory hint) 수신 — 셸이 활성화한 경우 prompt 그릴 때마다 cwd 가 들어온다.
