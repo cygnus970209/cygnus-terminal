@@ -192,8 +192,8 @@ impl Database {
         req: UpdateProfileRequest,
         crypto: &CryptoManager,
     ) -> Result<Profile, String> {
-        // 기존 프로필 존재 확인
-        self.get_profile(id, crypto)?;
+        // 기존 프로필 로드 (존재 확인 + jump host 비밀번호 보존에 사용)
+        let existing = self.get_profile(id, crypto)?;
 
         let conn = self.conn();
         let mut sets = Vec::new();
@@ -241,7 +241,12 @@ impl Database {
                 // password 와 동일한 규칙: 빈 문자열 = 제거
                 params.push(Box::new(None::<String>));
             } else {
-                params.push(Box::new(crypto.encrypt(jump_host)?));
+                // 편집 시 jump host 비밀번호를 재입력하지 않으면(빈 값) 기존 저장 비밀번호를 유지한다.
+                // 프론트엔드는 보안상 jump host 비밀번호를 보유하지 않으므로(목록에서 제거됨) 저장 시
+                // 항상 빈 비밀번호를 보내며, 그대로 저장하면 유실된다. 메인 password 의
+                // "빈 값 = 유지" 규칙과 동일한 의미를 JSON 비밀번호 필드 수준에서 적용한다.
+                let merged = merge_jump_host_password(jump_host, existing.jump_host.as_deref());
+                params.push(Box::new(crypto.encrypt(&merged)?));
             }
         }
         if let Some(agent_forward) = req.agent_forward {
@@ -401,6 +406,52 @@ fn is_plaintext_jump_host(value: &str) -> bool {
     value.trim_start().starts_with('{')
 }
 
+/// 편집 시 jump host 비밀번호를 비워두면(재입력 안 함) 기존 저장 비밀번호를 유지한다.
+/// 프론트엔드는 보안상 jump host 비밀번호를 보유하지 않아(목록에서 제거됨) 저장 시 항상
+/// 빈 비밀번호를 보내므로, 백엔드에서 기존 값을 복원해 유실을 방지한다.
+/// password 인증이 아니거나, 새 비밀번호가 입력되었거나, 파싱 불가 시 incoming 을 그대로 반환.
+fn merge_jump_host_password(incoming: &str, existing: Option<&str>) -> String {
+    let mut new_val: serde_json::Value = match serde_json::from_str(incoming) {
+        Ok(v) => v,
+        Err(_) => return incoming.to_string(),
+    };
+    let Some(obj) = new_val.as_object_mut() else {
+        return incoming.to_string();
+    };
+
+    // password 인증이 아니면 비밀번호 보존 불필요 (key auth 등)
+    if obj.get("auth_type").and_then(|v| v.as_str()) != Some("password") {
+        return incoming.to_string();
+    }
+
+    // 새 비밀번호가 입력되었으면 그대로 사용
+    let has_new_pw = obj
+        .get("password")
+        .and_then(|v| v.as_str())
+        .is_some_and(|s| !s.is_empty());
+    if has_new_pw {
+        return incoming.to_string();
+    }
+
+    // 비어 있으면 기존 저장 비밀번호 복원
+    let existing_pw = existing
+        .and_then(|e| serde_json::from_str::<serde_json::Value>(e).ok())
+        .and_then(|v| {
+            v.get("password")
+                .and_then(|p| p.as_str())
+                .map(String::from)
+        })
+        .filter(|s| !s.is_empty());
+
+    match existing_pw {
+        Some(pw) => {
+            obj.insert("password".to_string(), serde_json::Value::String(pw));
+            serde_json::to_string(&new_val).unwrap_or_else(|_| incoming.to_string())
+        }
+        None => incoming.to_string(),
+    }
+}
+
 /// 목록 조회용 jump_host — 복호화 후 JSON 에서 password 필드를 제거해 반환.
 /// 목록에서는 jump host 의 호스트/포트/사용자명만 필요하고 비밀번호는 노출하지 않는다.
 fn sanitized_jump_host(raw: Option<&str>, crypto: &CryptoManager) -> Option<String> {
@@ -415,4 +466,139 @@ fn sanitized_jump_host(raw: Option<&str>, crypto: &CryptoManager) -> Option<Stri
         obj.remove("password");
     }
     serde_json::to_string(&value).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::Database;
+
+    fn jump_json(password: &str) -> String {
+        format!(
+            r#"{{"host":"bastion.example.com","port":22,"username":"admin","auth_type":"password","password":"{password}"}}"#
+        )
+    }
+
+    fn create_req(jump_host: Option<String>) -> CreateProfileRequest {
+        CreateProfileRequest {
+            name: "srv".into(),
+            host: "10.0.0.1".into(),
+            port: 22,
+            username: "root".into(),
+            auth_type: "password".into(),
+            password: None,
+            key_path: None,
+            group_name: None,
+            jump_host,
+            agent_forward: Some(false),
+            environment: None,
+        }
+    }
+
+    fn empty_update(jump_host: Option<String>) -> UpdateProfileRequest {
+        UpdateProfileRequest {
+            name: None,
+            host: None,
+            port: None,
+            username: None,
+            auth_type: None,
+            password: None,
+            key_path: None,
+            group_name: None,
+            jump_host,
+            agent_forward: None,
+            environment: None,
+        }
+    }
+
+    fn jump_password(profile: &Profile) -> Option<String> {
+        let jh = profile.jump_host.as_ref()?;
+        let v: serde_json::Value = serde_json::from_str(jh).unwrap();
+        v.get("password")
+            .and_then(|p| p.as_str())
+            .map(String::from)
+    }
+
+    #[test]
+    fn edit_without_reentering_jump_password_preserves_it() {
+        let db = Database::new_in_memory().unwrap();
+        let crypto = CryptoManager::new_random();
+
+        let created = db
+            .create_profile(create_req(Some(jump_json("jumpsecret"))), &crypto)
+            .unwrap();
+
+        // 이름만 바꾸고 jump host 비밀번호는 비운 채 저장 (프론트엔드 편집 동작 재현)
+        let mut req = empty_update(Some(jump_json("")));
+        req.name = Some("renamed".into());
+        let updated = db.update_profile(created.id, req, &crypto).unwrap();
+
+        assert_eq!(
+            jump_password(&updated).as_deref(),
+            Some("jumpsecret"),
+            "비밀번호를 재입력하지 않으면 기존 jump host 비밀번호가 유지되어야 한다"
+        );
+    }
+
+    #[test]
+    fn edit_with_new_jump_password_overwrites_it() {
+        let db = Database::new_in_memory().unwrap();
+        let crypto = CryptoManager::new_random();
+
+        let created = db
+            .create_profile(create_req(Some(jump_json("oldjump"))), &crypto)
+            .unwrap();
+
+        let updated = db
+            .update_profile(created.id, empty_update(Some(jump_json("newjump"))), &crypto)
+            .unwrap();
+
+        assert_eq!(
+            jump_password(&updated).as_deref(),
+            Some("newjump"),
+            "새 비밀번호를 입력하면 그 값으로 덮어써야 한다"
+        );
+    }
+
+    #[test]
+    fn switching_jump_host_to_key_auth_drops_password() {
+        let db = Database::new_in_memory().unwrap();
+        let crypto = CryptoManager::new_random();
+
+        let created = db
+            .create_profile(create_req(Some(jump_json("jumpsecret"))), &crypto)
+            .unwrap();
+
+        // key 인증으로 전환 — password 필드 없음. 기존 비밀번호를 복원해선 안 된다.
+        let key_jump = r#"{"host":"bastion.example.com","port":22,"username":"admin","auth_type":"key","key_path":"~/.ssh/id_rsa"}"#;
+        let updated = db
+            .update_profile(created.id, empty_update(Some(key_jump.into())), &crypto)
+            .unwrap();
+
+        assert_eq!(
+            jump_password(&updated),
+            None,
+            "key 인증으로 전환하면 비밀번호가 남아 있으면 안 된다"
+        );
+    }
+
+    #[test]
+    fn clearing_jump_host_removes_it() {
+        let db = Database::new_in_memory().unwrap();
+        let crypto = CryptoManager::new_random();
+
+        let created = db
+            .create_profile(create_req(Some(jump_json("jumpsecret"))), &crypto)
+            .unwrap();
+
+        // 빈 문자열 = jump host 제거
+        let updated = db
+            .update_profile(created.id, empty_update(Some(String::new())), &crypto)
+            .unwrap();
+
+        assert!(
+            updated.jump_host.is_none(),
+            "빈 jump_host 는 제거되어야 한다"
+        );
+    }
 }

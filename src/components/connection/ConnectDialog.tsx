@@ -408,7 +408,7 @@ export default function ConnectDialog({
               </div>
               {form.jumpAuthType === "password" ? (
                 <div className="dialog-row">
-                  <label>Password</label>
+                  <label>Password{isEdit && " (leave empty to keep current)"}</label>
                   <input
                     type="password"
                     value={form.jumpPassword}
