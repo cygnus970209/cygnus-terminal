@@ -29,6 +29,12 @@ pub struct MonitorManager {
     tasks: Arc<Mutex<HashMap<String, tokio::task::JoinHandle<()>>>>,
 }
 
+impl Default for MonitorManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl MonitorManager {
     pub fn new() -> Self {
         Self {
@@ -128,7 +134,7 @@ impl MonitorManager {
 
         // CPU: 이전 스냅샷과 비교하여 실시간 사용률 계산
         if let Some(cpu_line) = sections.first() {
-            let parts: Vec<&str> = cpu_line.trim().split_whitespace().collect();
+            let parts: Vec<&str> = cpu_line.split_whitespace().collect();
             if parts.len() >= 5 {
                 let user: f64 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0.0);
                 let nice: f64 = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0.0);
@@ -154,7 +160,7 @@ impl MonitorManager {
 
         // Memory
         if let Some(mem_line) = sections.get(1) {
-            let parts: Vec<&str> = mem_line.trim().split_whitespace().collect();
+            let parts: Vec<&str> = mem_line.split_whitespace().collect();
             if parts.len() >= 3 {
                 stats.mem_total = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
                 stats.mem_used = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
@@ -167,7 +173,7 @@ impl MonitorManager {
 
         // Disk
         if let Some(disk_line) = sections.get(2) {
-            let parts: Vec<&str> = disk_line.trim().split_whitespace().collect();
+            let parts: Vec<&str> = disk_line.split_whitespace().collect();
             if parts.len() >= 4 {
                 stats.disk_total = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
                 stats.disk_used = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
@@ -180,7 +186,7 @@ impl MonitorManager {
 
         // Load average
         if let Some(load_line) = sections.get(3) {
-            let parts: Vec<&str> = load_line.trim().split_whitespace().collect();
+            let parts: Vec<&str> = load_line.split_whitespace().collect();
             if parts.len() >= 3 {
                 stats.load_avg = format!("{} {} {}", parts[0], parts[1], parts[2]);
             }

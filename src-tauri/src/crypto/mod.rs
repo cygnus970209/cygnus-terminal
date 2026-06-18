@@ -3,12 +3,14 @@ use aes_gcm::{
     Aes256Gcm, Nonce,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use rand::RngCore;
+use zeroize::{Zeroize, ZeroizeOnDrop};
 
 const KEYRING_SERVICE: &str = "com.intocns.cygnus-terminal";
 const KEYRING_USER: &str = "master-key";
 const KEY_SIZE: usize = 32;
 
+/// drop 시 master_key 메모리를 0으로 덮어 메모리 덤프로부터 키를 보호한다.
+#[derive(Zeroize, ZeroizeOnDrop)]
 pub struct CryptoManager {
     master_key: [u8; KEY_SIZE],
 }
@@ -25,8 +27,7 @@ impl CryptoManager {
         let cipher = Aes256Gcm::new_from_slice(&self.master_key)
             .map_err(|e| format!("Failed to create cipher: {e}"))?;
 
-        let mut nonce_bytes = [0u8; 12];
-        rand::thread_rng().fill_bytes(&mut nonce_bytes);
+        let nonce_bytes: [u8; 12] = rand::random();
         let nonce = Nonce::from_slice(&nonce_bytes);
 
         let ciphertext = cipher
@@ -66,8 +67,7 @@ impl CryptoManager {
 
     #[doc(hidden)]
     pub fn new_random() -> Self {
-        let mut key = [0u8; KEY_SIZE];
-        rand::thread_rng().fill_bytes(&mut key);
+        let key: [u8; KEY_SIZE] = rand::random();
         Self { master_key: key }
     }
 
@@ -75,24 +75,28 @@ impl CryptoManager {
         let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
             .map_err(|e| format!("Keyring init failed: {e}"))?;
 
-        // 기존 키 로드 시도
+        // 기존 키 로드 시도 — 키 재료를 담는 중간 버퍼(base64 문자열, 디코드 버퍼)도
+        // 사용 직후 zeroize 해 힙에 키 사본이 남지 않게 한다.
         match entry.get_password() {
-            Ok(stored) => {
-                let key_bytes = BASE64
-                    .decode(&stored)
-                    .map_err(|e| format!("Failed to decode master key: {e}"))?;
-                let key: [u8; KEY_SIZE] = key_bytes
-                    .try_into()
-                    .map_err(|_| "Stored master key has invalid length".to_string())?;
-                Ok(key)
+            Ok(mut stored) => {
+                let mut key_bytes = BASE64.decode(&stored).map_err(|e| {
+                    stored.zeroize();
+                    format!("Failed to decode master key: {e}")
+                })?;
+                stored.zeroize();
+
+                let key: Result<[u8; KEY_SIZE], _> = key_bytes.as_slice().try_into();
+                let result = key.map_err(|_| "Stored master key has invalid length".to_string());
+                key_bytes.zeroize();
+                result
             }
             Err(keyring::Error::NoEntry) => {
                 // 새 마스터 키 생성
-                let mut key = [0u8; KEY_SIZE];
-                rand::thread_rng().fill_bytes(&mut key);
-                let encoded = BASE64.encode(&key);
-                entry
-                    .set_password(&encoded)
+                let key: [u8; KEY_SIZE] = rand::random();
+                let mut encoded = BASE64.encode(key);
+                let store_result = entry.set_password(&encoded);
+                encoded.zeroize();
+                store_result
                     .map_err(|e| format!("Failed to store master key in keychain: {e}"))?;
                 Ok(key)
             }

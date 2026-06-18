@@ -190,11 +190,7 @@ pub fn list_local_dir(path: String) -> Result<Vec<FileEntry>, String> {
         });
     }
 
-    result.sort_by(|a, b| {
-        b.is_dir
-            .cmp(&a.is_dir)
-            .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-    });
+    crate::sftp::sort_file_entries(&mut result);
 
     Ok(result)
 }

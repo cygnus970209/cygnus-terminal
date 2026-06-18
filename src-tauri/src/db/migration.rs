@@ -5,6 +5,11 @@ struct Migration {
     sql: &'static str,
 }
 
+/// 마이그레이션 목록 기준 최신 스키마 버전.
+pub fn latest_version() -> u32 {
+    MIGRATIONS.last().map(|m| m.version).unwrap_or(0)
+}
+
 const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
@@ -106,6 +111,45 @@ const MIGRATIONS: &[Migration] = &[
         version: 5,
         sql: "
             ALTER TABLE profiles ADD COLUMN agent_forward INTEGER NOT NULL DEFAULT 0;
+        ",
+    },
+    Migration {
+        version: 6,
+        sql: "
+            -- 서버 환경 분류 (sensitive gate 계산용)
+            ALTER TABLE profiles
+                ADD COLUMN environment TEXT NOT NULL DEFAULT 'development'
+                    CHECK (environment IN ('development', 'staging', 'production'));
+
+            -- Vault 자격증명 항목
+            CREATE TABLE vault_items (
+                id              INTEGER PRIMARY KEY AUTOINCREMENT,
+                label           TEXT NOT NULL,
+                kind            TEXT NOT NULL CHECK (kind IN
+                    ('password', 'ssh-key', 'passphrase', 'pat-username', 'pat-password')),
+                pair_id         TEXT,
+                source          TEXT NOT NULL DEFAULT 'cygnus' CHECK (source IN ('cygnus', 'op', 'bw')),
+                source_ref      TEXT,
+                encrypted_value BLOB,
+                sensitive       INTEGER NOT NULL DEFAULT 0,
+                scope           TEXT,
+                created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+                last_used_at    TEXT
+            );
+
+            -- Vault item ↔ Profile(server) 매핑
+            CREATE TABLE vault_server_map (
+                vault_item_id INTEGER NOT NULL REFERENCES vault_items(id) ON DELETE CASCADE,
+                server_id     INTEGER NOT NULL REFERENCES profiles(id) ON DELETE CASCADE,
+                PRIMARY KEY (vault_item_id, server_id)
+            );
+
+            CREATE INDEX idx_vault_items_kind_recent
+                ON vault_items(kind, last_used_at DESC);
+            CREATE INDEX idx_vault_server_map_server
+                ON vault_server_map(server_id);
+            CREATE INDEX idx_vault_items_pair
+                ON vault_items(pair_id) WHERE pair_id IS NOT NULL;
         ",
     },
 ];

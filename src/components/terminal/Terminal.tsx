@@ -1,10 +1,15 @@
-import { useEffect, useRef, useCallback } from "react";
+import { useEffect, useRef, useCallback, useState } from "react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import { WebLinksAddon } from "@xterm/addon-web-links";
 import { useTheme } from "../../hooks/useTheme";
 import { useHighlightSettings } from "../../hooks/useHighlightSettings";
 import { useTerminalNotifySettings } from "../../hooks/useTerminalNotifySettings";
+import {
+  useVaultPromptRules,
+  type VaultPromptRule,
+} from "../../hooks/useVaultPromptRules";
+import VaultPromptPicker from "../vault/VaultPromptPicker";
 import { transformChunk } from "../../utils/ansiHighlight";
 import {
   isPermissionGranted,
@@ -19,6 +24,7 @@ import {
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { SshConfig } from "../../types";
+import { TERMINAL_SCROLLBACK_LINES } from "../../constants";
 import { extractCommand } from "../../utils/promptParser";
 import "@xterm/xterm/css/xterm.css";
 
@@ -110,6 +116,7 @@ export default function Terminal({
   const { theme } = useTheme();
   const { settings: highlightSettings } = useHighlightSettings();
   const { settings: notifySettings } = useTerminalNotifySettings();
+  const { rules: vaultPromptRules } = useVaultPromptRules();
 
   // closure freshness 회피 — settings 변경 시에도 stable 유지.
   const highlightSettingsRef = useRef(highlightSettings);
@@ -118,6 +125,22 @@ export default function Terminal({
   notifySettingsRef.current = notifySettings;
   const isActiveRef = useRef(isActive);
   isActiveRef.current = isActive;
+  const vaultRulesRef = useRef<VaultPromptRule[]>(vaultPromptRules);
+  vaultRulesRef.current = vaultPromptRules;
+
+  // 비밀번호 프롬프트 픽커 — 감지되면 커서 줄 근처 viewport 좌표에 띄운다.
+  const [picker, setPicker] = useState<{
+    top: number;
+    left: number;
+    label?: string;
+  } | null>(null);
+  const pickerOpenRef = useRef(false);
+  pickerOpenRef.current = picker !== null;
+  // 재트리거 가드: `${커서 절대 행}:${줄 내용}`. 같은 프롬프트엔 안 띄우되,
+  // 비번 틀려 재출력되면 행이 달라져(baseY 증가) 다시 뜬다.
+  const lastTriggerRef = useRef<string | null>(null);
+  // flushBuffer(안정적 콜백)에서 호출할 최신 감지 함수.
+  const detectPromptRef = useRef<() => void>(() => {});
 
   // 명령 실행 상태 추적 — Enter 시 running 진입, OSC 7 (다음 prompt) 시 idle 복귀.
   // 알림은 "running → idle" 전환 시점에 elapsed 가 threshold 이상이고 창이 비활성일 때만.
@@ -135,7 +158,9 @@ export default function Terminal({
       if (xtermRef.current.buffer.active.type !== "alternate") {
         data = transformChunk(data, highlightSettingsRef.current);
       }
-      xtermRef.current.write(data);
+      // write 는 비동기 파싱 — 콜백에서 감지해야 커서 줄에 프롬프트가 반영돼 있다.
+      // (청크/ANSI 회피는 커서 줄 plain text 를 읽는 것으로 처리.)
+      xtermRef.current.write(data, () => detectPromptRef.current());
       bufferRef.current = "";
     }
     rafRef.current = null;
@@ -150,6 +175,54 @@ export default function Terminal({
     },
     [flushBuffer]
   );
+
+  // 매 렌더마다 최신 클로저로 감지 함수 갱신 — flushBuffer 는 ref 를 통해 호출.
+  detectPromptRef.current = () => {
+    // SSH 세션의 활성 탭에서만. (로컬/telnet/serial 주입은 1차 미지원.)
+    if (type !== "ssh" || !isActiveRef.current) return;
+    const sid = sessionIdRef.current;
+    const xterm = xtermRef.current;
+    const host = terminalRef.current;
+    if (!sid || !xterm || !host) return;
+    // vi/less/top 등 전체 화면 모드에서는 비번 프롬프트가 아니므로 skip.
+    if (xterm.buffer.active.type === "alternate") return;
+    if (pickerOpenRef.current) return;
+
+    const rules = vaultRulesRef.current.filter((r) => r.enabled);
+    if (rules.length === 0) return;
+
+    const buffer = xterm.buffer.active;
+    const cursorAbs = buffer.cursorY + buffer.baseY;
+    const lineObj = buffer.getLine(cursorAbs);
+    if (!lineObj) return;
+    // trailing whitespace 제거된 plain text — 청크 분할/ANSI 영향 없음.
+    const line = lineObj.translateToString(true);
+    if (!line.trim()) return;
+
+    const triggerKey = `${cursorAbs}:${line}`;
+    if (triggerKey === lastTriggerRef.current) return;
+
+    for (const r of rules) {
+      let re: RegExp;
+      try {
+        re = new RegExp(r.pattern);
+      } catch {
+        continue; // 깨진 패턴은 건너뜀 (UI 에서 등록 시 검증하지만 방어적으로).
+      }
+      if (re.test(line)) {
+        lastTriggerRef.current = triggerKey;
+        const rect = host.getBoundingClientRect();
+        const cellH = rect.height / Math.max(xterm.rows, 1);
+        const top = Math.min(
+          rect.top + (buffer.cursorY + 1) * cellH + 2,
+          window.innerHeight - 268,
+        );
+        const left = Math.min(rect.left + 12, window.innerWidth - 292);
+        setPicker({ top: Math.max(top, 8), left: Math.max(left, 8), label: r.label });
+        return;
+      }
+    }
+  };
 
   useEffect(() => {
     if (isActive && fitAddonRef.current) {
@@ -166,6 +239,7 @@ export default function Terminal({
       fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
       theme: theme.colors,
       allowProposedApi: true,
+      scrollback: TERMINAL_SCROLLBACK_LINES,
     });
 
     // OSC 7 (shell directory hint) 수신 — 셸이 활성화한 경우 prompt 그릴 때마다 cwd 가 들어온다.
@@ -452,14 +526,34 @@ export default function Terminal({
   }, [theme]);
 
   return (
-    <div
-      ref={terminalRef}
-      style={{
-        width: "100%",
-        height: "100%",
-        backgroundColor: theme.colors.background ?? "#1e1e2e",
-        display: isActive ? "block" : "none",
-      }}
-    />
+    <>
+      <div
+        ref={terminalRef}
+        style={{
+          width: "100%",
+          height: "100%",
+          backgroundColor: theme.colors.background ?? "#1e1e2e",
+          display: isActive ? "block" : "none",
+        }}
+      />
+      {picker && isActive && sessionIdRef.current && (
+        <VaultPromptPicker
+          sessionId={sessionIdRef.current}
+          serverId={sshConfig?.profileId}
+          anchorTop={picker.top}
+          anchorLeft={picker.left}
+          promptLabel={picker.label}
+          onClose={() => {
+            setPicker(null);
+            // 픽커가 닫히면 입력 focus 를 터미널로 되돌린다 — 바로 타이핑 가능.
+            xtermRef.current?.focus();
+          }}
+          onInjected={() => {
+            setPicker(null);
+            xtermRef.current?.focus();
+          }}
+        />
+      )}
+    </>
   );
 }
