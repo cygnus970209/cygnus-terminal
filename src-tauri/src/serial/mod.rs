@@ -1,12 +1,12 @@
 use serde::Serialize;
-use std::collections::HashMap;
 use std::io::Read;
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::ipc::Channel;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::mpsc;
 
 use crate::pty::PtyEvent;
+use crate::registry::CommandRegistry;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct SerialPortInfo {
@@ -19,18 +19,20 @@ enum SerialCommand {
     Close,
 }
 
-pub struct SerialSession {
-    cmd_tx: mpsc::Sender<SerialCommand>,
+pub struct SerialManager {
+    sessions: CommandRegistry<SerialCommand>,
 }
 
-pub struct SerialManager {
-    sessions: Arc<Mutex<HashMap<String, SerialSession>>>,
+impl Default for SerialManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SerialManager {
     pub fn new() -> Self {
         Self {
-            sessions: Arc::new(Mutex::new(HashMap::new())),
+            sessions: CommandRegistry::new(),
         }
     }
 
@@ -94,7 +96,7 @@ impl SerialManager {
                         break;
                     }
                     Ok(n) => {
-                        let text = String::from_utf8_lossy(&buf[..n]).to_string();
+                        let text = String::from_utf8_lossy(&buf[..n]).into_owned();
                         if channel_clone.send(PtyEvent::Output(text)).is_err() {
                             break;
                         }
@@ -113,49 +115,30 @@ impl SerialManager {
         // Writer task
         let writer_clone = Arc::clone(&writer);
         tokio::spawn(async move {
-            loop {
-                match cmd_rx.recv().await {
-                    Some(SerialCommand::Data(data)) => {
-                        if let Ok(mut port) = writer_clone.lock() {
-                            use std::io::Write;
-                            let _ = port.write_all(&data);
-                        }
-                    }
-                    Some(SerialCommand::Close) | None => {
-                        break;
-                    }
+            // Close 또는 채널 종료 시 패턴 불일치로 루프 종료
+            while let Some(SerialCommand::Data(data)) = cmd_rx.recv().await {
+                if let Ok(mut port) = writer_clone.lock() {
+                    use std::io::Write;
+                    let _ = port.write_all(&data);
                 }
             }
         });
 
-        let session = SerialSession { cmd_tx };
-        self.sessions
-            .lock()
-            .await
-            .insert(session_id.to_string(), session);
+        self.sessions.insert(session_id, cmd_tx).await;
 
         Ok(())
     }
 
     pub async fn write_to_session(&self, session_id: &str, data: &[u8]) -> Result<(), String> {
-        let sessions = self.sessions.lock().await;
-        if let Some(session) = sessions.get(session_id) {
-            session
-                .cmd_tx
-                .send(SerialCommand::Data(data.to_vec()))
-                .await
-                .map_err(|e| format!("Send error: {e}"))?;
-            Ok(())
-        } else {
-            Err(format!("Session not found: {session_id}"))
-        }
+        self.sessions
+            .send(session_id, SerialCommand::Data(data.to_vec()))
+            .await
     }
 
     pub async fn close_session(&self, session_id: &str) -> Result<(), String> {
-        let mut sessions = self.sessions.lock().await;
-        if let Some(session) = sessions.remove(session_id) {
-            let _ = session.cmd_tx.send(SerialCommand::Close).await;
-        }
+        self.sessions
+            .remove_and_send(session_id, SerialCommand::Close)
+            .await;
         Ok(())
     }
 }

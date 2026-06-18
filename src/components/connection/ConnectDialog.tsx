@@ -156,7 +156,8 @@ export default function ConnectDialog({
               form.authType === "password" && form.password ? form.password : undefined,
             key_path: form.authType === "key" ? form.keyPath : undefined,
             group_name: form.groupName || undefined,
-            jump_host: jumpHostJson ?? null,
+            // 빈 문자열 = jump host 제거 (null 은 "변경 없음"으로 역직렬화되어 해제가 안 됨)
+            jump_host: jumpHostJson ?? "",
             agent_forward: form.agentForward,
           },
         });
@@ -407,7 +408,7 @@ export default function ConnectDialog({
               </div>
               {form.jumpAuthType === "password" ? (
                 <div className="dialog-row">
-                  <label>Password</label>
+                  <label>Password{isEdit && " (leave empty to keep current)"}</label>
                   <input
                     type="password"
                     value={form.jumpPassword}

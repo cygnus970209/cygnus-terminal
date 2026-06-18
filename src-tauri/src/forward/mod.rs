@@ -24,6 +24,12 @@ pub struct ForwardManager {
     forwards: Arc<Mutex<HashMap<String, ForwardTask>>>,
 }
 
+impl Default for ForwardManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ForwardManager {
     pub fn new() -> Self {
         Self {

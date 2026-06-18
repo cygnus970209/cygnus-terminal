@@ -15,12 +15,27 @@ pub struct FileEntry {
     pub permissions: Option<u32>,
 }
 
+/// 디렉토리 우선, 이름순(case-insensitive) 정렬 — 로컬/원격 파일 패널 공통 규칙.
+pub fn sort_file_entries(entries: &mut [FileEntry]) {
+    entries.sort_by(|a, b| {
+        b.is_dir
+            .cmp(&a.is_dir)
+            .then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
+    });
+}
+
 #[derive(Clone)]
 pub struct SftpManager {
     /// `Arc<SftpSession>` 로 저장 — SftpSession 자체는 Clone 이 아니지만, Arc 로
     /// 감싸면 lock 해제 후에도 여러 호출자가 공유 참조로 동시에 사용할 수 있다.
     /// 이게 병렬 stripe 전송의 전제.
     sessions: Arc<Mutex<HashMap<String, Arc<SftpSession>>>>,
+}
+
+impl Default for SftpManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SftpManager {
@@ -87,10 +102,7 @@ impl SftpManager {
             });
         }
 
-        // 디렉토리 우선, 이름순 정렬
-        result.sort_by(|a, b| {
-            b.is_dir.cmp(&a.is_dir).then(a.name.to_lowercase().cmp(&b.name.to_lowercase()))
-        });
+        sort_file_entries(&mut result);
 
         Ok(result)
     }
