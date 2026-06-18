@@ -7,9 +7,9 @@
 
 # Cygnus Terminal
 
-**An all-in-one terminal for developers** — terminal, SFTP, monitoring, and port forwarding in a single window.
+**An all-in-one terminal for developers** — terminal, SFTP, monitoring, port forwarding, and a credential vault in a single window.
 
-Cygnus handles SSH, Telnet, and Serial in one place, and remembers per-server command history, bookmarks, and snippets. Ships as a ~30MB native binary.
+Cygnus handles SSH, Telnet, and Serial in one place, and remembers per-server command history, bookmarks, and snippets. Credentials live in an encrypted vault and auto-fill sudo/password prompts. Ships as a ~30MB native binary.
 
 ---
 
@@ -81,9 +81,20 @@ Stream multiple log files side by side. Each log gets its own SSH channel.
 - **Resizable Panels** — drag to resize, one click to collapse
 - **Cygnus Blue** design system — Catppuccin Mocha base with a developer-cockpit feel
 
+### 🔑 Credential Vault
+
+A built-in secrets store that maps credentials to servers and auto-fills prompts, so you stop pasting passwords into the terminal.
+
+- **Item types** — Password, SSH key passphrase, raw SSH key, and Personal Access Token (username / password pair)
+- **Sources** — store locally (encrypted with the master key) or reference an external manager: **1Password** (`op`) and **Bitwarden** (`bw`)
+- **Server mapping** — link an item to one or more profiles, with `local` / `global` scope
+- **Prompt auto-fill** — detects `sudo` / password / passphrase prompts in the terminal and offers the matching credential; detection patterns are editable in Settings
+- **Plaintext never reaches the frontend** — a single backend call decrypts and injects straight into the SSH channel's stdin, so secrets stay out of the UI layer
+
 ### 🔐 Security & Sync
 
-- **AES-256-GCM** master key stored in the OS Keychain (macOS Keychain / Windows Credential Manager)
+- **AES-256-GCM** master key stored in the OS Keychain (macOS Keychain / Windows Credential Manager), zeroized in memory on drop
+- **Encrypted at rest** — profile passwords and Jump Host configs (which can carry a password) are encrypted in SQLite, never stored as plaintext
 - **Export / Import** — back up profiles, bookmarks, and snippets as JSON
 - **Auto Update** — when a new release lands on GitHub, the app surfaces it and replaces itself in place
 
@@ -95,10 +106,10 @@ Stream multiple log files side by side. Each log gets its own SSH channel.
 |---|---|
 | Framework | Tauri 2.0 (WKWebView / WebView2) |
 | Backend | Rust — `russh`, `russh-sftp`, `rusqlite`, `aes-gcm`, `keyring`, `serialport` |
-| Frontend | React 19 + TypeScript |
+| Frontend | React 19 + TypeScript 5.8 |
 | Terminal | xterm.js 6.0 |
 | Database | SQLite (WAL mode, versioned migrations) |
-| Build / Release | Vite 7, GitHub Actions, Tauri Updater (minisign) |
+| Build / Release | Vite 8, GitHub Actions, Tauri Updater (minisign) |
 
 ## 🏗 Architecture
 
@@ -113,7 +124,7 @@ Stream multiple log files side by side. Each log gets its own SSH channel.
 |              Rust Backend                |
 |  PTY | SSH | Telnet | Serial | SFTP      |
 |  Monitor | Forward | Tail | Watcher      |
-|  Sync | Transfer Queue                   |
+|  Sync | Transfer Queue | Vault (inject)   |
 |  DB (SQLite) | Crypto (AES + Keychain)   |
 +------------------------------------------+
 ```
@@ -165,7 +176,8 @@ src/                          # React frontend
     sftp/                     # SftpView, FilePanel, ConflictDialog
     files/                    # FileTree (in-app sidebar)
     connection/               # ConnectDialog, ServerContext
-    common/                   # CommandPalette, StatusBar, UpdateBanner ...
+    vault/                    # VaultView, VaultPromptPicker (credential store + prompt auto-fill)
+    common/                   # CommandPalette, StatusBar, UpdateBanner, SettingsDialog ...
     snippets/                 # SnippetsView (surfaced via Command Palette)
 
 src-tauri/                    # Rust backend
@@ -180,6 +192,7 @@ src-tauri/                    # Rust backend
     forward/                  # port forwarding
     tail/                     # log file streaming
     watcher/                  # local file watcher → auto-upload
+    vault/                    # credential store + decrypt-and-inject to SSH stdin
     crypto/                   # AES-256-GCM + OS Keychain
     db/                       # SQLite + migrations
 ```
@@ -189,6 +202,7 @@ src-tauri/                    # Rust backend
 ## 🗺 Roadmap
 
 **Recently shipped**
+- ✓ Credential Vault — local-encrypted secrets, 1Password / Bitwarden references, server mapping, and sudo/password prompt auto-fill
 - ✓ Telnet protocol
 - ✓ Serial port (COM/TTY)
 - ✓ SFTP dual panel + Transfer Dock + Conflict Dialog
@@ -198,7 +212,6 @@ src-tauri/                    # Rust backend
 - ✓ Local editor integration with file-watcher auto-upload
 
 **Next up**
-- [ ] Password Manager — profile-aware auto-detect for sudo / mysql / passphrase prompts
 - [ ] Apple code signing & notarization
 - [ ] Linux build (.deb / AppImage)
 - [ ] Persistent background port forwarding

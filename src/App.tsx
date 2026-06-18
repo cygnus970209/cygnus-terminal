@@ -28,6 +28,7 @@ import ConnectDialog from "./components/connection/ConnectDialog";
 import ServerContext from "./components/connection/ServerContext";
 import FileTree from "./components/files/FileTree";
 import SnippetsView from "./components/snippets/SnippetsView";
+import VaultView from "./components/vault/VaultView";
 import SftpView from "./components/sftp/SftpView";
 import "./App.css";
 
@@ -71,6 +72,7 @@ function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
   const [showSnippets, setShowSnippets] = useState(false);
+  const [showVault, setShowVault] = useState(false);
   const [telnetPromptOpen, setTelnetPromptOpen] = useState(false);
   const [serialPorts, setSerialPorts] = useState<SerialPortInfo[] | null>(null);
   // SSH host key 확인 큐. 연속 연결 시 여러 개가 쌓일 수 있어 FIFO 로 하나씩 처리.
@@ -200,8 +202,7 @@ function App() {
   }, []);
 
   // popout SFTP 윈도우에 공유할 세션 리스트.
-  // tabs/sessionMap/sftpSessions 변경 시마다 브로드캐스트.
-  useEffect(() => {
+  const broadcastSftpSessions = useCallback(() => {
     const list = tabs
       .filter((t) => t.type === "ssh" && sessionMap[t.id] && sftpSessions[sessionMap[t.id]])
       .map((t) => ({
@@ -213,18 +214,13 @@ function App() {
     emit("sftp-sessions", list);
   }, [tabs, sessionMap, sftpSessions]);
 
+  // tabs/sessionMap/sftpSessions 변경 시마다 브로드캐스트.
+  useEffect(() => {
+    broadcastSftpSessions();
+  }, [broadcastSftpSessions]);
+
   // popout이 뒤늦게 뜰 때 최신 스냅샷을 요청하면 재발송.
-  useTauriListener("sftp-sessions-request", () => {
-    const list = tabs
-      .filter((t) => t.type === "ssh" && sessionMap[t.id] && sftpSessions[sessionMap[t.id]])
-      .map((t) => ({
-        id: sessionMap[t.id],
-        sftpId: sftpSessions[sessionMap[t.id]].sftpId,
-        label: t.title,
-        homePath: sftpSessions[sessionMap[t.id]].homePath,
-      }));
-    emit("sftp-sessions", list);
-  });
+  useTauriListener("sftp-sessions-request", broadcastSftpSessions);
 
   const activeTab = tabs.find((t) => t.id === activeTabId);
   const activeProfileId = activeTab?.sshConfig?.profileId ?? null;
@@ -590,6 +586,12 @@ function App() {
       onSelect: () => setShowSnippets(true),
     },
     {
+      id: "action:manage-vault",
+      kind: "action",
+      title: "Manage Vault...",
+      onSelect: () => setShowVault(true),
+    },
+    {
       id: "action:open-settings",
       kind: "action",
       title: "Open Settings",
@@ -810,6 +812,29 @@ function App() {
                 setShowSnippets(false);
               }}
             />
+          </div>
+        </div>
+      )}
+
+      {showVault && (
+        <div
+          className="sn-modal-overlay"
+          onMouseDown={() => setShowVault(false)}
+        >
+          <div
+            className="sn-modal-body"
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <div className="sn-modal-head">
+              <span className="sn-modal-title">Vault</span>
+              <button
+                className="sn-modal-close"
+                onClick={() => setShowVault(false)}
+              >
+                ✕
+              </button>
+            </div>
+            <VaultView onClose={() => setShowVault(false)} />
           </div>
         </div>
       )}

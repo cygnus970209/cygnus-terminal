@@ -4,6 +4,8 @@ use tauri::ipc::Channel;
 use tauri::{AppHandle, State};
 use uuid::Uuid;
 
+// 인자 목록이 곧 IPC 페이로드 스키마 — 구조체로 묶으면 프론트 호출부 호환이 깨진다.
+#[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn create_ssh_session(
     app: AppHandle,

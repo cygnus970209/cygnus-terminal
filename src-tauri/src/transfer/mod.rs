@@ -97,6 +97,12 @@ pub struct TransferManager {
     max_concurrent: usize,
 }
 
+impl Default for TransferManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TransferManager {
     pub fn new() -> Self {
         Self {
@@ -821,6 +827,7 @@ async fn download_serial(
 
 /// server-to-server 는 양쪽 SFTP 세션을 동시에 태워야 하는 다른 문제라 순차 유지.
 /// 청크만 크게 잡아 오버헤드 축소.
+#[allow(clippy::too_many_arguments)]
 async fn server_to_server_job(
     src_sftp_id: &str,
     src_path: &str,

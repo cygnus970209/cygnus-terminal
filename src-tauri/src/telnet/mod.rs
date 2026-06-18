@@ -1,11 +1,10 @@
-use std::collections::HashMap;
-use std::sync::Arc;
 use tauri::ipc::Channel;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
-use tokio::sync::{mpsc, Mutex};
+use tokio::sync::mpsc;
 
 use crate::pty::PtyEvent;
+use crate::registry::CommandRegistry;
 
 // Telnet IAC constants
 const IAC: u8 = 255;
@@ -28,18 +27,20 @@ enum TelnetCommand {
     Close,
 }
 
-pub struct TelnetSession {
-    cmd_tx: mpsc::Sender<TelnetCommand>,
+pub struct TelnetManager {
+    sessions: CommandRegistry<TelnetCommand>,
 }
 
-pub struct TelnetManager {
-    sessions: Arc<Mutex<HashMap<String, TelnetSession>>>,
+impl Default for TelnetManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TelnetManager {
     pub fn new() -> Self {
         Self {
-            sessions: Arc::new(Mutex::new(HashMap::new())),
+            sessions: CommandRegistry::new(),
         }
     }
 
@@ -77,7 +78,7 @@ impl TelnetManager {
                     Ok(n) => {
                         let (output, responses) = iac_state.process(&buf[..n]);
                         if !output.is_empty() {
-                            let text = String::from_utf8_lossy(&output).to_string();
+                            let text = String::from_utf8_lossy(&output).into_owned();
                             if channel_clone.send(PtyEvent::Output(text)).is_err() {
                                 break;
                             }
@@ -130,27 +131,15 @@ impl TelnetManager {
             }
         });
 
-        let session = TelnetSession { cmd_tx };
-        self.sessions
-            .lock()
-            .await
-            .insert(session_id.to_string(), session);
+        self.sessions.insert(session_id, cmd_tx).await;
 
         Ok(())
     }
 
     pub async fn write_to_session(&self, session_id: &str, data: &[u8]) -> Result<(), String> {
-        let sessions = self.sessions.lock().await;
-        if let Some(session) = sessions.get(session_id) {
-            session
-                .cmd_tx
-                .send(TelnetCommand::Data(data.to_vec()))
-                .await
-                .map_err(|e| format!("Send error: {e}"))?;
-            Ok(())
-        } else {
-            Err(format!("Session not found: {session_id}"))
-        }
+        self.sessions
+            .send(session_id, TelnetCommand::Data(data.to_vec()))
+            .await
     }
 
     pub async fn resize_session(
@@ -159,24 +148,15 @@ impl TelnetManager {
         cols: u16,
         rows: u16,
     ) -> Result<(), String> {
-        let sessions = self.sessions.lock().await;
-        if let Some(session) = sessions.get(session_id) {
-            session
-                .cmd_tx
-                .send(TelnetCommand::Resize(cols, rows))
-                .await
-                .map_err(|e| format!("Send error: {e}"))?;
-            Ok(())
-        } else {
-            Err(format!("Session not found: {session_id}"))
-        }
+        self.sessions
+            .send(session_id, TelnetCommand::Resize(cols, rows))
+            .await
     }
 
     pub async fn close_session(&self, session_id: &str) -> Result<(), String> {
-        let mut sessions = self.sessions.lock().await;
-        if let Some(session) = sessions.remove(session_id) {
-            let _ = session.cmd_tx.send(TelnetCommand::Close).await;
-        }
+        self.sessions
+            .remove_and_send(session_id, TelnetCommand::Close)
+            .await;
         Ok(())
     }
 }

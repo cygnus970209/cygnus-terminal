@@ -259,6 +259,7 @@ impl SshManager {
         Ok(())
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub async fn connect(
         &self,
         app: AppHandle,
@@ -393,13 +394,13 @@ impl SshManager {
                     msg = ssh_channel.wait() => {
                         match msg {
                             Some(ChannelMsg::Data { data }) => {
-                                let text = String::from_utf8_lossy(&data).to_string();
+                                let text = String::from_utf8_lossy(&data).into_owned();
                                 if channel.send(PtyEvent::Output(text)).is_err() {
                                     break;
                                 }
                             }
                             Some(ChannelMsg::ExtendedData { data, .. }) => {
-                                let text = String::from_utf8_lossy(&data).to_string();
+                                let text = String::from_utf8_lossy(&data).into_owned();
                                 if channel.send(PtyEvent::Output(text)).is_err() {
                                     break;
                                 }

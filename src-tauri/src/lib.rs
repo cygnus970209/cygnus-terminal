@@ -4,6 +4,7 @@ pub mod db;
 pub mod forward;
 pub mod monitor;
 mod pty;
+pub mod registry;
 pub mod serial;
 pub mod sftp;
 pub mod ssh;
@@ -11,6 +12,7 @@ pub mod sync;
 pub mod tail;
 pub mod telnet;
 pub mod transfer;
+pub mod vault;
 pub mod watcher;
 
 use std::sync::Arc;
@@ -138,6 +140,12 @@ pub fn run() {
             let database =
                 Arc::new(Database::new(app_data_dir).expect("Failed to initialize database"));
             let crypto = CryptoManager::new().expect("Failed to initialize crypto manager");
+            // 레거시 평문 jump_host → 암호화 저장 전환 (멱등). 실패해도 앱은 동작해야 하므로 로그만 남긴다.
+            match database.migrate_plaintext_jump_hosts(&crypto) {
+                Ok(n) if n > 0 => eprintln!("Encrypted {n} legacy plaintext jump_host entr(ies)"),
+                Ok(_) => {}
+                Err(e) => eprintln!("jump_host encryption migration failed: {e}"),
+            }
             let ssh_manager = SshManager::new(Arc::clone(&database));
             app.manage(database);
             app.manage(crypto);
@@ -230,6 +238,13 @@ pub fn run() {
             commands::sftp_transfer_cancel,
             commands::sftp_transfer_list,
             commands::sftp_transfer_clear_completed,
+            commands::vault_create,
+            commands::vault_list,
+            commands::vault_get,
+            commands::vault_update,
+            commands::vault_delete,
+            commands::vault_link_server,
+            commands::vault_inject,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
