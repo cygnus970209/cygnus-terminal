@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./CommandPalette.css";
 
-export type PaletteKind = "snippet" | "tab" | "action" | "profile" | "history";
+type PaletteKind = "snippet" | "tab" | "action" | "profile" | "history";
 
 export interface PaletteItem {
   id: string;

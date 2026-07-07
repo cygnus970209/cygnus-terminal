@@ -2,13 +2,13 @@ import { invoke, type Channel } from "@tauri-apps/api/core";
 import { FileEntry, TransferEvent } from "../types/sftp";
 import { bumpName, joinPath } from "../utils/path";
 
-export interface RecursiveEntry {
+interface RecursiveEntry {
   path: string;
   relative: string;
 }
 
 /** 원격 디렉토리를 재귀 탐색해 파일 전체 목록을 만든다. */
-export async function listRemoteRecursive(
+async function listRemoteRecursive(
   sftpId: string,
   basePath: string,
 ): Promise<RecursiveEntry[]> {
@@ -32,7 +32,7 @@ export async function listRemoteRecursive(
 }
 
 /** 로컬 디렉토리를 재귀 탐색해 파일 전체 목록을 만든다. */
-export async function listLocalRecursive(
+async function listLocalRecursive(
   basePath: string,
 ): Promise<RecursiveEntry[]> {
   const out: RecursiveEntry[] = [];
@@ -66,10 +66,10 @@ export async function findFreeName(
   return path;
 }
 
-export const remoteExists = (sftpId: string) => (path: string) =>
+const remoteExists = (sftpId: string) => (path: string) =>
   invoke<boolean>("sftp_exists", { sftpId, path });
 
-export const localExists = () => (path: string) =>
+const localExists = () => (path: string) =>
   invoke<boolean>("local_exists", { path });
 
 interface EnqueuerOptions {
@@ -128,7 +128,7 @@ export function createEnqueuers({ channel, onError }: EnqueuerOptions) {
   };
 }
 
-export type ResolvePathFn = (
+type ResolvePathFn = (
   checker: (path: string) => Promise<boolean>,
   desiredPath: string,
   displayName: string,

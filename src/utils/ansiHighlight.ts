@@ -40,7 +40,7 @@ function hasExistingAnsi(line: string): boolean {
  *  - 이미 ANSI 가 있는 라인은 통째로 그대로 반환 (이중 색칠/충돌 방지).
  *  - 옵션 둘 다 꺼져 있으면 입력 그대로.
  */
-export function transformLine(line: string, opts: HighlightOptions): string {
+function transformLine(line: string, opts: HighlightOptions): string {
   if (!opts.logLevels && !opts.ips) return line;
   if (hasExistingAnsi(line)) return line;
 
