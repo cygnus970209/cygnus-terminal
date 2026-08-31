@@ -1,6 +1,6 @@
 <p align="center">
-  <img src="https://img.shields.io/badge/Tauri-2.0-blue?style=flat-square&logo=tauri" />
-  <img src="https://img.shields.io/badge/Rust-1.75+-orange?style=flat-square&logo=rust" />
+  <img src="https://img.shields.io/badge/Tauri-2-blue?style=flat-square&logo=tauri" />
+  <img src="https://img.shields.io/badge/Rust-1.77+-orange?style=flat-square&logo=rust" />
   <img src="https://img.shields.io/badge/React-19-61dafb?style=flat-square&logo=react" />
   <img src="https://img.shields.io/badge/License-MIT-green?style=flat-square" />
 </p>
@@ -29,7 +29,7 @@ Multiple protocols share the same tab bar. Jump between sessions with ⌘+number
 - **Telnet** — for legacy gear
 - **Serial (COM/TTY)** — router and embedded debugging, baud rate presets (9600 to 921600)
 - **Local PTY** — your system shell
-- xterm.js based, 256-color, Catppuccin theme, native ⌘C/V clipboard
+- xterm.js based, 256-color, 10,000-line scrollback, Catppuccin theme, native ⌘C/V clipboard
 
 ### 🧠 Server Memory
 
@@ -104,12 +104,12 @@ A built-in secrets store that maps credentials to servers and auto-fills prompts
 
 | Layer | Technology |
 |---|---|
-| Framework | Tauri 2.0 (WKWebView / WebView2) |
+| Framework | Tauri 2 (WKWebView / WebView2) |
 | Backend | Rust — `russh`, `russh-sftp`, `rusqlite`, `aes-gcm`, `keyring`, `serialport` |
-| Frontend | React 19 + TypeScript 5.8 |
+| Frontend | React 19 + TypeScript 7 |
 | Terminal | xterm.js 6.0 |
 | Database | SQLite (WAL mode, versioned migrations) |
-| Build / Release | Vite 8, GitHub Actions, Tauri Updater (minisign) |
+| Build / Release | Vite 8, Vitest 4, GitHub Actions, Tauri Updater (minisign) |
 
 ## 🏗 Architecture
 
@@ -149,8 +149,8 @@ Grab the installer for your OS from [Releases](https://github.com/cygnus970209/c
 
 #### Prerequisites
 
-- [Rust](https://rustup.rs/) 1.75+
-- [Node.js](https://nodejs.org/) 18+ (or [Bun](https://bun.sh/))
+- [Rust](https://rustup.rs/) 1.77.2+
+- [Node.js](https://nodejs.org/) 20.19+ / 22.12+ (or [Bun](https://bun.sh/))
 
 #### Run
 
@@ -163,6 +163,9 @@ npm run tauri dev
 
 # Production build
 npm run tauri build
+
+# Run frontend tests
+npm test
 ```
 
 ---
@@ -175,7 +178,7 @@ src/                          # React frontend
     terminal/                 # xterm + session handlers
     sftp/                     # SftpView, FilePanel, ConflictDialog
     files/                    # FileTree (in-app sidebar)
-    connection/               # ConnectDialog, ServerContext
+    connection/               # ConnectDialog, ConnectionsView, ServerContext
     vault/                    # VaultView, VaultPromptPicker (credential store + prompt auto-fill)
     common/                   # CommandPalette, StatusBar, UpdateBanner, SettingsDialog ...
     snippets/                 # SnippetsView (surfaced via Command Palette)
