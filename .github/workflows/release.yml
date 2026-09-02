@@ -70,9 +70,17 @@ jobs:
           # TAURI_SIGNING_PRIVATE_KEY_PASSWORD 두 개 등록 필요.
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # (선택) OS 레벨 code signing 시크릿은 나중에:
-          # APPLE_CERTIFICATE, APPLE_CERTIFICATE_PASSWORD, APPLE_SIGNING_IDENTITY,
-          # APPLE_ID, APPLE_TEAM_ID, APPLE_PASSWORD, WINDOWS_CERTIFICATE, ...
+          # macOS Developer ID 코드 서명 + 공증(notarization).
+          # tauri-action 이 macOS 러너에서만 사용하고 Windows 러너에서는 무시한다.
+          #  - APPLE_CERTIFICATE / _PASSWORD: Developer ID Application .p12(base64) 와 그 암호
+          #  - APPLE_SIGNING_IDENTITY: "Developer ID Application: NAME (TEAMID)"
+          #  - APPLE_ID / APPLE_PASSWORD(앱 전용 암호) / APPLE_TEAM_ID: 공증 인증
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tagName: ${{ inputs.tag || github.ref_name }}
           releaseName: 'Cygnus Terminal ${{ inputs.tag || github.ref_name }}'
