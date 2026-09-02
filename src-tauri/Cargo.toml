@@ -1,6 +1,6 @@
 [package]
 name = "cygnus-terminal"
-version = "0.1.8"
+version = "0.1.9"
 description = "Diverse and powerful all-in-one terminal"
 authors = ["cygnus970209"]
 edition = "2021"
