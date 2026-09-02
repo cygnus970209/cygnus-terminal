@@ -19,6 +19,14 @@ use crate::pty::PtyEvent;
 /// 사용자가 host key 확인 다이얼로그를 수락/거절할 때까지 기다리는 최대 시간.
 const HOST_KEY_PROMPT_TIMEOUT: Duration = Duration::from_secs(120);
 
+/// SFTP 핸드셰이크(채널 열기 → subsystem 요청 → FXP_INIT) 전체 허용 시간.
+/// sftp-server 가 없는 서버는 CHANNEL_FAILURE 만 보내고 채널을 닫지 않으므로,
+/// 여기서 끊어주지 않으면 SSH 연결이 죽을 때까지 기다리게 된다.
+const SFTP_OPEN_TIMEOUT: Duration = Duration::from_secs(15);
+
+/// SFTP 요청(readdir/stat 등) 하나당 응답 대기 시간(초). russh_sftp 기본값과 동일.
+const SFTP_REQUEST_TIMEOUT_SECS: u64 = 10;
+
 #[derive(Debug, Clone, Deserialize)]
 pub struct JumpHostConfig {
     pub host: String,
@@ -467,25 +475,47 @@ impl SshManager {
         &self,
         session_id: &str,
     ) -> Result<russh_sftp::client::SftpSession, String> {
-        let sessions = self.sessions.lock().await;
-        let session = sessions
-            .get(session_id)
-            .ok_or_else(|| format!("Session not found: {session_id}"))?;
+        // 채널만 락 안에서 열고(빠른 작업) 즉시 해제한다. 이후 SFTP 핸드셰이크
+        // (subsystem 요청 + FXP_INIT)는 owned Channel 로 락 밖에서 진행한다.
+        // sftp-server 가 없는 서버는 CHANNEL_FAILURE 만 보내고 채널을 닫지 않아
+        // FXP_INIT 응답이 영원히 오지 않는데, 예전 코드는 이 대기 내내 sessions
+        // 뮤텍스를 붙잡고 있어서 같은 뮤텍스를 쓰는 write/resize(=키 입력)까지
+        // 전부 멈췄다 — 이게 "shell 먹통" 의 원인. 락 분리 + timeout 으로 해소.
+        let channel = {
+            let sessions = self.sessions.lock().await;
+            let session = sessions
+                .get(session_id)
+                .ok_or_else(|| format!("Session not found: {session_id}"))?;
+            session
+                .handle
+                .channel_open_session()
+                .await
+                .map_err(|e| format!("Failed to open SFTP channel: {e}"))?
+        };
 
-        let channel = session
-            .handle
-            .channel_open_session()
-            .await
-            .map_err(|e| format!("Failed to open SFTP channel: {e}"))?;
+        let open_fut = async {
+            channel
+                .request_subsystem(true, "sftp")
+                .await
+                .map_err(|e| format!("Failed to request SFTP subsystem: {e}"))?;
 
-        channel
-            .request_subsystem(true, "sftp")
-            .await
-            .map_err(|e| format!("Failed to request SFTP subsystem: {e}"))?;
-
-        russh_sftp::client::SftpSession::new(channel.into_stream())
+            // request 별 자체 timeout 도 설정 — 핸드셰이크는 통과했지만 이후 응답이
+            // 멈추는 서버에서도 개별 SFTP 호출이 무한정 매달리지 않게 한다.
+            russh_sftp::client::SftpSession::new_opts(
+                channel.into_stream(),
+                Some(SFTP_REQUEST_TIMEOUT_SECS),
+            )
             .await
             .map_err(|e| format!("Failed to init SFTP session: {e}"))
+        };
+
+        match tokio::time::timeout(SFTP_OPEN_TIMEOUT, open_fut).await {
+            Ok(res) => res,
+            Err(_) => Err(format!(
+                "SFTP not available (no response within {}s — server may lack sftp-server)",
+                SFTP_OPEN_TIMEOUT.as_secs()
+            )),
+        }
     }
 
     pub async fn close_session(&self, session_id: &str) -> Result<(), String> {

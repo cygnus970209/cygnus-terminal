@@ -26,6 +26,7 @@ import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { SshConfig } from "../../types";
 import { TERMINAL_SCROLLBACK_LINES } from "../../constants";
 import { extractCommand } from "../../utils/promptParser";
+import { createPromptTriggerGuard } from "../../utils/promptTriggerGuard";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalProps {
@@ -136,9 +137,11 @@ export default function Terminal({
   } | null>(null);
   const pickerOpenRef = useRef(false);
   pickerOpenRef.current = picker !== null;
-  // 재트리거 가드: `${커서 절대 행}:${줄 내용}`. 같은 프롬프트엔 안 띄우되,
-  // 비번 틀려 재출력되면 행이 달라져(baseY 증가) 다시 뜬다.
-  const lastTriggerRef = useRef<string | null>(null);
+  // 재트리거 가드: key = `${커서 절대 행}:${줄 내용}`. 같은 프롬프트가 한 번의 렌더
+  // 안에서 여러 flush 로 나뉘어도 중복 발화하지 않게 막는다. onLineFeed(줄바꿈)마다
+  // reset 하므로, 스크롤백 포화로 절대 행이 고정돼 key 가 겹쳐도 새 프롬프트를 다시
+  // 감지한다. 근거는 utils/promptTriggerGuard.ts 주석 참조.
+  const triggerGuardRef = useRef(createPromptTriggerGuard());
   // flushBuffer(안정적 콜백)에서 호출할 최신 감지 함수.
   const detectPromptRef = useRef<() => void>(() => {});
 
@@ -200,7 +203,7 @@ export default function Terminal({
     if (!line.trim()) return;
 
     const triggerKey = `${cursorAbs}:${line}`;
-    if (triggerKey === lastTriggerRef.current) return;
+    if (triggerGuardRef.current.isSameAsLast(triggerKey)) return;
 
     for (const r of rules) {
       let re: RegExp;
@@ -210,7 +213,7 @@ export default function Terminal({
         continue; // 깨진 패턴은 건너뜀 (UI 에서 등록 시 검증하지만 방어적으로).
       }
       if (re.test(line)) {
-        lastTriggerRef.current = triggerKey;
+        triggerGuardRef.current.markTriggered(triggerKey);
         const rect = host.getBoundingClientRect();
         const cellH = rect.height / Math.max(xterm.rows, 1);
         const top = Math.min(
@@ -285,6 +288,13 @@ export default function Terminal({
         onShellIntegrationChange?.(tabId, "timeout");
       }
     }, SHELL_INTEGRATION_TIMEOUT_MS);
+
+    // 줄바꿈마다 비번 프롬프트 재트리거 가드를 초기화한다.
+    // 스크롤백 포화로 baseY(=절대 행)가 고정돼도 새 프롬프트를 다시 감지하게 하는 핵심.
+    // (자세한 근거는 triggerGuardRef 선언부 및 promptTriggerGuard.ts 주석 참조.)
+    const lineFeedHandler = xterm.onLineFeed(() => {
+      triggerGuardRef.current.reset();
+    });
 
     const fitAddon = new FitAddon();
     const webLinksAddon = new WebLinksAddon();
@@ -508,6 +518,7 @@ export default function Terminal({
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
       clearTimeout(oscTimeoutId);
       oscHandler.dispose();
+      lineFeedHandler.dispose();
       if (sessionIdRef.current) {
         const closeCmd = type === "ssh" ? "close_ssh" : type === "telnet" ? "close_telnet" : type === "serial" ? "close_serial" : "close_pty";
         invoke(closeCmd, { sessionId: sessionIdRef.current });
