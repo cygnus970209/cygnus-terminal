@@ -137,10 +137,10 @@ A built-in secrets store that maps credentials to servers and auto-fills prompts
 
 Grab the installer for your OS from [Releases](https://github.com/cygnus970209/cygnus-terminal/releases/latest).
 
-- macOS (Apple Silicon): `.dmg` or `.app.tar.gz`
-- Windows (x64): `.msi` or `.exe`
+- macOS (Apple Silicon): `.dmg` or `.app.tar.gz` — signed with an Apple Developer ID and notarized (v0.1.10+), so it opens without Gatekeeper warnings.
+- Windows (x64): `.msi` or `.exe` — not code-signed yet, so SmartScreen may show a "Windows protected your PC" prompt; click **More info → Run anyway**.
 
-> If macOS blocks the first launch as a "damaged" file:
+> Older, unsigned macOS builds (≤ v0.1.9) may be blocked as a "damaged" file. Clear the quarantine flag once:
 > ```bash
 > xattr -rd com.apple.quarantine /Applications/cygnus-terminal.app
 > ```
@@ -213,9 +213,10 @@ src-tauri/                    # Rust backend
 - ✓ Auto-updater + GitHub Releases CI
 - ✓ Command Palette (⌘K)
 - ✓ Local editor integration with file-watcher auto-upload
+- ✓ macOS code signing (Apple Developer ID) & notarization
 
 **Next up**
-- [ ] Apple code signing & notarization
+- [ ] Windows code signing (clear the SmartScreen prompt)
 - [ ] Linux build (.deb / AppImage)
 - [ ] Persistent background port forwarding
 - [ ] AI assistant — error log analysis, natural language to commands
