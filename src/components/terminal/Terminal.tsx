@@ -23,7 +23,7 @@ import {
 } from "../../utils/osc7";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
-import { SshConfig } from "../../types";
+import { SshConfig, type SessionStatus } from "../../types";
 import { TERMINAL_SCROLLBACK_LINES } from "../../constants";
 import { extractCommand } from "../../utils/promptParser";
 import { createPromptTriggerGuard } from "../../utils/promptTriggerGuard";
@@ -37,14 +37,20 @@ interface TerminalProps {
   serialConfig?: { portName: string; baudRate: number };
   isActive: boolean;
   onSessionCreated?: (tabId: string, sessionId: string) => void;
+  onSessionStatus?: (tabId: string, status: SessionStatus) => void;
   onTitleChange?: (tabId: string, title: string) => void;
-  onRegisterCapturePath?: (tabId: string, fn: () => Promise<string | null>) => void;
+  onRegisterCapturePath?: (
+    tabId: string,
+    fn: () => Promise<string | null>,
+  ) => void;
   onRegisterBufferCheck?: (tabId: string, fn: () => boolean) => void;
-  onCdDetected?: () => void;
-  /** OSC 7 또는 fallback 으로 cwd 가 갱신될 때 호출 (활성 탭의 FileTree 경로 동기화용). */
+  /** OSC 7 으로 cwd 가 갱신될 때 호출 (활성 탭의 FileTree 경로 동기화용). */
   onCwdChanged?: (tabId: string, path: string) => void;
   /** Shell integration 감지 상태 변화 시 호출. */
-  onShellIntegrationChange?: (tabId: string, status: ShellIntegrationStatus) => void;
+  onShellIntegrationChange?: (
+    tabId: string,
+    status: ShellIntegrationStatus,
+  ) => void;
 }
 
 interface PtyEventOutput {
@@ -80,7 +86,8 @@ async function sendCompletionNotification(command: string, elapsedMs: number) {
       granted = perm === "granted";
     }
     if (!granted) return;
-    const truncated = command.length > 60 ? command.slice(0, 60) + "..." : command;
+    const truncated =
+      command.length > 60 ? command.slice(0, 60) + "..." : command;
     sendNotification({
       title: "Command completed",
       body: `${truncated}  ·  ${formatElapsed(elapsedMs)}`,
@@ -98,10 +105,10 @@ export default function Terminal({
   serialConfig,
   isActive,
   onSessionCreated,
+  onSessionStatus,
   onTitleChange,
   onRegisterCapturePath,
   onRegisterBufferCheck,
-  onCdDetected,
   onCwdChanged,
   onShellIntegrationChange,
 }: TerminalProps) {
@@ -110,6 +117,8 @@ export default function Terminal({
   const fitAddonRef = useRef<FitAddon | null>(null);
   const shellIntegrationRef = useRef<ShellIntegrationStatus>("unknown");
   const lastCwdRef = useRef<string | null>(null);
+  const onCwdChangedRef = useRef(onCwdChanged);
+  onCwdChangedRef.current = onCwdChanged;
   const sessionIdRef = useRef<string | null>(null);
   const bufferRef = useRef<string>("");
   const rafRef = useRef<number | null>(null);
@@ -176,7 +185,7 @@ export default function Terminal({
         rafRef.current = requestAnimationFrame(flushBuffer);
       }
     },
-    [flushBuffer]
+    [flushBuffer],
   );
 
   // 매 렌더마다 최신 클로저로 감지 함수 갱신 — flushBuffer 는 ref 를 통해 호출.
@@ -221,7 +230,11 @@ export default function Terminal({
           window.innerHeight - 268,
         );
         const left = Math.min(rect.left + 12, window.innerWidth - 292);
-        setPicker({ top: Math.max(top, 8), left: Math.max(left, 8), label: r.label });
+        setPicker({
+          top: Math.max(top, 8),
+          left: Math.max(left, 8),
+          label: r.label,
+        });
         return;
       }
     }
@@ -239,7 +252,9 @@ export default function Terminal({
     const xterm = new XTerm({
       cursorBlink: true,
       fontSize: 14,
-      fontFamily: "'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace",
+      lineHeight: 1.2,
+      fontFamily:
+        "'JetBrains Mono', 'Fira Code', 'Cascadia Code', 'SFMono-Regular', Menlo, Consolas, monospace",
       theme: theme.colors,
       allowProposedApi: true,
       scrollback: TERMINAL_SCROLLBACK_LINES,
@@ -258,7 +273,7 @@ export default function Terminal({
 
       if (path !== lastCwdRef.current) {
         lastCwdRef.current = path;
-        onCwdChanged?.(tabId, path);
+        onCwdChangedRef.current?.(tabId, path);
       }
 
       // 명령 완료 알림 — "running → idle" 전환 시점.
@@ -267,11 +282,7 @@ export default function Terminal({
         const elapsedMs = Date.now() - rs.startedAt;
         const ns = notifySettingsRef.current;
         const inactive = !isActiveRef.current || !document.hasFocus();
-        if (
-          ns.enabled &&
-          inactive &&
-          elapsedMs >= ns.thresholdSeconds * 1000
-        ) {
+        if (ns.enabled && inactive && elapsedMs >= ns.thresholdSeconds * 1000) {
           void sendCompletionNotification(rs.command, elapsedMs);
         }
         runStateRef.current = { state: "idle", startedAt: 0, command: "" };
@@ -367,12 +378,16 @@ export default function Terminal({
     });
 
     const initSession = async () => {
+      onSessionStatus?.(tabId, "connecting");
+      let ended = false;
       try {
         const onEvent = new Channel<PtyEvent>();
         onEvent.onmessage = (event) => {
           if (event.type === "Output") {
             scheduleWrite(event.data);
           } else if (event.type === "Exit") {
+            ended = true;
+            onSessionStatus?.(tabId, "ended");
             xterm.write("\r\n\x1b[31m[Session ended]\x1b[0m\r\n");
           }
         };
@@ -380,7 +395,9 @@ export default function Terminal({
         let sessionId: string;
 
         if (type === "ssh" && sshConfig) {
-          xterm.write(`Connecting to ${sshConfig.host}:${sshConfig.port}...\r\n`);
+          xterm.write(
+            `Connecting to ${sshConfig.host}:${sshConfig.port}...\r\n`,
+          );
           sessionId = await invoke<string>("create_ssh_session", {
             host: sshConfig.host,
             port: sshConfig.port,
@@ -394,7 +411,9 @@ export default function Terminal({
           });
           onTitleChange?.(tabId, `${sshConfig.username}@${sshConfig.host}`);
         } else if (type === "telnet" && telnetConfig) {
-          xterm.write(`Connecting via Telnet to ${telnetConfig.host}:${telnetConfig.port}...\r\n`);
+          xterm.write(
+            `Connecting via Telnet to ${telnetConfig.host}:${telnetConfig.port}...\r\n`,
+          );
           sessionId = await invoke<string>("create_telnet_session", {
             host: telnetConfig.host,
             port: telnetConfig.port,
@@ -402,7 +421,9 @@ export default function Terminal({
           });
           onTitleChange?.(tabId, `telnet://${telnetConfig.host}`);
         } else if (type === "serial" && serialConfig) {
-          xterm.write(`Opening ${serialConfig.portName} at ${serialConfig.baudRate} baud...\r\n`);
+          xterm.write(
+            `Opening ${serialConfig.portName} at ${serialConfig.baudRate} baud...\r\n`,
+          );
           sessionId = await invoke<string>("create_serial_session", {
             portName: serialConfig.portName,
             baudRate: serialConfig.baudRate,
@@ -418,34 +439,32 @@ export default function Terminal({
 
         sessionIdRef.current = sessionId;
         onSessionCreated?.(tabId, sessionId);
+        if (!ended) onSessionStatus?.(tabId, "connected");
 
-        // pwd 캡처 함수 등록
-        const writeCmd = type === "ssh" ? "write_ssh" : type === "telnet" ? "write_telnet" : type === "serial" ? "write_serial" : "write_pty";
+        // 사용자가 요청한 경로 캡처 및 입력 함수 등록
+        const writeCmd =
+          type === "ssh"
+            ? "write_ssh"
+            : type === "telnet"
+              ? "write_telnet"
+              : type === "serial"
+                ? "write_serial"
+                : "write_pty";
         // alternate screen buffer 감지 (vi, nano, less, top 등)
-        const isAlternateBuffer = () => xterm.buffer.active.type === "alternate";
+        const isAlternateBuffer = () =>
+          xterm.buffer.active.type === "alternate";
         onRegisterBufferCheck?.(tabId, isAlternateBuffer);
 
         onRegisterCapturePath?.(tabId, async () => {
-          if (!sessionIdRef.current || isAlternateBuffer()) return null;
+          if (
+            ended ||
+            !sessionIdRef.current ||
+            isAlternateBuffer() ||
+            shellIntegrationRef.current !== "detected"
+          ) return null;
 
-          // Race condition 가드 — 사용자가 이미 다음 명령을 타이핑 중이면 skip.
-          // 우리 `pwd\r` 가 PTY stdin 에서 사용자 입력과 합쳐지면
-          // `cd ` + `pwd\r` → `cd pwd` 같은 의도치 않은 명령이 실행된다.
-          // 다음 cd 감지 시 다시 호출되므로 기능 손실은 없음.
-          const buffer = xterm.buffer.active;
-          const promptLine = buffer.getLine(buffer.cursorY + buffer.baseY);
-          if (promptLine) {
-            const userTyped = extractCommand(promptLine.translateToString(true));
-            if (userTyped && userTyped.length > 0) return null;
-          }
-
-          const cursorBefore = buffer.cursorY + buffer.baseY;
-          await invoke(writeCmd, { sessionId: sessionIdRef.current, data: "pwd\r" });
-          await new Promise((r) => setTimeout(r, 500));
-          const outputLine = xterm.buffer.active.getLine(cursorBefore + 1);
-          if (!outputLine) return null;
-          const path = outputLine.translateToString(true).trim();
-          return path.startsWith("/") ? path : null;
+          // Read the directory reported by OSC 7 without writing to the shell.
+          return lastCwdRef.current;
         });
         const profileId = sshConfig?.profileId;
 
@@ -453,7 +472,11 @@ export default function Terminal({
           if (!sessionIdRef.current) return;
 
           // 에디터/페이저 모드에서는 히스토리 캡처 스킵
-          if (profileId && !isAlternateBuffer() && (data === "\r" || data === "\n")) {
+          if (
+            profileId &&
+            !isAlternateBuffer() &&
+            (data === "\r" || data === "\n")
+          ) {
             const buffer = xterm.buffer.active;
             const cursorLine = buffer.cursorY + buffer.baseY;
             const line = buffer.getLine(cursorLine);
@@ -475,9 +498,6 @@ export default function Terminal({
               }
               if (cmd && cmd.length > 0 && cmd.length < 1000) {
                 invoke("save_command_history", { profileId, command: cmd });
-                if (cmd.match(/^cd\s|^cd$/)) {
-                  onCdDetected?.();
-                }
                 // 명령 실행 시작 — 알림 elapsed 측정 시작점.
                 runStateRef.current = {
                   state: "running",
@@ -492,7 +512,12 @@ export default function Terminal({
         });
 
         // Handle resize
-        const resizeCmd = type === "ssh" ? "resize_ssh" : type === "telnet" ? "resize_telnet" : "resize_pty"; // serial은 resize 없음
+        const resizeCmd =
+          type === "ssh"
+            ? "resize_ssh"
+            : type === "telnet"
+              ? "resize_telnet"
+              : "resize_pty"; // serial은 resize 없음
         xterm.onResize(({ rows, cols }) => {
           if (sessionIdRef.current) {
             invoke(resizeCmd, { sessionId: sessionIdRef.current, rows, cols });
@@ -501,6 +526,7 @@ export default function Terminal({
 
         fitAddon.fit();
       } catch (err) {
+        onSessionStatus?.(tabId, "error");
         xterm.write(`\x1b[31mError: ${err}\x1b[0m\r\n`);
       }
     };
@@ -520,7 +546,14 @@ export default function Terminal({
       oscHandler.dispose();
       lineFeedHandler.dispose();
       if (sessionIdRef.current) {
-        const closeCmd = type === "ssh" ? "close_ssh" : type === "telnet" ? "close_telnet" : type === "serial" ? "close_serial" : "close_pty";
+        const closeCmd =
+          type === "ssh"
+            ? "close_ssh"
+            : type === "telnet"
+              ? "close_telnet"
+              : type === "serial"
+                ? "close_serial"
+                : "close_pty";
         invoke(closeCmd, { sessionId: sessionIdRef.current });
       }
       xterm.dispose();

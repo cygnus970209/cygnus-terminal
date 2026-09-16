@@ -1,3 +1,4 @@
+import Icon from "../common/Icon";
 import "./Toolbar.css";
 
 interface ToolbarProps {
@@ -27,9 +28,13 @@ export default function Toolbar({
   const singleSelection = selectedCount === 1;
 
   return (
-    <div className="sftp-toolbar">
-      <button className="tb-btn" onClick={onUpload} title="Upload to remote">
-        <span className="tb-icon">↑</span>
+    <div className="sftp-toolbar" role="toolbar" aria-label="File actions">
+      <button
+        className="tb-btn tb-primary"
+        onClick={onUpload}
+        title="Upload to remote"
+      >
+        <Icon name="upload" size={15} />
         <span>Upload</span>
       </button>
       <button
@@ -38,14 +43,14 @@ export default function Toolbar({
         disabled={!hasSelection}
         title={hasSelection ? "Download selected" : "Select files to download"}
       >
-        <span className="tb-icon">↓</span>
+        <Icon name="download" size={15} />
         <span>Download</span>
       </button>
 
       <div className="tb-sep" />
 
       <button className="tb-btn" onClick={onNewFolder} title="New folder">
-        <span className="tb-icon">+</span>
+        <Icon name="plus" size={15} />
         <span>New Folder</span>
       </button>
       <button
@@ -54,7 +59,7 @@ export default function Toolbar({
         disabled={!singleSelection}
         title="Rename"
       >
-        <span className="tb-icon">✎</span>
+        <Icon name="edit" size={15} />
         <span>Rename</span>
       </button>
       <button
@@ -63,18 +68,18 @@ export default function Toolbar({
         disabled={!hasSelection}
         title="Delete"
       >
-        <span className="tb-icon">🗑</span>
+        <Icon name="trash" size={15} />
         <span>Delete</span>
       </button>
 
       <div className="tb-sep" />
 
       <button className="tb-btn" onClick={onRefresh} title="Refresh">
-        <span className="tb-icon">↻</span>
+        <Icon name="refresh" size={15} />
         <span>Refresh</span>
       </button>
       <button className="tb-btn" onClick={onSync} title="Folder sync">
-        <span className="tb-icon">⇄</span>
+        <Icon name="transfer" size={15} />
         <span>Sync</span>
       </button>
 

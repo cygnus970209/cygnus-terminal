@@ -1,66 +1,69 @@
 /* ─────────────────────────────────────────────────────────────────
  * Cygnus Terminal — Design System v1 (see DESIGN.md)
- * Aesthetic: Developer Cockpit. Catppuccin Mocha base + Cygnus accents.
- * Typography: Iosevka Aile (UI) + Iosevka (mono).
+ * Aesthetic: Developer Cockpit. Focus: neutral charcoal surfaces + blue accents.
+ * Typography: OS native UI + JetBrains Mono terminal.
  * ─────────────────────────────────────────────────────────────── */
 :root {
   /* Surfaces */
-  --bg-primary:   #1e1e2e;
-  --bg-secondary: #181825;
-  --bg-tertiary:  #11111b;
-  --bg-hover:     #232338;
+  --bg-primary: #14171c;
+  --bg-secondary: #1b1f26;
+  --bg-tertiary: #111419;
+  --bg-hover: #242a33;
 
   /* Borders */
-  --border:         #313244;
-  --border-subtle:  #24283b;
-  --border-hover:   #45475a;
+  --border: #303742;
+  --border-subtle: #262d36;
+  --border-hover: #424d5d;
 
   /* Text */
-  --text-primary:   #cdd6f4;
-  --text-secondary: #a6adc8;
-  --text-muted:     #6c7086;
-  --text-dim:       #585b70;
+  --text-primary: #e3e8ef;
+  --text-secondary: #b1bbc9;
+  --text-muted: #939faf;
+  --text-dim: #8491a3;
 
   /* Primary accent — Cygnus Blue (shifted from Catppuccin #89b4fa) */
-  --accent:       #7aa2f7;
+  --accent: #7aa2f7;
   --accent-hover: #8bb3f8;
-  --accent-soft:  rgba(122, 162, 247, 0.12);
-  --accent-ring:  rgba(122, 162, 247, 0.35);
+  --accent-soft: rgba(122, 162, 247, 0.12);
+  --accent-ring: rgba(122, 162, 247, 0.35);
 
   /* Secondary accent — Peach (live/CTA only, strict usage) */
-  --peach:        #f5a97f;
+  --peach: #f5a97f;
 
   /* Semantic */
   --success: #a6e3a1;
-  --warn:    #f9e2af;
+  --warn: #f9e2af;
   --warning: #f9e2af; /* alias (기존 코드 호환) */
-  --error:   #f38ba8;
-  --danger:  #f38ba8; /* alias (기존 코드 호환) */
-  --info:    #94e2d5;
-  --orange:  #fab387; /* Catppuccin orange — 기존 호환. 신규 코드엔 --peach 사용 */
+  --error: #f38ba8;
+  --danger: #f38ba8; /* alias (기존 코드 호환) */
+  --info: #94e2d5;
+  --orange: #fab387; /* Catppuccin orange — 기존 호환. 신규 코드엔 --peach 사용 */
 
   /* Fonts — Iosevka 롤백(2026-04-22). sans 는 OS 네이티브, mono 는 JetBrains Mono.
    * 향후 다른 디스플레이 폰트 실험할 때 여기서만 바꿔도 전역 반영. */
-  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --font-sans:
+    system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-mono:
+    "JetBrains Mono", "Fira Code", "Cascadia Code", "SFMono-Regular", Menlo,
+    Consolas, monospace;
 
   /* Type scale */
-  --fs-xs:   10px;
-  --fs-sm:   11px;
+  --fs-xs: 10px;
+  --fs-sm: 11px;
   --fs-base: 12px;
-  --fs-md:   13px;
-  --fs-lg:   14px;
-  --fs-h3:   17px;
-  --fs-h2:   20px;
-  --fs-h1:   26px;
+  --fs-md: 13px;
+  --fs-lg: 14px;
+  --fs-h3: 17px;
+  --fs-h2: 20px;
+  --fs-h1: 26px;
 
   /* Spacing (4px base) */
   --sp-2xs: 2px;
-  --sp-xs:  4px;
-  --sp-sm:  8px;
-  --sp-md:  12px;
-  --sp-lg:  16px;
-  --sp-xl:  24px;
+  --sp-xs: 4px;
+  --sp-sm: 8px;
+  --sp-md: 12px;
+  --sp-lg: 16px;
+  --sp-xl: 24px;
   --sp-2xl: 32px;
   --sp-3xl: 48px;
 
@@ -73,9 +76,9 @@
 
   /* Motion */
   --dur-micro: 80ms;
-  --dur:       120ms;
-  --dur-slow:  180ms;
-  --ease:      cubic-bezier(0.2, 0.7, 0.3, 1);
+  --dur: 120ms;
+  --dur-slow: 180ms;
+  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
 }
 
 * {
@@ -84,7 +87,9 @@
   box-sizing: border-box;
 }
 
-html, body, #root {
+html,
+body,
+#root {
   height: 100%;
   overflow: hidden;
   background: var(--bg-primary);
@@ -93,7 +98,9 @@ html, body, #root {
 }
 
 body {
-  font-feature-settings: 'calt' 1, 'ss01' 1;
+  font-feature-settings:
+    "calt" 1,
+    "ss01" 1;
 }
 
 .app {
@@ -103,112 +110,289 @@ body {
   background: var(--bg-primary);
 }
 
-.titlebar {
-  display: flex;
-  align-items: center;
-  height: 36px;
-  padding: 0 12px;
-  background: #181825;
-  border-bottom: 1px solid #313244;
-  user-select: none;
-  -webkit-app-region: drag;
+/* A / Focus — session tabs above the workspace, persistent server navigation. */
+button,
+input,
+.custom-select,
+textarea {
+  font-family: var(--font-sans);
 }
-
-.titlebar-title {
-  color: #cdd6f4;
-  font-size: 13px;
-  font-weight: 600;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+button {
+  touch-action: manipulation;
 }
-
-.titlebar-session {
-  color: #6c7086;
-  font-size: 12px;
-  margin-left: 12px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+button:focus-visible,
+[role="tab"]:focus-visible,
+a:focus-visible,
+input:focus-visible,
+.custom-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
 }
-
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 .app-body {
   display: flex;
   flex: 1;
+  min-height: 0;
   overflow: hidden;
 }
-
-.sidebar-wrapper {
-  width: 100%;
-  height: 100%;
+.connections-sidebar {
   display: flex;
   flex-direction: column;
-  background: #181825;
-  border-right: 1px solid #313244;
-  overflow: hidden;
+  height: 100%;
+  min-height: 0;
+  background: var(--bg-secondary);
+  border-right: 1px solid var(--border);
 }
-
-.terminal-container {
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 0 14px;
+  height: 44px;
+  flex-shrink: 0;
+  color: var(--accent);
+  border-bottom: 1px solid var(--border);
+}
+.sidebar-brand > button:first-of-type {
   flex: 1;
-  overflow: hidden;
-  padding: 4px;
+  min-width: 0;
+  text-align: left;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
 }
-
-.sidebar-header-ctx {
+.sidebar-brand span {
+  font-weight: 400;
+  color: var(--text-secondary);
+}
+.icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  flex-shrink: 0;
+  color: var(--text-muted);
+  background: none;
+  border: 0;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.icon-button:hover {
+  color: var(--text-primary);
+  background: var(--bg-hover);
+}
+.sidebar-tools {
+  display: grid;
+  gap: 2px;
+  padding: 10px;
+  border-top: 1px solid var(--border);
+}
+.sidebar-tools button {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 33px;
+  padding: 0 10px;
+  color: var(--text-secondary);
+  background: none;
+  border: 0;
+  border-radius: 5px;
+  text-align: left;
+  font-size: 12px;
+  cursor: pointer;
+}
+.sidebar-tools button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.sidebar-tools button span {
+  margin-left: auto;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+.workspace {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+.workspace-body {
+  position: relative;
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.session-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 10px 12px;
-  border-bottom: 1px solid #313244;
-}
-
-.sidebar-title-ctx {
-  color: #a6adc8;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-}
-
-.sidebar-collapse-btn-ctx {
-  background: none;
-  border: none;
-  color: #6c7086;
-  font-size: 12px;
-  cursor: pointer;
-  padding: 0 4px;
-  border-radius: 4px;
-  line-height: 1;
-  transition: background 0.1s, color 0.1s;
-}
-
-.sidebar-collapse-btn-ctx:hover {
-  background: #313244;
-  color: #cdd6f4;
-}
-
-/* Collapsed sidebar 를 되돌리는 가장자리 hover strip.
- * 평상시 얇은 border 처럼 보이다 hover 시 accent 로 두드러짐. 부유 버튼의
- * ▸◂ 아이콘 제거로 "덕지덕지"한 인상 줄임. */
-.panel-strip {
-  width: 3px;
-  height: 100%;
-  background: var(--border-subtle);
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  position: relative;
+  gap: 12px;
+  min-height: 38px;
+  padding: 4px 12px;
   flex-shrink: 0;
-  transition: width var(--dur) var(--ease), background var(--dur) var(--ease);
+  border-bottom: 1px solid var(--border-subtle);
 }
-
-.panel-strip:hover {
-  width: 5px;
-  background: var(--accent);
+.session-heading {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
 }
-
-/* 클릭 영역을 좌우 6px 씩 넓혀 정확도 올림 (시각 너비는 유지) */
-.panel-strip::before {
-  content: '';
-  position: absolute;
-  inset: 0 -6px;
+.session-heading h1 {
+  font-size: 15px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.session-group {
+  font-size: 9px;
+  line-height: 20px;
+  max-width: 120px;
+  padding: 0 6px;
+  border: 1px solid var(--accent-ring);
+  border-radius: 4px;
+  color: var(--accent);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+}
+.session-address {
+  font: 11px var(--font-mono);
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.session-tools {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.session-tools button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-height: 30px;
+  padding: 0 9px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text-secondary);
+  background: transparent;
+  cursor: pointer;
+  font-size: 11px;
+}
+.session-tools button:hover:not(:disabled) {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.session-tools button.is-active {
+  border-color: var(--accent-ring);
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.session-dot {
+  display: inline-block;
+  flex-shrink: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-dim);
+}
+.session-dot-connected {
+  background: var(--success);
+}
+.session-dot-connecting {
+  background: var(--warn);
+}
+.session-dot-error {
+  background: var(--error);
+}
+.terminal-container {
+  flex: 1;
+  min-width: 80px;
+  min-height: 0;
+  overflow: hidden;
+  padding: 0;
+}
+.server-tools-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border);
+}
+.server-tools-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  height: 42px;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+@media (max-width: 1100px) {
+  .session-address {
+    display: none;
+  }
+  .session-header {
+    padding: 4px 12px;
+  }
+  .session-tools button span {
+    display: none;
+  }
+  .terminal-container {
+    padding: 0;
+  }
+}
+@media (max-width: 800px) {
+  .workspace-body > .rp-right {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: min(280px, 100%) !important;
+    z-index: 20;
+    box-shadow: -12px 0 32px #0005;
+  }
+  .session-group {
+    display: none;
+  }
+  .session-header {
+    gap: 6px;
+  }
+  .session-tools {
+    gap: 3px;
+  }
+  .session-heading {
+    gap: 6px;
+  }
+  .session-heading h1 {
+    font-size: 13px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0s !important;
+    animation-duration: 0s !important;
+  }
 }
 
 /* ─── Snippets modal (Command Palette 의 "Manage Snippets..." 로 열림) ─── */
@@ -272,4 +456,64 @@ body {
 .sn-modal-body > .snippets-view {
   flex: 1;
   min-height: 0;
+}
+
+.connections-home {
+  padding: 0;
+  min-width: 0;
+}
+.session-heading h1 {
+  font-size: 13px;
+}
+.session-tools button {
+  min-height: 26px;
+}
+
+.sidebar-section-switch {
+  display: flex;
+  gap: 4px;
+  padding: 8px;
+  border-bottom: 1px solid var(--border);
+}
+.sidebar-section-switch button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  flex: 1;
+  padding: 8px 4px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--text-muted);
+  font: 11px var(--font-sans);
+  cursor: pointer;
+}
+.sidebar-section-switch button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.sidebar-section-switch button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.sidebar-server-tools {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+.sidebar-server-name {
+  padding: 12px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar-server-tools .sc-tab {
+  padding: 10px 3px;
+  font-size: 11px;
 }

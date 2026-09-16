@@ -152,6 +152,11 @@ const MIGRATIONS: &[Migration] = &[
                 ON vault_items(pair_id) WHERE pair_id IS NOT NULL;
         ",
     },
+    Migration {
+        version: 7,
+        sql: "ALTER TABLE profiles ADD COLUMN protocol TEXT NOT NULL DEFAULT 'ssh' CHECK(protocol IN ('ssh', 'telnet', 'serial'));
+            ALTER TABLE profiles ADD COLUMN baud_rate INTEGER CHECK(baud_rate > 0 AND baud_rate <= 4294967295);",
+    },
 ];
 
 impl Database {
@@ -176,17 +181,48 @@ impl Database {
 
         for migration in MIGRATIONS {
             if migration.version > current_version {
-                conn.execute_batch(migration.sql)
+                let tx = conn
+                    .unchecked_transaction()
+                    .map_err(|e| format!("Failed to start migration: {e}"))?;
+                tx.execute_batch(migration.sql)
                     .map_err(|e| format!("Migration v{} failed: {e}", migration.version))?;
 
-                conn.execute(
+                tx.execute(
                     "INSERT INTO schema_version (version) VALUES (?1)",
                     [migration.version],
                 )
                 .map_err(|e| format!("Failed to record migration v{}: {e}", migration.version))?;
+                tx.commit()
+                    .map_err(|e| format!("Failed to commit migration: {e}"))?;
             }
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn legacy_profiles_keep_identity_and_default_to_ssh() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        for migration in MIGRATIONS.iter().filter(|m| m.version <= 6) {
+            conn.execute_batch(migration.sql).unwrap();
+        }
+        conn.execute_batch("CREATE TABLE schema_version(version INTEGER PRIMARY KEY); INSERT INTO schema_version VALUES(6);
+            INSERT INTO profiles(id,name,host,port,username,auth_type,password) VALUES(42,'legacy','example.test',22,'root','password','existing-encrypted-value');").unwrap();
+        let db = Database {
+            conn: std::sync::Mutex::new(conn),
+        };
+        db.run_migrations().unwrap();
+        db.run_migrations().unwrap();
+        let value: (i64, String, String) = db
+            .conn()
+            .query_row("SELECT id, protocol, password FROM profiles", [], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+            })
+            .unwrap();
+        assert_eq!(value, (42, "ssh".into(), "existing-encrypted-value".into()));
     }
 }

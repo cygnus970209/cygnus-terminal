@@ -1,3 +1,5 @@
+import Icon from "../common/Icon";
+import Select from "../common/Select";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -29,6 +31,7 @@ interface SftpViewProps {
   sessionId: string;
   sftpId: string;
   homePath: string;
+  sourceLabel?: string;
   availableSessions?: {
     id: string;
     sftpId: string;
@@ -41,11 +44,11 @@ type PanelSource =
   | { mode: "local"; sftpId: null; homePath: string; label: string }
   | { mode: "remote"; sftpId: string; homePath: string; label: string };
 
-
 export default function SftpView({
   sftpId,
   homePath,
   availableSessions,
+  sourceLabel = "Remote",
 }: SftpViewProps) {
   const [localHome, setLocalHome] = useState<string>("/");
   useEffect(() => {
@@ -58,7 +61,13 @@ export default function SftpView({
   const [profiles, setProfiles] = useState<Profile[]>([]);
   useEffect(() => {
     invoke<Profile[]>("list_profiles")
-      .then(setProfiles)
+      .then((list) =>
+        setProfiles(
+          list.filter(
+            (profile) => !profile.protocol || profile.protocol === "ssh",
+          ),
+        ),
+      )
       .catch(() => setProfiles([]));
   }, []);
 
@@ -67,7 +76,7 @@ export default function SftpView({
     mode: "remote",
     sftpId,
     homePath,
-    label: "Remote",
+    label: sourceLabel,
   });
   const [rightSrc, setRightSrc] = useState<PanelSource>(() => ({
     mode: "local",
@@ -142,28 +151,33 @@ export default function SftpView({
   }, []);
 
   // Transfer Channel (컴포넌트 생애 동안 유지)
-  const { transferJobs, setTransferJobs, transferChannel } = useTransferChannel({
-    onCompleted: (jobId) => {
-      // drag-out 준비 완료 알림
-      const remotePath = pendingDragJobsRef.current.get(jobId);
-      if (remotePath) {
-        pendingDragJobsRef.current.delete(jobId);
-        const name = remotePath.split("/").pop() || remotePath;
-        showToast(`Drag ready: ${name} — drag it now from the list`);
-      }
-      leftHandle.current?.refresh();
-      rightHandle.current?.refresh();
+  const { transferJobs, setTransferJobs, transferChannel } = useTransferChannel(
+    {
+      onCompleted: (jobId) => {
+        // drag-out 준비 완료 알림
+        const remotePath = pendingDragJobsRef.current.get(jobId);
+        if (remotePath) {
+          pendingDragJobsRef.current.delete(jobId);
+          const name = remotePath.split("/").pop() || remotePath;
+          showToast(`Drag ready: ${name} — drag it now from the list`);
+        }
+        leftHandle.current?.refresh();
+        rightHandle.current?.refresh();
+      },
+      onFailed: (_jobId, error) => showToast(`Failed: ${error}`),
     },
-    onFailed: (_jobId, error) => showToast(`Failed: ${error}`),
-  });
+  );
 
-  const handleCancelTransfer = useCallback(async (jobId: string) => {
-    try {
-      await invoke("sftp_transfer_cancel", { jobId });
-    } catch (err) {
-      showToast(`Cancel failed: ${err}`);
-    }
-  }, [showToast]);
+  const handleCancelTransfer = useCallback(
+    async (jobId: string) => {
+      try {
+        await invoke("sftp_transfer_cancel", { jobId });
+      } catch (err) {
+        showToast(`Cancel failed: ${err}`);
+      }
+    },
+    [showToast],
+  );
 
   // Channel 이벤트가 끊길 수 있는 환경(HMR reload 등)에서 UI 상태를
   // backend 의 실제 transfer 상태로 복구하기 위한 polling fallback.
@@ -200,7 +214,7 @@ export default function SftpView({
   const sessionsList = useMemo(() => {
     const list: PanelSource[] = [
       { mode: "local", sftpId: null, homePath: localHome, label: "Local" },
-      { mode: "remote", sftpId, homePath, label: "Remote" },
+      { mode: "remote", sftpId, homePath, label: sourceLabel },
     ];
     if (availableSessions) {
       for (const s of availableSessions) {
@@ -214,7 +228,7 @@ export default function SftpView({
       }
     }
     return list;
-  }, [localHome, sftpId, homePath, availableSessions]);
+  }, [localHome, sftpId, homePath, availableSessions, sourceLabel]);
 
   // 프로필에서 on-demand 로 SSH+SFTP 세션을 만들고 해당 side 에 attach.
   const connectProfile = useCallback(
@@ -312,8 +326,17 @@ export default function SftpView({
       const ctx = { resolvePath, enqueuers };
       let result: DispatchResult;
 
-      if (source.sourceMode === "local" && target.mode === "remote" && target.sftpId) {
-        result = await dispatchUpload(source.entries, target.sftpId, target.path, ctx);
+      if (
+        source.sourceMode === "local" &&
+        target.mode === "remote" &&
+        target.sftpId
+      ) {
+        result = await dispatchUpload(
+          source.entries,
+          target.sftpId,
+          target.path,
+          ctx,
+        );
       } else if (
         source.sourceMode === "remote" &&
         target.mode === "local" &&
@@ -400,8 +423,10 @@ export default function SftpView({
         | { type: "Error"; data: string };
       const onEvent = new Channel<WatchEvent>();
       onEvent.onmessage = (event) => {
-        if (event.type === "Uploading") showToast(`Auto-uploading ${event.data}...`);
-        else if (event.type === "Uploaded") showToast(`Uploaded: ${event.data}`);
+        if (event.type === "Uploading")
+          showToast(`Auto-uploading ${event.data}...`);
+        else if (event.type === "Uploaded")
+          showToast(`Uploaded: ${event.data}`);
         else if (event.type === "Error") showToast(`Editor: ${event.data}`);
       };
 
@@ -419,8 +444,7 @@ export default function SftpView({
 
   // side 기반 헬퍼 — focused state 에 의존하지 않아 우클릭 메뉴에서 호출해도 stale closure 가 안 된다.
   const handleFor = useCallback(
-    (side: "left" | "right") =>
-      side === "left" ? leftHandle : rightHandle,
+    (side: "left" | "right") => (side === "left" ? leftHandle : rightHandle),
     [],
   );
 
@@ -430,7 +454,11 @@ export default function SftpView({
       const toSrc = fromSide === "left" ? rightSrc : leftSrc;
       const fromHandle = handleFor(fromSide);
       const toHandle = handleFor(fromSide === "left" ? "right" : "left");
-      if (fromSrc.mode !== "local" || toSrc.mode !== "remote" || !toSrc.sftpId) {
+      if (
+        fromSrc.mode !== "local" ||
+        toSrc.mode !== "remote" ||
+        !toSrc.sftpId
+      ) {
         showToast("Upload: need Local → Remote");
         return;
       }
@@ -600,18 +628,21 @@ export default function SftpView({
   // FilePanel 의 HTML5 drag 시작 시점을 가로챈다. 단일 파일이고 preparedDrags 에
   // temp 경로가 있으면 plugin.startDrag 로 OS native drag 를 시작 — 제스처 컨텍스트
   // 안에서만 가능하기 때문에 이 시점 외에는 OS drag 를 열 수 없다.
-  const onPanelDragStart = useCallback((payload: DragPayload) => {
-    setDragPayload(payload);
-    if (payload.entries.length === 1) {
-      const entry = payload.entries[0];
-      const tempPath = preparedDragsRef.current.get(entry.path);
-      if (tempPath) {
-        startDrag({ item: [tempPath], icon: "" }).catch((err) => {
-          showToast(`Drag out failed: ${err}`);
-        });
+  const onPanelDragStart = useCallback(
+    (payload: DragPayload) => {
+      setDragPayload(payload);
+      if (payload.entries.length === 1) {
+        const entry = payload.entries[0];
+        const tempPath = preparedDragsRef.current.get(entry.path);
+        if (tempPath) {
+          startDrag({ item: [tempPath], icon: "" }).catch((err) => {
+            showToast(`Drag out failed: ${err}`);
+          });
+        }
       }
-    }
-  }, [setDragPayload, showToast]);
+    },
+    [setDragPayload, showToast],
+  );
 
   // 외부(Finder / Explorer) → 창 드롭: Tauri native drag-drop 이벤트로 들어온다.
   // HTML5 drag-drop 이벤트는 Tauri webview 에서 외부 파일에 대해 파일 정보를 주지 않는다.
@@ -630,10 +661,22 @@ export default function SftpView({
         { x: physicalX, y: physicalY },
       ];
       for (const c of candidates) {
-        if (lr && c.x >= lr.left && c.x <= lr.right && c.y >= lr.top && c.y <= lr.bottom) {
+        if (
+          lr &&
+          c.x >= lr.left &&
+          c.x <= lr.right &&
+          c.y >= lr.top &&
+          c.y <= lr.bottom
+        ) {
           return "left";
         }
-        if (rr && c.x >= rr.left && c.x <= rr.right && c.y >= rr.top && c.y <= rr.bottom) {
+        if (
+          rr &&
+          c.x >= rr.left &&
+          c.x <= rr.right &&
+          c.y >= rr.top &&
+          c.y <= rr.bottom
+        ) {
           return "right";
         }
       }
@@ -652,7 +695,8 @@ export default function SftpView({
         showToast("Drop onto a Remote panel to upload");
         return;
       }
-      const targetBase = targetHandle.current?.currentPath || targetSrc.homePath;
+      const targetBase =
+        targetHandle.current?.currentPath || targetSrc.homePath;
       resetBlanket();
 
       // 외부 OS 경로를 FileEntry[] 로 변환 (is_local_dir 로 디렉토리 여부 확인).
@@ -704,7 +748,7 @@ export default function SftpView({
   );
 
   // 내부 drag 도 native drop 이벤트로 귀결된다. paths 가 비어있으면 내부 drag (HTML5
-   // dragstart 로 ref 에 심어둔 payload 로 source 판단), paths 가 채워져 있으면 외부 drop.
+  // dragstart 로 ref 에 심어둔 payload 로 source 판단), paths 가 채워져 있으면 외부 drop.
   const handleInternalNativeDrop = useCallback(
     (physicalX: number, physicalY: number) => {
       const payload = dragPayloadRef.current;
@@ -741,13 +785,25 @@ export default function SftpView({
         }
       }
     });
-    return () => { unlistenP.then((un) => un()); };
+    return () => {
+      unlistenP.then((un) => un());
+    };
   }, [handleExternalDrop, handleInternalNativeDrop]);
 
   // Toolbar 는 focused 기반. 우클릭은 side 명시.
-  const focusedHandle = focused === "left" ? leftHandle : rightHandle;
   const focusedSrc = focused === "left" ? leftSrc : rightSrc;
-  const selectedCount = focusedHandle.current?.getSelected().length ?? 0;
+  const [leftSelectionCount, setLeftSelectionCount] = useState(0);
+  const [rightSelectionCount, setRightSelectionCount] = useState(0);
+  const registerLeftHandle = useCallback((handle: FilePanelHandle) => {
+    leftHandle.current = handle;
+    setLeftSelectionCount(handle.getSelected().length);
+  }, []);
+  const registerRightHandle = useCallback((handle: FilePanelHandle) => {
+    rightHandle.current = handle;
+    setRightSelectionCount(handle.getSelected().length);
+  }, []);
+  const selectedCount =
+    focused === "left" ? leftSelectionCount : rightSelectionCount;
 
   const handleUpload = useCallback(() => {
     // focus 가 local 이면 거기서 업로드, remote 면 다른 쪽(local) 에서 업로드
@@ -906,7 +962,16 @@ export default function SftpView({
 
       setCtxMenu({ x: pos.x, y: pos.y, items });
     },
-    [handleFileAction, downloadFromSide, uploadFromSide, renameInSide, deleteInSide, handleRefresh, showToast, transferChannel],
+    [
+      handleFileAction,
+      downloadFromSide,
+      uploadFromSide,
+      renameInSide,
+      deleteInSide,
+      handleRefresh,
+      showToast,
+      transferChannel,
+    ],
   );
 
   const handleLeftContextMenu = useCallback(
@@ -928,6 +993,18 @@ export default function SftpView({
 
   return (
     <div className="sftp-view">
+      <header className="sftp-workspace-header">
+        <div className="sftp-workspace-title">
+          <Icon name="transfer" size={20} />
+          <div>
+            <h1>SFTP Files</h1>
+            <p>Browse, transfer and organize your files.</p>
+          </div>
+        </div>
+        <span className="sftp-workspace-hint">
+          Drag files between panels to transfer
+        </span>
+      </header>
       <Toolbar
         selectedCount={selectedCount}
         focusedSide={focused}
@@ -942,10 +1019,14 @@ export default function SftpView({
 
       <div className="sftp-dual-header">
         <div className="sftp-panel-header">
-          <select
+          <span className="sftp-panel-label">
+            {leftSrc.mode === "local" ? "Local" : "Remote"}
+          </span>
+          <Select
             className="sftp-source-select"
+            aria-label="Left file source"
             value={srcKey(leftSrc)}
-            onChange={(e) => handleSourceChange("left", e.target.value)}
+            onValueChange={(value) => handleSourceChange("left", value)}
           >
             <optgroup label="Active">
               {sessionsList.map((s) => (
@@ -964,14 +1045,18 @@ export default function SftpView({
                 ))}
               </optgroup>
             )}
-          </select>
+          </Select>
         </div>
         <div className="sftp-panel-divider" />
         <div className="sftp-panel-header">
-          <select
+          <span className="sftp-panel-label">
+            {rightSrc.mode === "local" ? "Local" : "Remote"}
+          </span>
+          <Select
             className="sftp-source-select"
+            aria-label="Right file source"
             value={srcKey(rightSrc)}
-            onChange={(e) => handleSourceChange("right", e.target.value)}
+            onValueChange={(value) => handleSourceChange("right", value)}
           >
             <optgroup label="Active">
               {sessionsList.map((s) => (
@@ -990,7 +1075,7 @@ export default function SftpView({
                 ))}
               </optgroup>
             )}
-          </select>
+          </Select>
         </div>
       </div>
 
@@ -1004,8 +1089,10 @@ export default function SftpView({
           sourceLabel={leftSrc.label}
           isFocused={focused === "left"}
           onFocus={() => setFocused("left")}
-          registerHandle={(h) => { leftHandle.current = h; }}
-          onFileAction={(action, entry) => handleFileAction(action, entry, "left")}
+          registerHandle={registerLeftHandle}
+          onFileAction={(action, entry) =>
+            handleFileAction(action, entry, "left")
+          }
           onDragStart={onPanelDragStart}
           onDrop={handleLeftDrop}
           onContextMenu={handleLeftContextMenu}
@@ -1020,8 +1107,10 @@ export default function SftpView({
           sourceLabel={rightSrc.label}
           isFocused={focused === "right"}
           onFocus={() => setFocused("right")}
-          registerHandle={(h) => { rightHandle.current = h; }}
-          onFileAction={(action, entry) => handleFileAction(action, entry, "right")}
+          registerHandle={registerRightHandle}
+          onFileAction={(action, entry) =>
+            handleFileAction(action, entry, "right")
+          }
           onDragStart={onPanelDragStart}
           onDrop={handleRightDrop}
           onContextMenu={handleRightContextMenu}

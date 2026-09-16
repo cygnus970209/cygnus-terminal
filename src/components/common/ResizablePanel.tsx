@@ -8,6 +8,7 @@ interface ResizablePanelProps {
   minWidth: number;
   maxWidth: number;
   collapsed: boolean;
+  keepMounted?: boolean;
 }
 
 export default function ResizablePanel({
@@ -17,6 +18,7 @@ export default function ResizablePanel({
   minWidth,
   maxWidth,
   collapsed,
+  keepMounted = false,
 }: ResizablePanelProps) {
   const [width, setWidth] = useState(defaultWidth);
   const dragging = useRef(false);
@@ -30,7 +32,10 @@ export default function ResizablePanel({
         side === "left"
           ? e.clientX - startX.current
           : startX.current - e.clientX;
-      const newWidth = Math.max(minWidth, Math.min(maxWidth, startWidth.current + delta));
+      const newWidth = Math.max(
+        minWidth,
+        Math.min(maxWidth, startWidth.current + delta),
+      );
       setWidth(newWidth);
     };
 
@@ -49,16 +54,32 @@ export default function ResizablePanel({
     };
   }, [side, minWidth, maxWidth]);
 
-  if (collapsed) return null;
+  if (collapsed && !keepMounted) return null;
 
   return (
     <div
       className={`rp-panel rp-${side}`}
-      style={{ width }}
+      style={{ width, display: collapsed ? "none" : undefined }}
     >
       <div className="rp-content">{children}</div>
       <div
         className={`rp-handle rp-handle-${side}`}
+        role="separator"
+        aria-label={`Resize ${side === "left" ? "connections" : "tools"} panel`}
+        aria-orientation="vertical"
+        aria-valuenow={width}
+        aria-valuemin={minWidth}
+        aria-valuemax={maxWidth}
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+          e.preventDefault();
+          const delta =
+            (e.key === "ArrowRight" ? 16 : -16) * (side === "left" ? 1 : -1);
+          setWidth((current) =>
+            Math.max(minWidth, Math.min(maxWidth, current + delta)),
+          );
+        }}
         onMouseDown={(e) => {
           e.preventDefault();
           dragging.current = true;

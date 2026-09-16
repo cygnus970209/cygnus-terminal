@@ -32,10 +32,18 @@ export default function SftpConnectView({ onConnected }: Props) {
     (async () => {
       try {
         const list = await invoke<Profile[]>("list_profiles");
-        setProfiles(list);
+        setProfiles(
+          list.filter(
+            (profile) => !profile.protocol || profile.protocol === "ssh",
+          ),
+        );
         setState({ kind: "idle" });
       } catch (err) {
-        setState({ kind: "error", profile: null as unknown as Profile, message: String(err) });
+        setState({
+          kind: "error",
+          profile: null as unknown as Profile,
+          message: String(err),
+        });
       }
     })();
   }, []);
@@ -79,7 +87,9 @@ export default function SftpConnectView({ onConnected }: Props) {
         onEvent,
       });
 
-      const sftpId = await invoke<string>("sftp_open", { sessionId: sshSessionId });
+      const sftpId = await invoke<string>("sftp_open", {
+        sessionId: sshSessionId,
+      });
       const homePath = await invoke<string>("sftp_get_home_dir", { sftpId });
 
       onConnected({
@@ -108,7 +118,9 @@ export default function SftpConnectView({ onConnected }: Props) {
     <div className="sc-view">
       <div className="sc-head">
         <h2 className="sc-title">Connect via SFTP</h2>
-        <p className="sc-sub">Pick a saved profile to start a new SFTP session in this window.</p>
+        <p className="sc-sub">
+          Pick a saved profile to start a new SFTP session in this window.
+        </p>
       </div>
 
       <input
@@ -119,7 +131,9 @@ export default function SftpConnectView({ onConnected }: Props) {
         onChange={(e) => setSearch(e.target.value)}
       />
 
-      {state.kind === "loading" && <div className="sc-msg">Loading profiles...</div>}
+      {state.kind === "loading" && (
+        <div className="sc-msg">Loading profiles...</div>
+      )}
 
       {state.kind !== "loading" && filtered.length === 0 && (
         <div className="sc-msg">
@@ -131,17 +145,23 @@ export default function SftpConnectView({ onConnected }: Props) {
 
       <div className="sc-list">
         {filtered.map((p) => {
-          const connecting = state.kind === "connecting" && state.profile.id === p.id;
+          const connecting =
+            state.kind === "connecting" && state.profile.id === p.id;
           const errored = state.kind === "error" && state.profile?.id === p.id;
           return (
-            <div key={p.id} className={`sc-row ${connecting ? "sc-connecting" : ""}`}>
+            <div
+              key={p.id}
+              className={`sc-row ${connecting ? "sc-connecting" : ""}`}
+            >
               <div className="sc-row-main">
                 <span className="sc-name">{p.name}</span>
                 <span className="sc-host mono">
                   {p.username}@{p.host}
                   {p.port !== 22 && `:${p.port}`}
                 </span>
-                {p.group_name && <span className="sc-group">{p.group_name}</span>}
+                {p.group_name && (
+                  <span className="sc-group">{p.group_name}</span>
+                )}
                 {errored && <span className="sc-err">{state.message}</span>}
               </div>
               <button
@@ -157,8 +177,8 @@ export default function SftpConnectView({ onConnected }: Props) {
       </div>
 
       <div className="sc-foot">
-        <span className="mono">Tip:</span> once connected, use the dropdown at the top of each
-        panel to add another server or switch to Local.
+        <span className="mono">Tip:</span> once connected, use the dropdown at
+        the top of each panel to add another server or switch to Local.
       </div>
     </div>
   );

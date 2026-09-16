@@ -49,7 +49,7 @@
   border-radius: 6px;
   color: #cdd6f4;
   font-size: 13px;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
   outline: none;
   transition: border-color 0.15s;
   box-sizing: border-box;
@@ -186,4 +186,231 @@
   color: var(--text-dim, #bac2de);
   font-size: 11.5px;
   line-height: 1.45;
+}
+
+.protocol-picker {
+  display: flex;
+  gap: 6px;
+  margin: 0 0 20px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-tertiary);
+}
+.protocol-picker button {
+  flex: 1;
+  padding: 8px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.protocol-picker button[aria-pressed="true"] {
+  color: var(--accent);
+  background: var(--accent-soft);
+}
+.transport-fields {
+  border: 0;
+  padding: 0;
+  min-width: 0;
+}
+.transport-fields label.dialog-row {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.serial-device-hint {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: -4px 0 14px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.transport-note {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--warn);
+  margin-bottom: 16px;
+}
+.connection-error {
+  color: var(--error);
+  font-size: 12px;
+  line-height: 1.5;
+  margin: 12px 0;
+}
+
+/* Shared connection editor — charcoal surfaces and one hierarchy across protocols. */
+.connection-dialog {
+  width: min(540px, calc(100vw - 32px));
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  padding: 24px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-hover);
+  border-radius: 10px;
+  box-shadow: 0 24px 80px #0008;
+}
+.connection-dialog-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 22px;
+}
+.connection-dialog-eyebrow {
+  display: block;
+  color: var(--text-muted);
+  font-size: 9px;
+  letter-spacing: 0.12em;
+  margin-bottom: 8px;
+}
+.connection-dialog .dialog-title {
+  margin: 0;
+  font-size: 22px;
+  letter-spacing: -0.4px;
+  color: var(--text-primary);
+}
+.connection-dialog-heading p {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.connection-dialog .dialog-row {
+  margin-bottom: 16px;
+}
+.connection-dialog .dialog-row label {
+  color: var(--text-secondary);
+  font-size: 12px;
+  margin-bottom: 7px;
+}
+.connection-dialog
+  .dialog-row
+  input:not([type="checkbox"]):not([type="radio"]) {
+  width: 100%;
+  min-height: 38px;
+  padding: 9px 11px;
+  color: var(--text-primary);
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  outline: none;
+  font: 13px var(--font-sans);
+}
+.connection-dialog .dialog-row input::placeholder {
+  color: var(--text-dim);
+}
+.connection-dialog .dialog-row input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+.connection-dialog .dialog-input-with-btn input {
+  min-width: 0;
+}
+.connection-dialog .dialog-browse-btn {
+  color: var(--text-secondary);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+}
+.connection-dialog .dialog-radio-group {
+  padding: 9px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+.connection-dialog .dialog-radio {
+  margin: 0 !important;
+}
+.connection-dialog .dialog-checkbox {
+  color: var(--text-secondary);
+}
+.connection-dialog .dialog-actions {
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+  gap: 8px;
+  margin-top: 20px;
+}
+.connection-dialog .dialog-btn {
+  min-height: 36px;
+  border-radius: 5px;
+  font-size: 12px;
+}
+.connection-dialog .dialog-btn-cancel {
+  background: none;
+  color: var(--text-muted);
+  margin-right: auto;
+}
+.connection-dialog .dialog-btn-save {
+  background: var(--bg-hover);
+  border: 1px solid var(--border-hover);
+  color: var(--text-primary);
+}
+.connection-dialog .dialog-btn-connect {
+  background: var(--accent);
+  color: var(--bg-tertiary);
+}
+.connection-dialog .dialog-btn-connect:hover {
+  background: var(--accent-hover);
+}
+.connection-advanced {
+  margin: 4px 0 18px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+}
+.connection-advanced summary {
+  padding: 12px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.connection-advanced summary span {
+  display: block;
+  font-size: 10px;
+  color: var(--text-muted);
+  margin: 5px 0 0 14px;
+}
+.connection-advanced > .dialog-row,
+.connection-advanced > .dialog-jump-host {
+  margin: 0 12px 12px;
+}
+.connection-dialog .dialog-jump-host {
+  background: var(--bg-tertiary);
+  border-color: var(--border);
+}
+.connection-dialog .dialog-warn {
+  color: var(--warn);
+  margin-left: 0;
+}
+.connection-protocol {
+  display: inline-block;
+  color: var(--accent);
+  font: 11px var(--font-mono);
+}
+@media (max-width: 850px) {
+  .ssh-filters {
+    flex-wrap: wrap;
+  }
+  .ssh-filters .cv-search-wrap {
+    flex-basis: 100%;
+    max-width: none;
+  }
+  .ssh-filters .custom-select {
+    height: 34px;
+    flex: 1;
+  }
+}
+
+.connection-name-group > .dialog-row {
+  flex: 1;
+  min-width: 0;
+}
+.connection-dialog .dialog-row label.dialog-radio,
+.connection-dialog .dialog-row label.dialog-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }

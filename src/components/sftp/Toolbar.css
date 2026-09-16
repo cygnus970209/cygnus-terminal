@@ -58,3 +58,41 @@
   color: var(--text-muted, #6c7086);
   padding: 2px 8px;
 }
+
+.sftp-toolbar {
+  padding: 9px 14px;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+.sftp-toolbar .tb-btn {
+  min-height: 32px;
+  padding: 6px 9px;
+  gap: 6px;
+  font: 12px var(--font-sans);
+  border-radius: 5px;
+  color: var(--text-secondary);
+}
+.sftp-toolbar .tb-primary {
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-color: var(--border-hover);
+}
+.sftp-toolbar .tb-btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.sftp-toolbar .tb-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.tb-focus-hint {
+  font-size: 11px;
+}
+@media (max-width: 720px) {
+  .tb-focus-hint {
+    display: none;
+  }
+  .sftp-toolbar {
+    padding: 8px;
+  }
+}

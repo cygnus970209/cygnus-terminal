@@ -1,4 +1,5 @@
 import { ReactNode } from "react";
+import Icon from "./Icon";
 import { ServerStats } from "../../hooks/useServerStats";
 import { TransferJob } from "../../types/sftp";
 import "./StatusBar.css";
@@ -7,12 +8,13 @@ export type DrawerTab = "monitor" | "transfers" | "logs" | null;
 
 interface Props {
   sessionLabel?: string | null; // 현재 활성 SSH 탭 label (있으면 표시)
-  sshActive: boolean;           // 현재 세션이 SSH 인지 (monitor 탭 활성 조건)
-  stats: ServerStats | null;    // summary 에 쓸 값
+  sshActive: boolean; // 현재 세션이 SSH 인지 (monitor 탭 활성 조건)
+  stats: ServerStats | null; // summary 에 쓸 값
   transferJobs: TransferJob[];
 
   activeDrawer: DrawerTab;
   onToggleDrawer: (tab: DrawerTab) => void;
+  onOpenPalette: () => void;
 
   /** drawer 안에 들어갈 content. App.tsx 가 activeDrawer 에 따라 렌더해서 children 으로 넣는다. */
   children?: ReactNode;
@@ -30,6 +32,7 @@ export default function StatusBar({
   transferJobs,
   activeDrawer,
   onToggleDrawer,
+  onOpenPalette,
   children,
 }: Props) {
   const activeCount = transferJobs.filter(
@@ -60,7 +63,7 @@ export default function StatusBar({
               onClick={() => onToggleDrawer(null)}
               title="Close"
             >
-              ▾
+              <Icon name="close" size={14} />
             </button>
           </div>
           <div className="sb-drawer-body">{children}</div>
@@ -71,7 +74,9 @@ export default function StatusBar({
         <div className="sb-left">
           {sessionLabel && (
             <span className="sb-session">
-              <span className="sb-session-dot" />
+              <span
+                className={`sb-session-dot ${sshActive ? "" : "sb-session-local"}`}
+              />
               <span className="sb-session-name">{sessionLabel}</span>
             </span>
           )}
@@ -117,7 +122,13 @@ export default function StatusBar({
         </div>
 
         <div className="sb-right">
-          <span className="sb-hint" title="Command palette (coming)">⌘K</span>
+          <button
+            className="sb-hint"
+            onClick={onOpenPalette}
+            title="Open command palette (⌘/Ctrl K)"
+          >
+            Commands <kbd>⌘ / Ctrl K</kbd>
+          </button>
         </div>
       </div>
     </div>

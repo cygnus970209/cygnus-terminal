@@ -1,159 +1,508 @@
 .cv-container {
   display: flex;
   flex-direction: column;
-  height: 100%;
-  background: #1e1e2e;
+  flex: 1;
+  min-height: 0;
+  background: var(--bg-secondary);
 }
-
 .cv-toolbar {
   display: flex;
-  align-items: center;
+  flex-direction: column;
   gap: 10px;
-  padding: 12px 16px;
-  border-bottom: 1px solid #313244;
+  padding: 16px 12px 8px;
 }
-
-.cv-search {
-  flex: 1;
-  padding: 7px 12px;
-  background: #11111b;
-  border: 1px solid #313244;
+.cv-search-wrap {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 10px;
+  height: 34px;
+  border: 1px solid var(--border);
   border-radius: 6px;
-  color: #cdd6f4;
-  font-size: 13px;
-  font-family: var(--font-sans);
-  outline: none;
-  max-width: 360px;
+  background: var(--bg-hover);
+  color: var(--text-muted);
 }
-
-.cv-search:focus {
+.cv-search-wrap:focus-within {
   border-color: var(--accent);
 }
-
-.cv-new-btn {
-  padding: 7px 14px;
-  background: var(--accent);
-  border: none;
-  border-radius: 6px;
-  color: #1e1e2e;
+.cv-search {
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
   font-size: 12px;
-  font-weight: 600;
-  font-family: var(--font-sans);
+}
+.cv-search::placeholder {
+  color: var(--text-muted);
+}
+.cv-new-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 34px;
+  border: 1px solid var(--accent-ring);
+  border-radius: 5px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  font-size: 12px;
   cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.15s;
 }
-
 .cv-new-btn:hover {
-  background: #74c7ec;
+  background: var(--accent-soft);
+  border-color: var(--accent);
 }
-
 .cv-list {
   flex: 1;
+  min-height: 0;
   overflow-y: auto;
-  padding: 8px 16px;
+  padding: 0 8px 16px;
 }
-
+.cv-group {
+  margin-top: 18px;
+}
 .cv-group-label {
-  color: #585b70;
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 10px 8px;
+  color: var(--text-secondary);
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.5px;
-  padding: 12px 0 6px;
-  font-family: var(--font-sans);
+  letter-spacing: 0.08em;
+  overflow-wrap: anywhere;
 }
-
+.cv-group-label span {
+  color: var(--text-muted);
+}
 .cv-item {
+  position: relative;
   display: flex;
   align-items: center;
-  padding: 8px 12px;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background 0.1s;
-  margin-bottom: 2px;
+  margin-bottom: 3px;
+  border-radius: 5px;
+  min-height: 48px;
 }
-
-.cv-item:hover {
-  background: #181825;
+.cv-item:hover,
+.cv-item:focus-within {
+  background: var(--bg-hover);
 }
-
+.cv-item-selected {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 var(--accent);
+}
 .cv-item-main {
   display: flex;
   align-items: center;
   gap: 10px;
   flex: 1;
   min-width: 0;
+  align-self: stretch;
+  padding: 8px 10px;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
 }
-
 .cv-item-icon {
-  color: var(--accent);
-  font-size: 16px;
-  flex-shrink: 0;
+  display: flex;
+  color: var(--text-muted);
 }
-
+.cv-connected {
+  color: var(--success);
+}
 .cv-item-info {
   display: flex;
   flex-direction: column;
+  gap: 3px;
   min-width: 0;
 }
-
 .cv-item-name {
-  color: #cdd6f4;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 13px;
   font-weight: 500;
-  font-family: var(--font-sans);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
-
 .cv-item-detail {
-  color: #585b70;
-  font-size: 11px;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 11px var(--font-mono);
+  color: var(--text-muted);
+}
+.cv-item-actions {
+  position: absolute;
+  right: 5px;
+  top: 10px;
+  display: flex;
+  padding: 2px;
+  border-radius: 4px;
+  background: var(--bg-hover);
+  opacity: 0;
+  pointer-events: none;
+}
+.cv-item:hover .cv-item-actions,
+.cv-item:focus-within .cv-item-actions {
+  opacity: 1;
+  pointer-events: auto;
+}
+.cv-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.cv-action-btn:hover {
+  background: var(--border-hover);
+  color: var(--text-primary);
+}
+.cv-favorite {
+  color: var(--accent);
+}
+.cv-action-danger:hover {
+  color: var(--error);
+}
+.cv-empty {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+  padding: 32px 12px;
+  text-align: center;
+}
+.cv-empty p {
+  color: var(--text-muted);
+  font-size: 11px;
+  margin-top: 5px;
+}
+.cv-error {
+  padding: 12px;
+  color: var(--error);
+  font-size: 12px;
+}
+.cv-error button {
+  display: block;
+  margin-top: 8px;
+  color: var(--text-primary);
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
 }
 
-.cv-item-actions {
+/* SSH library is the landing page; the compact list remains in session workspaces. */
+.ssh-page {
+  height: 100%;
   display: flex;
-  gap: 4px;
-  opacity: 0;
-  transition: opacity 0.1s;
+  flex-direction: column;
+  padding: 36px clamp(20px, 4vw, 64px) 0;
+  overflow-y: auto;
+  background: var(--bg-primary);
+}
+.ssh-page-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 24px;
+  margin-bottom: 28px;
+}
+.ssh-eyebrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  margin-bottom: 14px;
+}
+.ssh-eyebrow svg {
+  color: var(--accent);
+}
+.ssh-page h1 {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.7px;
+}
+.ssh-page-header p {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.ssh-header-actions {
+  display: flex;
+  gap: 10px;
   flex-shrink: 0;
 }
-
-.cv-item:hover .cv-item-actions {
-  opacity: 1;
-}
-
-.cv-action-btn {
-  background: none;
-  border: none;
-  color: #6c7086;
-  font-size: 14px;
+.ssh-primary,
+.ssh-secondary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 36px;
+  padding: 8px 12px;
+  font-size: 12px;
+  border-radius: 5px;
   cursor: pointer;
-  padding: 4px 6px;
-  border-radius: 4px;
-  transition: background 0.1s, color 0.1s;
 }
-
-.cv-action-btn:hover {
-  background: #313244;
-  color: #cdd6f4;
+.ssh-primary {
+  color: var(--bg-tertiary);
+  background: var(--accent);
+  border: 1px solid var(--accent);
+  font-weight: 600;
 }
-
-.cv-action-danger:hover {
-  color: #f38ba8;
-  background: rgba(243, 139, 168, 0.1);
+.ssh-primary:hover {
+  background: var(--accent-hover);
 }
-
-.cv-empty {
-  color: #585b70;
+.ssh-secondary {
+  color: var(--text-secondary);
+  background: transparent;
+  border: 1px solid var(--border-hover);
+}
+.ssh-secondary:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.ssh-filters {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 22px;
+}
+.ssh-filters .cv-search-wrap {
+  flex: 1;
+  max-width: 460px;
+  height: 38px;
+}
+.ssh-filters .custom-select {
+  min-width: 150px;
+  max-width: 240px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border-radius: 5px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+.ssh-list-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+.ssh-list-heading > span {
+  color: var(--text-muted);
+  font-size: 11px;
+  white-space: nowrap;
+}
+.ssh-scopes {
+  display: flex;
+  gap: 4px;
+}
+.ssh-scopes button {
+  background: transparent;
+  border: 0;
+  padding: 8px 12px;
+  border-radius: 5px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  cursor: pointer;
+}
+.ssh-scopes button[aria-pressed="true"] {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.ssh-scopes button:hover {
+  background: var(--bg-hover);
+}
+.ssh-table-wrap {
+  flex: 1;
+  min-height: 180px;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg-secondary);
+}
+.ssh-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  min-width: 790px;
+  font-size: 12px;
+}
+.ssh-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg-hover);
+  padding: 12px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  border-bottom: 1px solid var(--border);
+}
+.ssh-table th:first-child {
+  width: 40px;
+}
+.ssh-table td {
+  padding: 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+.ssh-table tbody tr:last-child td {
+  border-bottom: 0;
+}
+.ssh-table tbody tr:hover {
+  background: var(--bg-hover);
+}
+.ssh-server-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
   font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  max-width: 340px;
+}
+.ssh-server-name strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.ssh-server-name svg {
+  color: var(--accent);
+}
+.ssh-host {
+  display: block;
+  margin-top: 6px;
+  margin-left: 26px;
+  color: var(--text-muted);
+  font: 11px var(--font-mono);
+  overflow-wrap: anywhere;
+}
+.ssh-group {
+  display: inline-block;
+  background: var(--bg-hover);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 4px 7px;
+  max-width: 150px;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+}
+.ssh-table td small {
+  display: block;
+  margin-top: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+.ssh-connection-state {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  white-space: nowrap;
+  font-size: 11px;
+}
+.ssh-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.ssh-connect {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent-ring);
+  border-radius: 4px;
+  padding: 7px 9px;
+  font-size: 11px;
+  cursor: pointer;
+}
+.ssh-connect:hover {
+  border-color: var(--accent);
+}
+.ssh-actions-label {
+  display: block;
+  text-align: right;
+}
+.ssh-empty {
+  display: flex;
+  align-items: center;
+  flex-direction: column;
   text-align: center;
-  padding: 40px 16px;
-  font-family: var(--font-sans);
+  gap: 14px;
+  padding: 48px 24px;
+  color: var(--text-muted);
+}
+.ssh-empty h2 {
+  font-size: 17px;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+.ssh-empty p {
+  font-size: 12px;
+}
+.ssh-page-footer {
+  padding: 16px 0;
+}
+.ssh-workspace-tools {
+  display: flex;
+  gap: 18px;
+}
+.ssh-workspace-tools button {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-secondary);
+  background: none;
+  border: 0;
+  padding: 6px 0;
+  font-size: 12px;
+  cursor: pointer;
+}
+.ssh-workspace-tools button:hover {
+  color: var(--text-primary);
+}
+@media (max-width: 850px) {
+  .ssh-page {
+    padding: 24px 20px 0;
+  }
+  .ssh-page-header {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 18px;
+    margin-bottom: 20px;
+  }
+  .ssh-page h1 {
+    font-size: 24px;
+  }
+  .ssh-table {
+    min-width: 720px;
+  }
+  .ssh-server-name {
+    max-width: 220px;
+  }
 }

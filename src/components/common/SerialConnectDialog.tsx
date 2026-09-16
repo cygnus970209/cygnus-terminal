@@ -1,3 +1,4 @@
+import Select from "./Select";
 import { useEffect, useState } from "react";
 import "./SerialConnectDialog.css";
 
@@ -33,17 +34,18 @@ export default function SerialConnectDialog({ ports, onConnect, onCancel }: Prop
         <div className="sd-title">Connect Serial Port</div>
 
         <label className="sd-label">Port</label>
-        <select
+        <Select
           className="sd-input"
+          aria-label="Serial port"
           value={selectedPort}
-          onChange={(e) => setSelectedPort(e.target.value)}
+          onValueChange={(value) => setSelectedPort(value)}
         >
           {ports.map((p) => (
             <option key={p.name} value={p.name}>
               {p.name} — {p.port_type}
             </option>
           ))}
-        </select>
+        </Select>
 
         <label className="sd-label">Baud rate</label>
         <div className="sd-baud-row">

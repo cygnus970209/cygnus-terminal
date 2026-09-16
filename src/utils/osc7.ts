@@ -2,7 +2,7 @@
  * 셸 통합 (shell integration) 상태.
  * - unknown: 아직 첫 prompt 수신 전 (또는 timeout 직전)
  * - detected: OSC 7 escape 가 감지됨 → cwd 자동 추적 가능
- * - timeout: 일정 시간 내 OSC 7 수신 못함 → pwd fallback 사용
+ * - timeout: 일정 시간 내 OSC 7 수신 못함 → 자동 추적 없이 수동 탐색
  */
 export type ShellIntegrationStatus = "unknown" | "detected" | "timeout";
 

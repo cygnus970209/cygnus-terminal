@@ -1,0 +1,89 @@
+.custom-select {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 0;
+  min-height: 36px;
+  padding: 8px 11px;
+  border: 1px solid var(--border, #343b46);
+  border-radius: 6px;
+  background: var(--bg-tertiary, #11151b);
+  color: var(--text-primary, #e0e5ed);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+}
+.custom-select:hover:not(:disabled) {
+  border-color: var(--border-hover, #556070);
+}
+.custom-select:focus-visible,
+.custom-select[aria-expanded="true"] {
+  outline: 2px solid var(--accent, #7da2ff);
+  outline-offset: 1px;
+}
+.custom-select:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.custom-select-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.custom-select-chevron {
+  flex-shrink: 0;
+  color: var(--text-muted, #8995a6);
+}
+.custom-select-menu {
+  position: fixed;
+  z-index: 10000;
+  box-sizing: border-box;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 5px;
+  border: 1px solid var(--border-hover, #414957);
+  border-radius: 8px;
+  background: var(--bg-secondary, #1c2129);
+  color: var(--text-primary, #e0e5ed);
+  box-shadow: 0 12px 36px #0006;
+  font-size: 13px;
+}
+.custom-select-option {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.custom-select-option > span:first-child {
+  min-width: 0;
+}
+.custom-select-option > span:last-child {
+  flex-shrink: 0;
+  width: 14px;
+  color: var(--accent, #7da2ff);
+}
+.custom-select-option[data-active="true"] {
+  background: var(--bg-hover, #2a3240);
+}
+.custom-select-option[aria-selected="true"] {
+  color: var(--accent, #7da2ff);
+}
+.custom-select-option[aria-disabled="true"] {
+  opacity: 0.4;
+  cursor: default;
+}
+.custom-select-group {
+  padding: 8px 10px 5px;
+  color: var(--text-muted, #8995a6);
+  font-size: 11px;
+}
+
+.dialog-row > .custom-select {
+  width: 100%;
+  min-height: 38px;
+}
