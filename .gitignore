@@ -38,3 +38,6 @@ src-tauri/target
 TODOS.md
 DESIGN.md
 CLAUDE.md
+# Local signing certificates
+*.p12
+*.pfx
