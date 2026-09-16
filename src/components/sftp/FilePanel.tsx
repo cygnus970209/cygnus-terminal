@@ -1,3 +1,4 @@
+import Icon from "../common/Icon";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { FileEntry } from "../../types/sftp";
@@ -320,7 +321,7 @@ export default function FilePanel({
             className="fp-row fp-row-dir fp-row-parent"
             onClick={goParent}
           >
-            <span className="fp-col-name"><span className="fp-icon">📁</span> ..</span>
+            <span className="fp-col-name"><Icon name="folder" size={15} /> ..</span>
             <span className="fp-col-size" />
             <span className="fp-col-date" />
           </div>
@@ -347,7 +348,7 @@ export default function FilePanel({
               onDragLeave={entry.is_dir ? handleDirDragLeave(entry) : undefined}
             >
               <span className="fp-col-name">
-                <span className="fp-icon">{entry.is_dir ? "📁" : "📄"}</span>
+                <Icon name={entry.is_dir ? "folder" : "file"} size={15} />
                 {entry.name}
               </span>
               <span className="fp-col-size">{!entry.is_dir && formatBytes(entry.size)}</span>

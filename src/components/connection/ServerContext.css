@@ -1,6 +1,6 @@
 .server-context {
   position: relative;
-  border-top: 1px solid #313244;
+  border-top: 1px solid var(--border);
   display: flex;
   flex-direction: column;
   flex: 1;
@@ -9,7 +9,7 @@
 
 .sc-tabs {
   display: flex;
-  border-bottom: 1px solid #313244;
+  border-bottom: 1px solid var(--border);
   padding: 0 4px;
 }
 
@@ -17,18 +17,20 @@
   flex: 1;
   background: none;
   border: none;
-  color: #585b70;
+  color: var(--text-dim);
   font-size: 10px;
   font-weight: 600;
   font-family: var(--font-sans);
   padding: 6px 4px;
   cursor: pointer;
   border-bottom: 2px solid transparent;
-  transition: color 0.1s, border-color 0.1s;
+  transition:
+    color 0.1s,
+    border-color 0.1s;
 }
 
 .sc-tab:hover {
-  color: #a6adc8;
+  color: var(--text-secondary);
 }
 
 .sc-tab-active {
@@ -51,12 +53,12 @@
 .sc-search input {
   width: 100%;
   padding: 5px 8px;
-  background: #11111b;
-  border: 1px solid #313244;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  color: #cdd6f4;
+  color: var(--text-primary);
   font-size: 11px;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: var(--font-mono);
   outline: none;
   box-sizing: border-box;
 }
@@ -97,12 +99,12 @@
 .sc-add-form input {
   width: 100%;
   padding: 5px 8px;
-  background: #11111b;
-  border: 1px solid #313244;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  color: #cdd6f4;
+  color: var(--text-primary);
   font-size: 11px;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: var(--font-mono);
   outline: none;
   box-sizing: border-box;
 }
@@ -116,7 +118,7 @@
   background: var(--accent);
   border: none;
   border-radius: 4px;
-  color: #1e1e2e;
+  color: var(--bg-primary);
   font-size: 11px;
   font-weight: 500;
   font-family: var(--font-sans);
@@ -140,7 +142,7 @@
 }
 
 .sc-list::-webkit-scrollbar-thumb {
-  background: #313244;
+  background: var(--border);
   border-radius: 2px;
 }
 
@@ -154,11 +156,11 @@
 }
 
 .sc-item:hover {
-  background: #1e1e2e;
+  background: var(--bg-primary);
 }
 
 .sc-item-icon {
-  color: #585b70;
+  color: var(--text-dim);
   font-size: 10px;
   flex-shrink: 0;
   width: 14px;
@@ -166,9 +168,9 @@
 }
 
 .sc-item-text {
-  color: #a6adc8;
+  color: var(--text-secondary);
   font-size: 11px;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: var(--font-mono);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -194,7 +196,7 @@
 }
 
 .sc-item-label {
-  color: #cdd6f4;
+  color: var(--text-primary);
   font-size: 11px;
   font-family: var(--font-sans);
   white-space: nowrap;
@@ -205,13 +207,15 @@
 .sc-delete-btn {
   background: none;
   border: none;
-  color: #585b70;
+  color: var(--text-dim);
   font-size: 14px;
   cursor: pointer;
   padding: 0 4px;
   border-radius: 4px;
   opacity: 0;
-  transition: opacity 0.1s, color 0.1s;
+  transition:
+    opacity 0.1s,
+    color 0.1s;
   flex-shrink: 0;
 }
 
@@ -226,8 +230,8 @@
 
 .sc-context-menu {
   position: fixed;
-  background: #1e1e2e;
-  border: 1px solid #313244;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
   border-radius: 8px;
   padding: 4px;
   min-width: 140px;
@@ -240,7 +244,7 @@
   width: 100%;
   background: none;
   border: none;
-  color: #cdd6f4;
+  color: var(--text-primary);
   font-size: 11px;
   font-family: var(--font-sans);
   padding: 6px 10px;
@@ -251,7 +255,7 @@
 }
 
 .sc-context-menu-item:hover {
-  background: #313244;
+  background: var(--border);
 }
 
 .sc-context-menu-item-danger {
@@ -268,10 +272,10 @@
   left: 8px;
   right: 8px;
   padding: 6px 10px;
-  background: #313244;
-  border: 1px solid #45475a;
+  background: var(--border);
+  border: 1px solid var(--border-hover);
   border-radius: 6px;
-  color: #cdd6f4;
+  color: var(--text-primary);
   font-size: 11px;
   font-family: var(--font-sans);
   text-align: center;
@@ -287,12 +291,12 @@
 
 .sc-fwd-row input {
   padding: 5px 6px;
-  background: #11111b;
-  border: 1px solid #313244;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  color: #cdd6f4;
+  color: var(--text-primary);
   font-size: 11px;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: var(--font-mono);
   outline: none;
   box-sizing: border-box;
 }
@@ -302,7 +306,7 @@
 }
 
 .sc-fwd-arrow {
-  color: #585b70;
+  color: var(--text-dim);
   font-size: 11px;
   flex-shrink: 0;
 }
@@ -328,10 +332,32 @@
 }
 
 .sc-empty {
-  color: #585b70;
+  color: var(--text-dim);
   font-size: 11px;
   text-align: center;
   padding: 16px 8px;
   line-height: 1.6;
   font-family: var(--font-sans);
+}
+
+.sc-tab {
+  font-size: 11px;
+  padding: 10px 4px;
+}
+.sc-item-text,
+.sc-item-label {
+  font-size: 12px;
+}
+.sc-search {
+  padding: 10px;
+}
+.sc-search input {
+  padding: 8px;
+  font-size: 12px;
+}
+.sc-empty {
+  font-size: 12px;
+}
+.sc-item:focus-within .sc-delete-btn {
+  opacity: 1;
 }

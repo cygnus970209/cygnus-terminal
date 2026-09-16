@@ -27,7 +27,7 @@
 }
 
 .sb-drawer-title {
-  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
   font-size: 10px;
   color: var(--text-muted, #6c7086);
   text-transform: uppercase;
@@ -55,8 +55,13 @@
   overflow-y: auto;
 }
 
-.sb-drawer-body::-webkit-scrollbar { width: 5px; }
-.sb-drawer-body::-webkit-scrollbar-thumb { background: var(--border, #313244); border-radius: 3px; }
+.sb-drawer-body::-webkit-scrollbar {
+  width: 5px;
+}
+.sb-drawer-body::-webkit-scrollbar-thumb {
+  background: var(--border, #313244);
+  border-radius: 3px;
+}
 
 /* ── 바 ───────────────────────────────────────── */
 .sb-bar {
@@ -81,7 +86,7 @@
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
   font-size: 10px;
   color: var(--text-primary, #cdd6f4);
 }
@@ -106,10 +111,10 @@
   display: inline-flex;
   align-items: center;
   gap: 3px;
-  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
   font-size: 10px;
   color: var(--text-muted, #6c7086);
-  font-feature-settings: 'tnum' 1;
+  font-feature-settings: "tnum" 1;
 }
 
 .sb-quick-k {
@@ -166,7 +171,7 @@
 .sb-badge {
   background: var(--accent, #7aa2f7);
   color: var(--bg-primary, #1e1e2e);
-  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
   font-size: 9px;
   font-weight: 600;
   padding: 0 5px;
@@ -184,11 +189,63 @@
 }
 
 .sb-hint {
-  font-family: var(--font-mono, 'JetBrains Mono', monospace);
+  font-family: var(--font-mono, "JetBrains Mono", monospace);
   font-size: 10px;
   color: var(--text-dim, #585b70);
   padding: 1px 6px;
   border: 1px solid var(--border-subtle, #24283b);
   border-radius: 3px;
   letter-spacing: 0.04em;
+}
+
+.sb-bar {
+  height: 32px;
+}
+.sb-session-dot {
+  box-shadow: none;
+}
+.sb-session-local {
+  background: var(--text-muted);
+}
+.sb-quick-k {
+  letter-spacing: 0;
+}
+.sb-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  cursor: pointer;
+  color: var(--text-secondary);
+  padding: 3px 6px;
+}
+.sb-hint:hover {
+  background: var(--bg-hover);
+}
+.sb-hint kbd {
+  font: 10px var(--font-mono);
+  color: var(--text-muted);
+}
+.sb-session {
+  min-width: 0;
+}
+@media (max-width: 900px) {
+  .sb-quick {
+    display: none;
+  }
+  .sb-hint kbd {
+    display: none;
+  }
+}
+@media (max-width: 650px) {
+  .sb-right {
+    display: none;
+  }
+  .sb-bar {
+    gap: 6px;
+    padding: 0 8px;
+  }
+  .sb-tab {
+    padding: 3px 6px;
+  }
 }

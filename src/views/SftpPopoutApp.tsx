@@ -72,6 +72,7 @@ export default function SftpPopoutApp({
         sessionId={session.sshSessionId}
         sftpId={session.sftpId}
         homePath={session.homePath}
+        sourceLabel={session.label}
         availableSessions={available}
       />
     </div>

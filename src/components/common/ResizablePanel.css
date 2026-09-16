@@ -23,6 +23,7 @@
   transition: background 0.15s;
 }
 
+.rp-handle:focus-visible,
 .rp-handle:hover,
 .rp-handle:active {
   background: var(--accent);

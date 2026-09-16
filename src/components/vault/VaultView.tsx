@@ -1,3 +1,4 @@
+import Select from "../common/Select";
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import "./VaultView.css";
@@ -225,10 +226,11 @@ export default function VaultView(_props: VaultViewProps) {
               autoFocus
               style={{ flex: 2 }}
             />
-            <select
+            <Select
               className="vault-select"
+              aria-label="Credential type"
               value={kind}
-              onChange={(e) => setKind(e.target.value as VaultKind)}
+              onValueChange={(value) => setKind(value as VaultKind)}
               style={{ flex: 1 }}
             >
               {KIND_OPTIONS.map((o) => (
@@ -236,7 +238,7 @@ export default function VaultView(_props: VaultViewProps) {
                   {o.label}
                 </option>
               ))}
-            </select>
+            </Select>
           </div>
 
           <input
@@ -253,18 +255,19 @@ export default function VaultView(_props: VaultViewProps) {
           />
 
           <div className="vault-form-row">
-            <select
+            <Select
               className="vault-select"
+              aria-label="Credential scope"
               value={scope}
-              onChange={(e) =>
-                setScope(e.target.value as "" | "local" | "global")
+              onValueChange={(value) =>
+                setScope(value as "" | "local" | "global")
               }
               style={{ flex: 1 }}
             >
               <option value="">Server-scoped (default)</option>
               <option value="local">Local PTY only</option>
               <option value="global">Global (any server)</option>
-            </select>
+            </Select>
             <input
               className="vault-input vault-mono"
               type="text"

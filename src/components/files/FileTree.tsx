@@ -1,3 +1,4 @@
+import Icon from "../common/Icon";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
@@ -14,7 +15,7 @@ interface FileTreeProps {
   /**
    * 현재 활성 탭의 OSC 7 감지 상태.
    * - detected: 셸이 매 prompt 마다 cwd 를 알려줘 race-free 추적 가능
-   * - timeout: pwd polling 으로 fallback (race 가드 있음)
+   * - timeout: 자동 추적 불가, 파일 목록에서 직접 이동
    * - unknown: 아직 첫 prompt 수신 전
    */
   shellIntegration?: ShellIntegrationStatus;
@@ -25,18 +26,21 @@ interface FileTreeProps {
   refreshTrigger?: number;
 }
 
-const SHELL_INTEGRATION_LABELS: Record<ShellIntegrationStatus, { dot: string; tip: string }> = {
+const SHELL_INTEGRATION_LABELS: Record<
+  ShellIntegrationStatus,
+  { dot: string; tip: string }
+> = {
   detected: {
     dot: "ft-track-dot-ok",
-    tip: "Shell integration: OSC 7 detected. Race-free cd tracking.",
+    tip: "Follow the terminal directory automatically.",
   },
   timeout: {
     dot: "ft-track-dot-warn",
-    tip: "Shell integration not detected. Using pwd polling fallback.\nFor race-free tracking, add to your remote ~/.bashrc:\nPROMPT_COMMAND='printf \"\\033]7;file://%s%s\\033\\\\\" \"$HOSTNAME\" \"$PWD\"'",
+    tip: "Automatic path tracking is unavailable in this session. Navigate using the file list or path field.",
   },
   unknown: {
     dot: "ft-track-dot-pending",
-    tip: "Shell integration: probing...",
+    tip: "Waiting for directory information from the terminal.",
   },
 };
 
@@ -55,6 +59,8 @@ export default function FileTree({
   transferChannel,
   refreshTrigger,
 }: FileTreeProps) {
+  const navigateToPathRef = useRef(navigateToPath);
+  navigateToPathRef.current = navigateToPath;
   const statusLabel = SHELL_INTEGRATION_LABELS[shellIntegration];
   const [sftpId, setSftpId] = useState<string | null>(null);
   const [currentPath, setCurrentPath] = useState<string>("/");
@@ -84,11 +90,12 @@ export default function FileTree({
 
         const home = await invoke<string>("sftp_get_home_dir", { sftpId: id });
         if (cancelled) return;
-        setCurrentPath(home);
+        const initialPath = navigateToPathRef.current || home;
+        setCurrentPath(initialPath);
 
         const files = await invoke<FileEntry[]>("sftp_list_dir", {
           sftpId: id,
-          path: home,
+          path: initialPath,
         });
         if (cancelled) return;
         setEntries(files);
@@ -146,7 +153,7 @@ export default function FileTree({
         setLoading(false);
       }
     },
-    [sftpId]
+    [sftpId],
   );
 
   const toggleDir = useCallback(
@@ -172,7 +179,7 @@ export default function FileTree({
         console.error("Failed to list dir:", err);
       }
     },
-    [sftpId, expandedDirs]
+    [sftpId, expandedDirs],
   );
 
   const handleDownload = useCallback(
@@ -199,7 +206,7 @@ export default function FileTree({
       }
       setContextMenu(null);
     },
-    [sftpId, transferChannel]
+    [sftpId, transferChannel],
   );
 
   const handleUpload = useCallback(
@@ -229,7 +236,7 @@ export default function FileTree({
       setTimeout(() => setTransferStatus(null), 2500);
       navigateTo(currentPath);
     },
-    [sftpId, currentPath, navigateTo]
+    [sftpId, currentPath, navigateTo],
   );
 
   const handleDelete = useCallback(
@@ -247,7 +254,7 @@ export default function FileTree({
       }
       setContextMenu(null);
     },
-    [sftpId, currentPath, navigateTo]
+    [sftpId, currentPath, navigateTo],
   );
 
   const handleMkdir = useCallback(async () => {
@@ -277,9 +284,7 @@ export default function FileTree({
         <div
           className={`ft-entry ${entry.is_dir ? "ft-entry-dir" : ""}`}
           style={{ paddingLeft: 8 + depth * 16 }}
-          onClick={() =>
-            entry.is_dir ? toggleDir(entry) : undefined
-          }
+          onClick={() => (entry.is_dir ? toggleDir(entry) : undefined)}
           onDoubleClick={() =>
             entry.is_dir ? navigateTo(entry.path) : undefined
           }
@@ -293,15 +298,16 @@ export default function FileTree({
             {entry.is_dir ? (isExpanded ? "▾" : "▸") : ""}
           </span>
           <span className="ft-icon-type">
-            {entry.is_dir ? "📁" : "📄"}
+            <Icon name={entry.is_dir ? "folder" : "file"} size={15} />
           </span>
           <span className="ft-name">{entry.name}</span>
           {!entry.is_dir && (
-            <span className="ft-size">{formatBytes(entry.size, { short: true })}</span>
+            <span className="ft-size">
+              {formatBytes(entry.size, { short: true })}
+            </span>
           )}
         </div>
-        {isExpanded &&
-          children?.map((child) => renderEntry(child, depth + 1))}
+        {isExpanded && children?.map((child) => renderEntry(child, depth + 1))}
       </div>
     );
   };
@@ -310,7 +316,7 @@ export default function FileTree({
     return (
       <div className="file-tree">
         <div className="ft-header">
-          <span className="ft-title">Files</span>
+          <span className="ft-title">SFTP Files</span>
         </div>
         <div className="ft-error">{error}</div>
       </div>
@@ -341,46 +347,54 @@ export default function FileTree({
       }}
     >
       <div className="ft-header">
-        <span className="ft-title">Files</span>
+        <span className="ft-title">SFTP Files</span>
         <label className="ft-track-toggle" title={statusLabel.tip}>
           <input
             type="checkbox"
-            checked={cdTrackingEnabled}
+            checked={cdTrackingEnabled && shellIntegration === "detected"}
+            disabled={shellIntegration !== "detected"}
             onChange={(e) => onCdTrackingChange(e.target.checked)}
           />
-          <span className="ft-track-label">cd</span>
+          <span className="ft-track-label">Follow</span>
           <span
             className={`ft-track-dot ${statusLabel.dot}`}
             aria-label={`Shell integration: ${shellIntegration}`}
           />
         </label>
         <button className="ft-btn" onClick={handleMkdir} title="New Folder">
-          +📁
+          <Icon name="folder" size={15} />
         </button>
         <button
           className="ft-btn"
           onClick={() => navigateTo(currentPath)}
           title="Refresh"
         >
-          ↻
+          <Icon name="refresh" size={15} />
         </button>
-        {onOpenSftpView && (
-          <button className="ft-btn" onClick={onOpenSftpView} title="Open SFTP view">
-            ⧉
-          </button>
-        )}
         {onCollapse && (
-          <button className="ft-btn" onClick={onCollapse} title="Hide file tree">
-            ▸
+          <button
+            className="ft-btn"
+            onClick={onCollapse}
+            title="Hide file tree"
+          >
+            <Icon name="close" size={15} />
           </button>
         )}
       </div>
 
+      {onOpenSftpView && (
+        <div className="ft-sftp-entry">
+          <button onClick={onOpenSftpView} className="ft-open-sftp">
+            <Icon name="external" size={15} />
+            <span>Open SFTP window</span>
+            <Icon name="chevron" size={14} />
+          </button>
+          <p>Browse local and remote files side by side.</p>
+        </div>
+      )}
+
       <div className="ft-breadcrumb">
-        <span
-          className="ft-breadcrumb-item"
-          onClick={() => navigateTo("/")}
-        >
+        <span className="ft-breadcrumb-item" onClick={() => navigateTo("/")}>
           /
         </span>
         {pathSegments.map((seg, i) => {
@@ -414,7 +428,9 @@ export default function FileTree({
             }}
           >
             <span className="ft-icon">▸</span>
-            <span className="ft-icon-type">📁</span>
+            <span className="ft-icon-type">
+              <Icon name="folder" size={15} />
+            </span>
             <span className="ft-name ft-name-parent">..</span>
           </div>
         )}
@@ -454,9 +470,7 @@ export default function FileTree({
         </div>
       )}
 
-      {dragging && (
-        <div className="ft-drop-overlay">Drop files to upload</div>
-      )}
+      {dragging && <div className="ft-drop-overlay">Drop files to upload</div>}
 
       {transferStatus && (
         <div className="ft-transfer-status">{transferStatus}</div>

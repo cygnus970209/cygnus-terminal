@@ -1,4 +1,8 @@
+export type ConnectionProtocol = "ssh" | "telnet" | "serial";
+
 export interface Profile {
+  protocol?: ConnectionProtocol;
+  baud_rate?: number | null;
   id: number;
   name: string;
   host: string;
@@ -34,4 +38,15 @@ export interface SshConfig {
   profileId?: number;
   jumpHost?: JumpHostConfig;
   agentForward?: boolean;
+}
+
+export function profileEndpoint(profile: Profile): string {
+  if (profile.protocol === "serial")
+    return `${profile.host} · ${profile.baud_rate ?? 115200} baud`;
+  const host =
+    profile.host.includes(":") && !profile.host.startsWith("[")
+      ? `[${profile.host}]`
+      : profile.host;
+  if (profile.protocol === "telnet") return `${host}:${profile.port}`;
+  return `${profile.username}@${host}:${profile.port}`;
 }
