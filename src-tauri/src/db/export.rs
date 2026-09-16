@@ -13,6 +13,10 @@ pub struct ExportData {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ExportProfile {
+    #[serde(default = "default_protocol")]
+    pub protocol: String,
+    #[serde(default)]
+    pub baud_rate: Option<u32>,
     pub name: String,
     pub host: String,
     pub port: u16,
@@ -42,7 +46,7 @@ impl Database {
 
         // Profiles (비밀번호 제외)
         let mut stmt = conn
-            .prepare("SELECT name, host, port, username, auth_type, key_path, group_name FROM profiles ORDER BY sort_order, name")
+            .prepare("SELECT name, host, port, username, auth_type, key_path, group_name, protocol, baud_rate FROM profiles ORDER BY sort_order, name")
             .map_err(|e| format!("Failed to query profiles: {e}"))?;
         let profiles: Vec<ExportProfile> = stmt
             .query_map([], |row| {
@@ -54,6 +58,8 @@ impl Database {
                     auth_type: row.get(4)?,
                     key_path: row.get(5)?,
                     group_name: row.get(6)?,
+                    protocol: row.get(7)?,
+                    baud_rate: row.get(8)?,
                 })
             })
             .map_err(|e| format!("Export query failed: {e}"))?
@@ -103,7 +109,7 @@ impl Database {
             .map_err(|e| format!("Export query failed: {e}"))?;
 
         Ok(ExportData {
-            version: 1,
+            version: 2,
             profiles,
             command_bookmarks,
             path_bookmarks,
@@ -111,15 +117,29 @@ impl Database {
     }
 
     pub fn import_data(&self, data: ExportData, _crypto: &CryptoManager) -> Result<u32, String> {
-        let conn = self.conn();
+        if data.version > 2 {
+            return Err("Unsupported backup version".into());
+        }
+        for profile in &data.profiles {
+            super::profile::validate_transport(
+                &profile.protocol,
+                &profile.host,
+                profile.port,
+                profile.baud_rate,
+            )?;
+        }
+        let mut guard = self.conn();
+        let conn = guard
+            .transaction()
+            .map_err(|e| format!("Failed to start import: {e}"))?;
         let mut imported = 0u32;
 
         for profile in &data.profiles {
             // 중복 체크 (host + port + username)
             let exists: bool = conn
                 .query_row(
-                    "SELECT COUNT(*) > 0 FROM profiles WHERE host = ?1 AND port = ?2 AND username = ?3",
-                    rusqlite::params![profile.host, profile.port, profile.username],
+                    "SELECT COUNT(*) > 0 FROM profiles WHERE host = ?1 AND port = ?2 AND username = ?3 AND protocol = ?4 AND COALESCE(baud_rate, 0) = ?5",
+                    rusqlite::params![profile.host, profile.port, profile.username, profile.protocol, if profile.protocol == "serial" { profile.baud_rate.unwrap_or(115200) } else { 0 }],
                     |row| row.get(0),
                 )
                 .unwrap_or(true);
@@ -129,8 +149,8 @@ impl Database {
             }
 
             conn.execute(
-                "INSERT INTO profiles (name, host, port, username, auth_type, key_path, group_name)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+                "INSERT INTO profiles (name, host, port, username, auth_type, key_path, group_name, protocol, baud_rate)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 rusqlite::params![
                     profile.name,
                     profile.host,
@@ -139,6 +159,8 @@ impl Database {
                     profile.auth_type,
                     profile.key_path,
                     profile.group_name,
+                    profile.protocol,
+                    if profile.protocol == "serial" { Some(profile.baud_rate.unwrap_or(115200)) } else { None },
                 ],
             )
             .map_err(|e| format!("Failed to import profile: {e}"))?;
@@ -151,7 +173,9 @@ impl Database {
                 .prepare("SELECT id, name FROM profiles")
                 .map_err(|e| format!("Export query failed: {e}"))?;
             let rows: Vec<(String, i64)> = stmt
-                .query_map([], |row| Ok((row.get::<_, String>(1)?, row.get::<_, i64>(0)?)))
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(1)?, row.get::<_, i64>(0)?))
+                })
                 .map_err(|e| format!("Export query failed: {e}"))?
                 .filter_map(|r| r.ok())
                 .collect();
@@ -178,6 +202,59 @@ impl Database {
             }
         }
 
+        conn.commit()
+            .map_err(|e| format!("Failed to commit import: {e}"))?;
         Ok(imported)
+    }
+}
+
+fn default_protocol() -> String {
+    "ssh".into()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn legacy_backups_and_mixed_protocol_roundtrip() {
+        let crypto = CryptoManager::new_random();
+        let db = Database::new_in_memory().unwrap();
+        let old = serde_json::json!({"version":1,"profiles":[{"name":"old","host":"host.test","port":22,"username":"root","auth_type":"key","key_path":null,"group_name":""}],"command_bookmarks":[],"path_bookmarks":[]});
+        db.import_data(serde_json::from_value(old).unwrap(), &crypto)
+            .unwrap();
+        for (protocol, baud) in [
+            ("telnet", None),
+            ("serial", Some(9600)),
+            ("serial", Some(115200)),
+        ] {
+            let req = serde_json::from_value(serde_json::json!({"protocol":protocol,"baud_rate":baud,"name":protocol,"host":"same-endpoint","port":23,"username":"","auth_type":"password"})).unwrap();
+            db.create_profile(req, &crypto).unwrap();
+        }
+        let backup = db.export_data(&crypto).unwrap();
+        assert_eq!(backup.version, 2);
+        let json = serde_json::to_string(&backup).unwrap();
+        let target = Database::new_in_memory().unwrap();
+        assert_eq!(
+            target
+                .import_data(serde_json::from_str(&json).unwrap(), &crypto)
+                .unwrap(),
+            4
+        );
+        assert_eq!(
+            target
+                .import_data(serde_json::from_str(&json).unwrap(), &crypto)
+                .unwrap(),
+            0
+        );
+        let profiles = target.list_profiles(&crypto).unwrap();
+        assert!(profiles
+            .iter()
+            .any(|p| p.protocol == "ssh" && p.name == "old"));
+        assert!(profiles
+            .iter()
+            .any(|p| p.protocol == "serial" && p.baud_rate == Some(9600)));
+        assert!(profiles
+            .iter()
+            .any(|p| p.protocol == "serial" && p.baud_rate == Some(115200)));
     }
 }

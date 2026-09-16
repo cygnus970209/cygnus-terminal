@@ -5,6 +5,8 @@ use crate::db::Database;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Profile {
+    pub protocol: String,
+    pub baud_rate: Option<u32>,
     pub id: i64,
     pub name: String,
     pub host: String,
@@ -24,6 +26,8 @@ pub struct Profile {
 
 #[derive(Debug, Deserialize)]
 pub struct CreateProfileRequest {
+    pub protocol: Option<String>,
+    pub baud_rate: Option<u32>,
     pub name: String,
     pub host: String,
     pub port: u16,
@@ -39,6 +43,8 @@ pub struct CreateProfileRequest {
 
 #[derive(Debug, Deserialize)]
 pub struct UpdateProfileRequest {
+    pub protocol: Option<String>,
+    pub baud_rate: Option<u32>,
     pub name: Option<String>,
     pub host: Option<String>,
     pub port: Option<u16>,
@@ -58,6 +64,13 @@ impl Database {
         req: CreateProfileRequest,
         crypto: &CryptoManager,
     ) -> Result<Profile, String> {
+        let protocol = req.protocol.as_deref().unwrap_or("ssh");
+        let baud_rate = if protocol == "serial" {
+            Some(req.baud_rate.unwrap_or(115200))
+        } else {
+            None
+        };
+        validate_transport(protocol, &req.host, req.port, baud_rate)?;
         let encrypted_password = match &req.password {
             Some(pw) if !pw.is_empty() => Some(crypto.encrypt(pw)?),
             _ => None,
@@ -79,8 +92,8 @@ impl Database {
 
         let conn = self.conn();
         conn.execute(
-            "INSERT INTO profiles (name, host, port, username, auth_type, password, key_path, group_name, jump_host, agent_forward, environment)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            "INSERT INTO profiles (name, host, port, username, auth_type, password, key_path, group_name, jump_host, agent_forward, environment, protocol, baud_rate)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             rusqlite::params![
                 req.name,
                 req.host,
@@ -93,6 +106,8 @@ impl Database {
                 encrypted_jump_host,
                 req.agent_forward.unwrap_or(false),
                 environment,
+                protocol,
+                baud_rate,
             ],
         ).map_err(|e| format!("Failed to create profile: {e}"))?;
 
@@ -104,7 +119,7 @@ impl Database {
     pub fn get_profile(&self, id: i64, crypto: &CryptoManager) -> Result<Profile, String> {
         let conn = self.conn();
         conn.query_row(
-            "SELECT id, name, host, port, username, auth_type, password, key_path, group_name, sort_order, jump_host, agent_forward, environment, created_at, updated_at
+            "SELECT id, name, host, port, username, auth_type, password, key_path, group_name, sort_order, jump_host, agent_forward, environment, created_at, updated_at, protocol, baud_rate
              FROM profiles WHERE id = ?1",
             [id],
             |row| {
@@ -124,6 +139,8 @@ impl Database {
                     environment: row.get(12)?,
                     created_at: row.get(13)?,
                     updated_at: row.get(14)?,
+                    protocol: row.get(15)?,
+                    baud_rate: row.get(16)?,
                 })
             },
         )
@@ -135,7 +152,7 @@ impl Database {
         let conn = self.conn();
         let mut stmt = conn
             .prepare(
-                "SELECT id, name, host, port, username, auth_type, password, key_path, group_name, sort_order, jump_host, agent_forward, environment, created_at, updated_at
+                "SELECT id, name, host, port, username, auth_type, password, key_path, group_name, sort_order, jump_host, agent_forward, environment, created_at, updated_at, protocol, baud_rate
                  FROM profiles ORDER BY sort_order, name",
             )
             .map_err(|e| format!("Failed to prepare query: {e}"))?;
@@ -158,6 +175,8 @@ impl Database {
                     environment: row.get(12)?,
                     created_at: row.get(13)?,
                     updated_at: row.get(14)?,
+                    protocol: row.get(15)?,
+                    baud_rate: row.get(16)?,
                 })
             })
             .map_err(|e| format!("Failed to query profiles: {e}"))?;
@@ -166,6 +185,8 @@ impl Database {
         for row in rows {
             let row = row.map_err(|e| format!("Failed to read row: {e}"))?;
             profiles.push(Profile {
+                protocol: row.protocol,
+                baud_rate: row.baud_rate,
                 id: row.id,
                 name: row.name,
                 host: row.host,
@@ -194,11 +215,30 @@ impl Database {
     ) -> Result<Profile, String> {
         // 기존 프로필 로드 (존재 확인 + jump host 비밀번호 보존에 사용)
         let existing = self.get_profile(id, crypto)?;
+        if req
+            .protocol
+            .as_deref()
+            .is_some_and(|protocol| protocol != existing.protocol)
+        {
+            return Err("Create a new profile to change its protocol".into());
+        }
+        validate_transport(
+            &existing.protocol,
+            req.host.as_deref().unwrap_or(&existing.host),
+            req.port.unwrap_or(existing.port),
+            req.baud_rate.or(existing.baud_rate),
+        )?;
 
         let conn = self.conn();
         let mut sets = Vec::new();
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
 
+        if existing.protocol == "serial" {
+            if let Some(baud_rate) = req.baud_rate {
+                sets.push("baud_rate = ?");
+                params.push(Box::new(baud_rate));
+            }
+        }
         if let Some(ref name) = req.name {
             sets.push("name = ?");
             params.push(Box::new(name.clone()));
@@ -345,6 +385,8 @@ impl Database {
 
 /// DB에서 읽은 raw 데이터 (비밀번호 암호화 상태)
 struct ProfileRow {
+    protocol: String,
+    baud_rate: Option<u32>,
     id: i64,
     name: String,
     host: String,
@@ -382,6 +424,8 @@ impl ProfileRow {
         };
 
         Ok(Profile {
+            protocol: self.protocol,
+            baud_rate: self.baud_rate,
             id: self.id,
             name: self.name,
             host: self.host,
@@ -436,11 +480,7 @@ fn merge_jump_host_password(incoming: &str, existing: Option<&str>) -> String {
     // 비어 있으면 기존 저장 비밀번호 복원
     let existing_pw = existing
         .and_then(|e| serde_json::from_str::<serde_json::Value>(e).ok())
-        .and_then(|v| {
-            v.get("password")
-                .and_then(|p| p.as_str())
-                .map(String::from)
-        })
+        .and_then(|v| v.get("password").and_then(|p| p.as_str()).map(String::from))
         .filter(|s| !s.is_empty());
 
     match existing_pw {
@@ -473,6 +513,59 @@ mod tests {
     use super::*;
     use crate::db::Database;
 
+    #[test]
+    fn transport_profiles_survive_restart_update_and_delete() {
+        let directory =
+            std::env::temp_dir().join(format!("cygnus-profile-test-{}", uuid::Uuid::new_v4()));
+        let crypto = CryptoManager::new_random();
+        let db = Database::new(directory.clone()).unwrap();
+        let telnet: CreateProfileRequest = serde_json::from_value(serde_json::json!({
+            "protocol":"telnet", "name":"switch", "host":"::1", "port":2323, "username":"", "auth_type":"password"
+        })).unwrap();
+        let serial: CreateProfileRequest = serde_json::from_value(serde_json::json!({
+            "protocol":"serial", "name":"console", "host":"/dev/tty.test", "port":0, "username":"", "auth_type":"password", "baud_rate":9600
+        })).unwrap();
+        let tn = db.create_profile(telnet, &crypto).unwrap();
+        let sr = db.create_profile(serial, &crypto).unwrap();
+        drop(db);
+        let db = Database::new(directory.clone()).unwrap();
+        assert_eq!(db.get_profile(tn.id, &crypto).unwrap().protocol, "telnet");
+        assert_eq!(db.get_profile(tn.id, &crypto).unwrap().port, 2323);
+        let mut update = empty_update(None);
+        update.baud_rate = Some(57600);
+        update.host = Some("COM7".into());
+        let updated = db.update_profile(sr.id, update, &crypto).unwrap();
+        assert_eq!(updated.baud_rate, Some(57600));
+        assert_eq!(updated.host, "COM7");
+        assert_eq!(db.list_profiles(&crypto).unwrap().len(), 2);
+        db.delete_profile(tn.id).unwrap();
+        assert_eq!(db.list_profiles(&crypto).unwrap().len(), 1);
+        drop(db);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn invalid_transport_settings_are_rejected_without_mutation() {
+        let db = Database::new_in_memory().unwrap();
+        let crypto = CryptoManager::new_random();
+        let mut bad = create_req(None);
+        bad.protocol = Some("unknown".into());
+        assert!(db.create_profile(bad, &crypto).is_err());
+        let mut bad = create_req(None);
+        bad.protocol = Some("serial".into());
+        bad.baud_rate = Some(0);
+        assert!(db.create_profile(bad, &crypto).is_err());
+        let saved = db.create_profile(create_req(None), &crypto).unwrap();
+        let mut update = empty_update(None);
+        update.protocol = Some("telnet".into());
+        assert!(db.update_profile(saved.id, update, &crypto).is_err());
+        let mut update = empty_update(None);
+        update.port = Some(0);
+        assert!(db.update_profile(saved.id, update, &crypto).is_err());
+        assert_eq!(db.get_profile(saved.id, &crypto).unwrap().port, 22);
+        assert_eq!(db.get_profile(saved.id, &crypto).unwrap().protocol, "ssh");
+    }
+
     fn jump_json(password: &str) -> String {
         format!(
             r#"{{"host":"bastion.example.com","port":22,"username":"admin","auth_type":"password","password":"{password}"}}"#
@@ -481,6 +574,8 @@ mod tests {
 
     fn create_req(jump_host: Option<String>) -> CreateProfileRequest {
         CreateProfileRequest {
+            protocol: None,
+            baud_rate: None,
             name: "srv".into(),
             host: "10.0.0.1".into(),
             port: 22,
@@ -497,6 +592,8 @@ mod tests {
 
     fn empty_update(jump_host: Option<String>) -> UpdateProfileRequest {
         UpdateProfileRequest {
+            protocol: None,
+            baud_rate: None,
             name: None,
             host: None,
             port: None,
@@ -514,9 +611,7 @@ mod tests {
     fn jump_password(profile: &Profile) -> Option<String> {
         let jh = profile.jump_host.as_ref()?;
         let v: serde_json::Value = serde_json::from_str(jh).unwrap();
-        v.get("password")
-            .and_then(|p| p.as_str())
-            .map(String::from)
+        v.get("password").and_then(|p| p.as_str()).map(String::from)
     }
 
     #[test]
@@ -550,7 +645,11 @@ mod tests {
             .unwrap();
 
         let updated = db
-            .update_profile(created.id, empty_update(Some(jump_json("newjump"))), &crypto)
+            .update_profile(
+                created.id,
+                empty_update(Some(jump_json("newjump"))),
+                &crypto,
+            )
             .unwrap();
 
         assert_eq!(
@@ -601,4 +700,27 @@ mod tests {
             "빈 jump_host 는 제거되어야 한다"
         );
     }
+}
+
+/// Common validation for CRUD and backup imports. Serial stores its device path in host.
+pub(super) fn validate_transport(
+    protocol: &str,
+    host: &str,
+    port: u16,
+    baud_rate: Option<u32>,
+) -> Result<(), String> {
+    if !matches!(protocol, "ssh" | "telnet" | "serial") {
+        return Err("Unsupported connection protocol".into());
+    }
+    if host.trim().is_empty() {
+        return Err("Host or serial device is required".into());
+    }
+    if protocol == "serial" {
+        if baud_rate.unwrap_or(115200) == 0 {
+            return Err("Baud rate must be positive".into());
+        }
+    } else if port == 0 {
+        return Err("Port must be between 1 and 65535".into());
+    }
+    Ok(())
 }
