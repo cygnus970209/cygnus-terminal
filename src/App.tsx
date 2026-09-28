@@ -24,6 +24,7 @@ import { useInvokeState } from "./hooks/useInvokeState";
 import { useTauriListener } from "./hooks/useTauriListener";
 import { useTransferChannel } from "./hooks/useTransferChannel";
 import { type ShellIntegrationStatus } from "./utils/osc7";
+import { normalizeTerminalInput } from "./utils/terminalInput";
 import CommandPalette, {
   PaletteItem,
 } from "./components/common/CommandPalette";
@@ -605,7 +606,7 @@ function App() {
       if (!tab) return;
 
       const writeCmd = tab.type === "ssh" ? "write_ssh" : "write_pty";
-      invoke(writeCmd, { sessionId, data: command + "\r" });
+      invoke(writeCmd, { sessionId, data: normalizeTerminalInput(command) + "\r" });
     },
     [activeTabId, sessionMap, tabs],
   );

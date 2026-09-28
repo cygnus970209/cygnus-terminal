@@ -76,6 +76,8 @@ Cygnus는 여러 서버와 네트워크 장비를 오가며 작업하는 사람�
 
 서버 모니터와 로그 뷰어는 별도 SSH 채널을 사용합니다. 터미널에서 작업하면서 자원 상태와 여러 로그를 함께 확인할 수 있습니다.
 
+터미널 입력·붙여넣기와 저장 명령 실행에서는 일반 공백처럼 보이는 **NBSP(U+00A0)를 일반 공백으로 변환**합니다. `sudo su` 같은 명령이 하나의 이름으로 처리되는 오류를 방지합니다. 따옴표 안의 텍스트에도 적용됩니다.
+
 ## 설치
 
 [최신 릴리스](https://github.com/cygnus970209/cygnus-terminal/releases/latest)에서 설치 파일을 내려받으세요.
@@ -115,5 +117,7 @@ bun run tauri build
 ```
 
 문제 제보와 기능 제안은 [Issues](https://github.com/cygnus970209/cygnus-terminal/issues)로 남겨주세요.
+
+개발 참고: [입력 문제 조사와 남은 항목](docs/investigations/terminal-input-2026-09-18/README.md) · [창 복원 크기 처리와 재현 방법](docs/investigations/terminal-resize-2026-09-22/README.md) · [화면 자료](docs/media/README.md) · [디자인 기준](DESIGN.md).
 
 [MIT License](LICENSE)

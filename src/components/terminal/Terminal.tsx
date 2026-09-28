@@ -27,6 +27,8 @@ import { SshConfig, type SessionStatus } from "../../types";
 import { TERMINAL_SCROLLBACK_LINES } from "../../constants";
 import { extractCommand } from "../../utils/promptParser";
 import { createPromptTriggerGuard } from "../../utils/promptTriggerGuard";
+import { createTerminalLayoutScheduler } from "../../utils/terminalLayout";
+import { normalizeTerminalInput } from "../../utils/terminalInput";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalProps {
@@ -114,7 +116,7 @@ export default function Terminal({
 }: TerminalProps) {
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
-  const fitAddonRef = useRef<FitAddon | null>(null);
+  const scheduleLayoutRef = useRef<(() => void) | null>(null);
   const shellIntegrationRef = useRef<ShellIntegrationStatus>("unknown");
   const lastCwdRef = useRef<string | null>(null);
   const onCwdChangedRef = useRef(onCwdChanged);
@@ -241,9 +243,7 @@ export default function Terminal({
   };
 
   useEffect(() => {
-    if (isActive && fitAddonRef.current) {
-      setTimeout(() => fitAddonRef.current?.fit(), 10);
-    }
+    scheduleLayoutRef.current?.();
   }, [isActive]);
 
   useEffect(() => {
@@ -313,21 +313,24 @@ export default function Terminal({
     xterm.loadAddon(fitAddon);
     xterm.loadAddon(webLinksAddon);
     xterm.open(terminalRef.current);
-    fitAddon.fit();
 
     xtermRef.current = xterm;
-    fitAddonRef.current = fitAddon;
-
-    // 컨테이너 크기 변화 감지 — 사이드 패널 collapse/expand 시에도 자동으로 xterm grid 재계산.
-    // window resize 만 듣는 기존 핸들러는 panel toggle 을 못 잡는다.
-    // contentRect.width 가 0 이면 (탭 비활성으로 display:none 등) skip — fit 결과 cols=0 으로 깨짐 방지.
-    const resizeObserver = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        if (entry.contentRect.width > 0) {
-          requestAnimationFrame(() => fitAddonRef.current?.fit());
-        }
-      }
-    });
+    const host = terminalRef.current;
+    const layout = createTerminalLayoutScheduler(
+      () => {
+        const rect = host.getBoundingClientRect();
+        return isActiveRef.current && !document.hidden &&
+          rect.width > 0 && rect.height > 0;
+      },
+      () => {
+        fitAddon.fit();
+        // A restored WebView may need repainting even when rows/cols are unchanged.
+        xterm.refresh(0, xterm.rows - 1);
+      },
+    );
+    scheduleLayoutRef.current = layout.schedule;
+    layout.schedule();
+    const resizeObserver = new ResizeObserver(layout.schedule);
     resizeObserver.observe(terminalRef.current);
 
     // Copy / Paste 단축키. xterm 은 기본 clipboard 연동이 없어서 직접 붙인다.
@@ -508,7 +511,10 @@ export default function Terminal({
             }
           }
 
-          invoke(writeCmd, { sessionId: sessionIdRef.current, data });
+          invoke(writeCmd, {
+            sessionId: sessionIdRef.current,
+            data: normalizeTerminalInput(data),
+          });
         });
 
         // Handle resize
@@ -519,12 +525,16 @@ export default function Terminal({
               ? "resize_telnet"
               : "resize_pty"; // serial은 resize 없음
         xterm.onResize(({ rows, cols }) => {
-          if (sessionIdRef.current) {
+          if (type !== "serial" && sessionIdRef.current) {
             invoke(resizeCmd, { sessionId: sessionIdRef.current, rows, cols });
           }
         });
 
-        fitAddon.fit();
+        // The backend starts at 80x24; fit may have finished before this listener existed.
+        if (type !== "serial") {
+          invoke(resizeCmd, { sessionId, rows: xterm.rows, cols: xterm.cols });
+        }
+        layout.schedule();
       } catch (err) {
         onSessionStatus?.(tabId, "error");
         xterm.write(`\x1b[31mError: ${err}\x1b[0m\r\n`);
@@ -533,13 +543,18 @@ export default function Terminal({
 
     initSession();
 
-    const handleResize = () => {
-      if (isActive) fitAddon.fit();
-    };
-    window.addEventListener("resize", handleResize);
+    window.addEventListener("resize", layout.schedule);
+    window.addEventListener("focus", layout.schedule);
+    window.addEventListener("pageshow", layout.schedule);
+    document.addEventListener("visibilitychange", layout.schedule);
 
     return () => {
-      window.removeEventListener("resize", handleResize);
+      window.removeEventListener("resize", layout.schedule);
+      window.removeEventListener("focus", layout.schedule);
+      window.removeEventListener("pageshow", layout.schedule);
+      document.removeEventListener("visibilitychange", layout.schedule);
+      layout.dispose();
+      scheduleLayoutRef.current = null;
       resizeObserver.disconnect();
       if (rafRef.current !== null) cancelAnimationFrame(rafRef.current);
       clearTimeout(oscTimeoutId);
