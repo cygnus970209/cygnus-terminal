@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.1.12] - 2026-09-28
+
+### Fixed
+- Terminal input and saved commands convert non-breaking spaces to regular spaces, preventing visually correct commands such as `sudo su` from failing with `command not found`.
+- Hidden terminals retain their dimensions, and restored windows recalculate and redraw after layout settles to prevent narrow prompt wrapping.
+- New sessions receive the current terminal dimensions even when layout finishes before connection setup.
+- Serial sessions no longer send unsupported PTY resize requests.
+
 ## [0.1.11] - 2026-09-16
 
 ### Added
