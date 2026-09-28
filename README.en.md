@@ -76,6 +76,8 @@ Shared **Snippets**, a `⌘/Ctrl K` command palette, and resizable panels reduce
 
 Monitoring and log viewing use separate SSH channels. Check server resources and multiple log streams while continuing your terminal work.
 
+Terminal typing, pasted text, and saved-command execution **convert non-breaking spaces (U+00A0) to regular spaces**. This prevents commands such as `sudo su` from being read as a single command name. The conversion also applies inside quoted text.
+
 ## Install
 
 Download an installer from the [latest release](https://github.com/cygnus970209/cygnus-terminal/releases/latest).
@@ -115,5 +117,7 @@ bun run tauri build
 ```
 
 Report bugs and suggest features through [Issues](https://github.com/cygnus970209/cygnus-terminal/issues).
+
+Developer notes (Korean): [input investigation and remaining issues](docs/investigations/terminal-input-2026-09-18/README.md) · [window restoration and reproduction](docs/investigations/terminal-resize-2026-09-22/README.md). Also see [screenshot fixtures](docs/media/README.md) and [design guidelines](DESIGN.md).
 
 [MIT License](LICENSE)
