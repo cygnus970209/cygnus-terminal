@@ -13,7 +13,7 @@ Cygnus is a desktop terminal for people working across servers and network equip
 
 **A Rust backend and Tauri's system WebView** keep the architecture lightweight without bundling a separate Chromium runtime. Cygnus is designed to reduce memory overhead; actual usage depends on the OS, open sessions, and workload. No comparative memory benchmark is claimed here.
 
-> Screenshots show the current UI with synthetic demo servers, files, and credential metadata.
+> Screenshots use synthetic demo servers, files, and credential metadata. The Vault image predates the v0.1.13 redesign.
 
 ## Features
 
@@ -45,13 +45,14 @@ Choose the right credential for a server instead of copying passwords into your 
 
 - Manage passwords, SSH key passphrases, SSH keys, and PAT username/token entries.
 - Link a credential to multiple servers and control its scope.
+- Search credentials and linked servers, filter by type, and edit items in the same window with confirmation before deletion. Leave the secret field empty when editing to retain its existing value.
 - Detect SSH `sudo`, password, and passphrase prompts and offer matching credentials. Prompt patterns are configurable.
 - Local secret values use **AES-256-GCM encryption**, with the master key managed through the operating system's credential store.
 - **Vault injection decrypts in Rust and writes directly to the SSH channel.** That operation does not return the decrypted password to the UI or copy it to the clipboard.
 
 Secret injection currently supports SSH and locally stored Cygnus items. External password-manager integration is not advertised as a shipped capability.
 
-Startup and list views do not access the keychain. The first operation requiring the encryption key shows an explanation before **Continue** requests OS access. On macOS, **Always Allow** avoids repeated approval for that Cygnus keychain item. Remembering the explanation does not grant OS permission. [Apple’s keychain access guide](https://support.apple.com/guide/keychain-access/kyca1243/mac)
+Startup and list views do not access the keychain. The first operation requiring the encryption key shows an explanation before **Continue** requests OS access. On macOS, **Always Allow** avoids repeated approval for that Cygnus keychain item. Remembering the explanation does not grant OS permission. If you choose **Allow** only, macOS may ask again after restarting the app without repeating the Cygnus explanation. Changes to the app signature or keychain permissions may require approval again even after Always Allow. [Apple’s keychain access guide](https://support.apple.com/guide/keychain-access/kyca1243/mac)
 
 ## Give file transfers their own workspace
 
@@ -91,6 +92,8 @@ Download an installer from the [latest release](https://github.com/cygnus970209/
 
 Installed apps check GitHub Releases for updates. Linux and Intel Mac installers are not part of the current release matrix.
 
+Starting with v0.1.13, Cygnus uses a personal-project application identifier. Existing connection/Vault database contents and the encryption key migrate while retaining the originals; some UI preferences, such as themes and favorites, may need to be set again. [Application identity and migration details](docs/guides/app-identity.md#english)
+
 Export/import connections and command/path bookmarks as JSON. This is not a full backup: passwords, Vault items, and snippets are not included.
 
 ## Moving from another terminal
@@ -124,6 +127,6 @@ bun run tauri build
 
 Report bugs and suggest features through [Issues](https://github.com/cygnus970209/cygnus-terminal/issues).
 
-Developer notes (Korean): [input investigation and remaining issues](docs/investigations/terminal-input-2026-09-18/README.md) · [window restoration and reproduction](docs/investigations/terminal-resize-2026-09-22/README.md). Also see [screenshot fixtures](docs/media/README.md) and [design guidelines](DESIGN.md).
+Developer notes (Korean): [input investigation and remaining issues](docs/investigations/terminal-input-2026-09-18/README.md) · [window restoration and reproduction](docs/investigations/terminal-resize-2026-09-22/README.md). Also see [screenshot fixtures](docs/media/README.md).
 
 [MIT License](LICENSE)
