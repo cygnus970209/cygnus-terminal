@@ -1,6 +1,6 @@
 [package]
 name = "cygnus-terminal"
-version = "0.1.13"
+version = "0.1.14"
 description = "Diverse and powerful all-in-one terminal"
 authors = ["cygnus970209"]
 edition = "2021"
@@ -31,6 +31,10 @@ shellexpand = "3"
 shell-words = "1"
 plist = "1.8"
 glob = "0.3"
+chromium-storage-indexeddb-core = "=0.2.0"
+leveldb-core = "=0.1.2"
+crypto_secretbox = { version = "0.1.1", default-features = false, features = ["alloc", "salsa20"] }
+crc32c = "0.6"
 rusqlite = { version = "0.40", features = ["bundled", "backup"] }
 chrono = { version = "0.4", features = ["serde"] }
 aes-gcm = "0.10"

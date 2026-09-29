@@ -10,6 +10,7 @@ beforeEach(() => {
   vi.stubGlobal("localStorage", {
     getItem: (k: string) => storage.get(k) ?? null,
     setItem: (k: string, v: string) => storage.set(k, v),
+    removeItem: (k: string) => storage.delete(k),
   });
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -77,7 +78,7 @@ describe("credential access explanation", () => {
     expect(keychainNotice.getSnapshot()).toBe(false);
     expect(native).toHaveBeenCalledWith("authorize_keychain_access");
   });
-  it("OS denial does not retry the original operation or persist first consent", async () => {
+  it("OS denial shows the notice again without automatically retrying access", async () => {
     native
       .mockRejectedValueOnce("KEYCHAIN_CONSENT_REQUIRED")
       .mockRejectedValueOnce("Keychain access denied");
@@ -86,9 +87,34 @@ describe("credential access explanation", () => {
     const rejected = expect(result).rejects.toBe("Keychain access denied");
     await vi.waitFor(() => expect(keychainNotice.getSnapshot()).toBe(true));
     keychainNotice.respond(true);
+    await vi.waitFor(() => {
+      expect(native).toHaveBeenCalledTimes(2);
+      expect(keychainNotice.getSnapshot()).toBe(true);
+    });
+    keychainNotice.respond(false);
     await rejected;
     expect(native).toHaveBeenCalledTimes(2);
     expect(storage.size).toBe(0);
+  });
+  it("denial invalidates a remembered explanation and Continue retries access", async () => {
+    storage.set("cygnus.keychain-explained.v1", "true");
+    native
+      .mockRejectedValueOnce("KEYCHAIN_CONSENT_REQUIRED")
+      .mockRejectedValueOnce("Keychain access failed: access denied")
+      .mockResolvedValueOnce(undefined)
+      .mockResolvedValueOnce("ok");
+    const { invoke, keychainNotice } = await import("./secureInvoke");
+    const result = invoke("get_profile");
+    // Observe rejection on the old implementation while checking recovery UI.
+    void result.catch(() => {});
+    await vi.waitFor(() => expect(keychainNotice.getSnapshot()).toBe(true));
+    expect(storage.has("cygnus.keychain-explained.v1")).toBe(false);
+    expect(native).toHaveBeenCalledTimes(2);
+    keychainNotice.respond(true);
+    await expect(result).resolves.toBe("ok");
+    expect(native.mock.calls.map((c) => c[0])).toEqual([
+      "get_profile", "authorize_keychain_access", "authorize_keychain_access", "get_profile",
+    ]);
   });
   it("ordinary operations and unrelated errors never request credential access", async () => {
     native
@@ -99,5 +125,102 @@ describe("credential access explanation", () => {
     await expect(invoke("list_profiles")).rejects.toBe("Database unavailable");
     expect(keychainNotice.getSnapshot()).toBe(false);
     expect(native).toHaveBeenCalledTimes(2);
+  });
+  it("each repeated OS denial reopens recovery and cancellation leaves the next attempt explained", async () => {
+    storage.set("cygnus.keychain-explained.v1", "true");
+    native.mockImplementation(async (command) => {
+      if (command === "authorize_keychain_access") throw "Keychain access failed: denied";
+      throw "KEYCHAIN_CONSENT_REQUIRED";
+    });
+    const { invoke, keychainNotice } = await import("./secureInvoke");
+    const result = invoke("get_profile");
+    const rejected = expect(result).rejects.toBe("Keychain access failed: denied");
+    await vi.waitFor(() => expect(keychainNotice.getDetailsSnapshot()?.denied).toBe(true));
+    const firstNotice = keychainNotice.getDetailsSnapshot();
+    keychainNotice.respond(true);
+    await vi.waitFor(() => {
+      expect(native).toHaveBeenCalledTimes(3);
+      expect(keychainNotice.getDetailsSnapshot()?.denied).toBe(true);
+    });
+    expect(keychainNotice.getDetailsSnapshot()).not.toBe(firstNotice);
+    keychainNotice.respond(false);
+    await rejected;
+    const next = invoke("get_profile");
+    const cancelled = expect(next).rejects.toThrow("cancelled");
+    await vi.waitFor(() => expect(keychainNotice.getSnapshot()).toBe(true));
+    expect(native).toHaveBeenCalledTimes(4); // no second OS request yet
+    keychainNotice.respond(false);
+    await cancelled;
+  });
+  it("Termius uses its own explanation and retries the same preview only after confirmation", async () => {
+    storage.set("cygnus.keychain-explained.v1", "true");
+    native
+      .mockRejectedValueOnce("Termius Keychain access was denied or is unavailable. Allow access and preview again.")
+      .mockResolvedValueOnce({ candidates: [] });
+    const { invoke, keychainNotice } = await import("./secureInvoke");
+    const args = { kind: "termius", path: "/synthetic/Termius" };
+    const result = invoke("preview_migration", args);
+    await vi.waitFor(() => expect(keychainNotice.getDetailsSnapshot()).toEqual({ source: "termius", denied: false }));
+    expect(native).not.toHaveBeenCalled();
+    keychainNotice.respond(true);
+    await vi.waitFor(() => expect(keychainNotice.getDetailsSnapshot()).toEqual({ source: "termius", denied: true }));
+    expect(native).toHaveBeenCalledTimes(1);
+    keychainNotice.respond(true);
+    await expect(result).resolves.toEqual({ candidates: [] });
+    expect(native.mock.calls).toEqual([["preview_migration", args], ["preview_migration", args]]);
+    expect(storage.get("cygnus.termius-keychain-explained.v1")).toBe("true");
+    expect(storage.get("cygnus.keychain-explained.v1")).toBe("true");
+  });
+  it("Termius import denial resets its remembered notice and never retries the write on Cancel", async () => {
+    storage.set("cygnus.termius-keychain-explained.v1", "true");
+    const denial = "Termius Keychain access was denied or is unavailable.";
+    native.mockRejectedValue(denial);
+    const { invoke, keychainNotice } = await import("./secureInvoke");
+    const result = invoke("import_migration", { selection: { kind: "termius", indices: [0] } });
+    const rejected = expect(result).rejects.toBe(denial);
+    await vi.waitFor(() => expect(keychainNotice.getDetailsSnapshot()).toEqual({ source: "termius", denied: true }));
+    expect(storage.has("cygnus.termius-keychain-explained.v1")).toBe(false);
+    keychainNotice.respond(false);
+    await rejected;
+    expect(native).toHaveBeenCalledTimes(1);
+  });
+  it("concurrent Cygnus and Termius requests cannot replace each other's dialog", async () => {
+    let unlocked = false;
+    native.mockImplementation(async (command) => {
+      if (command === "preview_migration") return "preview";
+      if (command === "authorize_keychain_access") { unlocked = true; return; }
+      if (!unlocked) throw "KEYCHAIN_CONSENT_REQUIRED";
+      return "profile";
+    });
+    const { invoke, keychainNotice } = await import("./secureInvoke");
+    const profile = invoke("get_profile");
+    await vi.waitFor(() => expect(keychainNotice.getDetailsSnapshot()?.source).toBe("cygnus"));
+    const termius = invoke("preview_migration", { kind: "termius" });
+    await Promise.resolve();
+    expect(keychainNotice.getDetailsSnapshot()?.source).toBe("cygnus");
+    keychainNotice.respond(true);
+    await expect(profile).resolves.toBe("profile");
+    await vi.waitFor(() => expect(keychainNotice.getDetailsSnapshot()?.source).toBe("termius"));
+    keychainNotice.respond(true);
+    await expect(termius).resolves.toBe("preview");
+  });
+  it("storage failure cannot suppress a denial notice and unrelated Termius errors do not retry", async () => {
+    storage.set("cygnus.keychain-explained.v1", "true");
+    vi.stubGlobal("localStorage", {
+      getItem: () => "true",
+      removeItem: () => { throw new Error("Storage unavailable"); },
+    });
+    native.mockRejectedValueOnce("KEYCHAIN_CONSENT_REQUIRED")
+      .mockRejectedValueOnce("Keychain access failed: denied")
+      .mockRejectedValueOnce("Cannot decrypt Termius data with this Mac's local key");
+    const { invoke, keychainNotice } = await import("./secureInvoke");
+    const result = invoke("get_profile");
+    const rejected = expect(result).rejects.toBe("Keychain access failed: denied");
+    await vi.waitFor(() => expect(keychainNotice.getDetailsSnapshot()?.denied).toBe(true));
+    keychainNotice.respond(false);
+    await rejected;
+    await expect(invoke("preview_migration", { kind: "termius" })).rejects.toContain("Cannot decrypt");
+    expect(keychainNotice.getSnapshot()).toBe(false);
+    expect(native).toHaveBeenCalledTimes(3);
   });
 });
