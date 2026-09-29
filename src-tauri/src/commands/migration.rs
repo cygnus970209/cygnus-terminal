@@ -1,7 +1,7 @@
 use crate::{
     crypto::CryptoManager,
     db::{export::ExportData, Database},
-    migration::{iterm_profiles, Candidate, SshConfig},
+    migration::{iterm_profiles, termius, Candidate, SshConfig},
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -41,6 +41,9 @@ pub fn detect_migration_sources() -> Vec<Source> {
         return vec![];
     };
     let mut paths = vec![("ssh", home.join(".ssh/config"), "SSH config".to_string())];
+    for path in termius::sources(&home) {
+        paths.push(("termius", path, "Termius local connections".into()));
+    }
     if cfg!(target_os = "macos") {
         paths.push((
             "iterm",
@@ -67,7 +70,13 @@ pub fn detect_migration_sources() -> Vec<Source> {
     }
     paths
         .into_iter()
-        .filter(|(_, p, _)| p.is_file())
+        .filter(|(kind, p, _)| {
+            if *kind == "termius" {
+                p.is_dir()
+            } else {
+                p.is_file()
+            }
+        })
         .map(|(kind, path, name)| Source {
             kind: kind.into(),
             path: path.to_string_lossy().into(),
@@ -91,6 +100,9 @@ fn read_file(path: &Path) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 fn parse_source(kind: &str, path: &Path) -> Result<Vec<Candidate>, String> {
+    if kind == "termius" {
+        return termius::read_profiles(path);
+    }
     let bytes = read_file(path)?;
     let mut candidates = match kind {
         "ssh" => {
@@ -143,13 +155,20 @@ fn parse_source(kind: &str, path: &Path) -> Result<Vec<Candidate>, String> {
     }
     Ok(candidates)
 }
+#[cfg(test)]
 fn preview(
     kind: &str,
     path: &Path,
     db: &Database,
     crypto: &CryptoManager,
 ) -> Result<Preview, String> {
-    let mut candidates = parse_source(kind, path)?;
+    build_preview(parse_source(kind, path)?, db, crypto)
+}
+fn build_preview(
+    mut candidates: Vec<Candidate>,
+    db: &Database,
+    crypto: &CryptoManager,
+) -> Result<Preview, String> {
     let existing = db.export_data(crypto)?;
     let groups: std::collections::BTreeSet<_> = existing
         .profiles
@@ -185,28 +204,48 @@ fn preview(
     })
 }
 #[tauri::command]
-pub fn preview_migration(
+pub async fn preview_migration(
     kind: String,
     path: String,
     db: State<'_, Arc<Database>>,
     crypto: State<'_, CryptoManager>,
 ) -> Result<Preview, String> {
-    preview(&kind, Path::new(&path), &db, &crypto)
+    let candidates =
+        tauri::async_runtime::spawn_blocking(move || parse_source(&kind, Path::new(&path)))
+            .await
+            .map_err(|_| "Connection preview could not finish")??;
+    build_preview(candidates, &db, &crypto)
 }
 #[tauri::command]
-pub fn import_migration(
+pub async fn import_migration(
     selection: MigrationSelection,
     db: State<'_, Arc<Database>>,
     crypto: State<'_, CryptoManager>,
 ) -> Result<u32, String> {
-    save_selection(selection, &db, &crypto)
+    let kind = selection.kind.clone();
+    let path = selection.path.clone();
+    let candidates =
+        tauri::async_runtime::spawn_blocking(move || parse_source(&kind, Path::new(&path)))
+            .await
+            .map_err(|_| "Connection import could not finish")??;
+    let preview = build_preview(candidates, &db, &crypto)?;
+    save_preview(selection, preview, &db, &crypto)
 }
+#[cfg(test)]
 fn save_selection(
     selection: MigrationSelection,
     db: &Database,
     crypto: &CryptoManager,
 ) -> Result<u32, String> {
     let preview = preview(&selection.kind, Path::new(&selection.path), db, crypto)?;
+    save_preview(selection, preview, db, crypto)
+}
+fn save_preview(
+    selection: MigrationSelection,
+    preview: Preview,
+    db: &Database,
+    crypto: &CryptoManager,
+) -> Result<u32, String> {
     if preview.fingerprint != selection.fingerprint {
         return Err("Source or saved connections changed. Preview again before importing.".into());
     }

@@ -1,12 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../services/secureInvoke";
 import { open } from "@tauri-apps/plugin-dialog";
 import Select from "../common/Select";
 import Icon from "../common/Icon";
 import "./MigrationDialog.css";
 
-type Source = { kind: "ssh" | "iterm"; path: string; name: string };
+type Source = { kind: "ssh" | "iterm" | "termius"; path: string; name: string };
 type Candidate = {
   profile: {
     name: string;
@@ -27,6 +27,7 @@ type Preview = {
 };
 
 export default function MigrationDialog({ onClose }: { onClose: () => void }) {
+  const supportsTermius = /Mac/i.test(navigator.platform);
   const [sources, setSources] = useState<Source[]>([]);
   const [detecting, setDetecting] = useState(true);
   const [source, setSource] = useState<Source | null>(null);
@@ -98,9 +99,13 @@ export default function MigrationDialog({ onClose }: { onClose: () => void }) {
     try {
       const chosen = await open({
         title:
-          kind === "ssh" ? "Choose SSH config" : "Choose iTerm2 JSON or plist",
+          kind === "termius"
+            ? "Choose Termius data folder"
+            : kind === "ssh"
+              ? "Choose SSH config"
+              : "Choose iTerm2 JSON or plist",
         multiple: false,
-        directory: false,
+        directory: kind === "termius",
       });
       if (typeof chosen === "string") path = chosen;
     } catch (e) {
@@ -113,7 +118,12 @@ export default function MigrationDialog({ onClose }: { onClose: () => void }) {
       await load({
         kind,
         path,
-        name: kind === "ssh" ? "SSH config" : "iTerm2 profiles",
+        name:
+          kind === "termius"
+            ? "Termius local connections"
+            : kind === "ssh"
+              ? "SSH config"
+              : "iTerm2 profiles",
       });
   };
   const save = async () => {
@@ -271,8 +281,9 @@ export default function MigrationDialog({ onClose }: { onClose: () => void }) {
               </div>
               {!preview.candidates.length && (
                 <p className="migration-empty">
-                  No named connections found. SSH files need explicit Host
-                  entries; wildcard defaults alone do not create connections.
+                  {source?.kind === "termius"
+                    ? "No saved SSH connections found in this Termius data folder."
+                    : "No named connections found. SSH files need explicit Host entries; wildcard defaults alone do not create connections."}
                 </p>
               )}
               <div className="migration-list">
@@ -388,7 +399,7 @@ export default function MigrationDialog({ onClose }: { onClose: () => void }) {
                   No standard settings files found. You can choose a file below.
                 </p>
               )}
-              <h3 className="migration-section-title">Choose a file</h3>
+              <h3 className="migration-section-title">Choose a file or folder</h3>
               <div className="migration-file-options">
                 <button disabled={busy} onClick={() => void choose("ssh")}>
                   <strong>SSH config</strong>
@@ -398,17 +409,26 @@ export default function MigrationDialog({ onClose }: { onClose: () => void }) {
                   <strong>iTerm2 profiles</strong>
                   <small>Exported JSON or preferences plist</small>
                 </button>
+                {supportsTermius && (
+                  <button disabled={busy} onClick={() => void choose("termius")}>
+                    <strong>Termius local data</strong>
+                    <small>macOS · Termius 10.1.0 · Experimental</small>
+                  </button>
+                )}
               </div>
               <p className="migration-help">
                 iTerm2: Settings → Profiles → Other Actions → Save Profile as
                 JSON. SSH aliases are resolved using this computer’s
                 ~/.ssh/config.
               </p>
-              <p className="migration-help">
-                Moving from Termius? If you have an SSH config export, choose
-                SSH config above. Direct Termius vault migration is not yet
-                supported.
-              </p>
+              {supportsTermius && (
+                <p className="migration-help">
+                  Termius: quit Termius before importing. Choose its detected
+                  settings or the Termius data folder. macOS may ask for access to
+                  the Termius Keychain item to read your connections. Passwords and
+                  private keys are not copied. Shared vaults require manual setup.
+                </p>
+              )}
             </>
           )}
         </div>

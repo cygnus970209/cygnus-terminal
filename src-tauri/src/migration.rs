@@ -3,6 +3,8 @@ use crate::db::export::ExportProfile;
 use serde::Serialize;
 use std::collections::BTreeMap;
 
+pub mod termius;
+
 #[derive(Serialize)]
 pub struct Candidate {
     pub profile: ExportProfile,

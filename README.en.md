@@ -98,7 +98,7 @@ Export/import connections and command/path bookmarks as JSON. This is not a full
 
 ## Moving from another terminal
 
-Use **Import connections** in Connections to preview and import OpenSSH configuration or iTerm2 profiles (JSON/plist). Local source detection, duplicate skipping and unsupported-setting warnings are included. Passwords are not migrated; direct Termius migration is not supported yet. [Supported formats and instructions](docs/guides/connection-import.md#english)
+Use **Import connections** in Connections to preview and import OpenSSH configuration or iTerm2 profiles (JSON/plist). Local source detection, duplicate skipping and unsupported-setting warnings are included. Experimental direct import from Termius 10.1.0 local storage is also available on macOS. Passwords and private key contents are not migrated. [Supported formats and instructions](docs/guides/connection-import.md#english)
 
 ## Roadmap
 

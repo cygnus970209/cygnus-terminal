@@ -98,7 +98,7 @@ v0.1.13부터 개인 프로젝트 식별자를 사용합니다. 기존 연결·V
 
 ## 다른 터미널에서 이전
 
-Connections의 **Import connections**에서 OpenSSH 설정과 iTerm2 프로필(JSON·plist)을 미리 보고 선택해 가져올 수 있습니다. 로컬 설정 자동 감지, 중복 제외, 미지원 설정 안내를 제공합니다. 비밀번호는 이전하지 않으며 Termius 직접 이전은 아직 지원하지 않습니다. [지원 범위와 사용법](docs/guides/connection-import.md)
+Connections의 **Import connections**에서 OpenSSH 설정과 iTerm2 프로필(JSON·plist)을 미리 보고 선택해 가져올 수 있습니다. 로컬 설정 자동 감지, 중복 제외, 미지원 설정 안내를 제공합니다. macOS에서는 Termius 10.1.0 로컬 접속 정보 직접 가져오기도 실험적으로 지원합니다. 비밀번호와 개인키 내용은 이전하지 않습니다. [지원 범위와 사용법](docs/guides/connection-import.md)
 
 ## 로드맵
 

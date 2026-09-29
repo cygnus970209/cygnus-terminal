@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.14] - 2026-09-29
+
+### Added
+- Experimental macOS import of Termius 10.1.0 local connections, including group defaults and identity references, with Keychain decryption, preview and duplicate detection. Passwords and private key contents are excluded.
+
+### Fixed
+- Show the keychain access explanation again whenever permission is denied, with explicit retry and cancel controls for both Cygnus credentials and Termius imports.
+- Recognize Git HTTPS password prompts in the default Vault autofill rule, including existing installations, while preserving disabled and custom rules.
+
 ## [0.1.13] - 2026-09-29
 
 ### Added

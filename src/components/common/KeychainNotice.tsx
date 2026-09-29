@@ -5,22 +5,24 @@ import Icon from "./Icon";
 import "./KeychainNotice.css";
 
 export default function KeychainNotice() {
-  const visible = useSyncExternalStore(
+  const notice = useSyncExternalStore(
     keychainNotice.subscribe,
-    keychainNotice.getSnapshot,
+    keychainNotice.getDetailsSnapshot,
   );
   const dialog = useRef<HTMLDivElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
   const mac = /Mac/i.test(navigator.platform);
   useEffect(() => {
-    if (!visible) return;
+    if (!notice) return;
     const previous = document.activeElement as HTMLElement | null;
     cancel.current?.focus();
     return () => {
       previous?.focus();
     };
-  }, [visible]);
-  if (!visible) return null;
+  }, [notice]);
+  if (!notice) return null;
+  const termius = notice.source === "termius";
+  const keyOwner = termius ? "Termius" : "Cygnus";
   return createPortal(
     <div className="keychain-notice-overlay">
       <div
@@ -60,16 +62,38 @@ export default function KeychainNotice() {
             YOUR CREDENTIALS, PROTECTED
           </span>
           <h2 id="keychain-title">
-            {mac
-              ? "Before macOS asks for access"
-              : "Protecting your saved credentials"}
+            {notice.denied
+              ? "Keychain access was not granted"
+              : mac
+                ? "Before macOS asks for access"
+                : "Protecting your saved credentials"}
           </h2>
           <p id="keychain-description">
-            Cygnus uses{" "}
-            {mac ? "macOS Keychain" : "your system credential store"} to protect
-            the encryption key for your saved passwords and Vault secrets. This
-            action needs that key.
+            {termius ? (
+              <>
+                Cygnus needs to read Termius’s local encryption key from macOS
+                Keychain to import your saved connections. Passwords and private
+                keys are not copied.
+              </>
+            ) : (
+              <>
+                Cygnus uses{" "}
+                {mac ? "macOS Keychain" : "your system credential store"} to protect
+                the encryption key for your saved passwords and Vault secrets.
+                This action needs that key.
+              </>
+            )}
           </p>
+          {notice.denied && (
+            <div className="keychain-notice-tip" role="alert">
+              <strong>You can try again</strong>
+              <p>
+                Access was denied or the keychain is unavailable. Choose Retry
+                access to request permission again, then allow access in the
+                system dialog if it appears. Cancel to return without retrying.
+              </p>
+            </div>
+          )}
           {mac ? (
             <>
               <div className="keychain-notice-tip">
@@ -83,7 +107,7 @@ export default function KeychainNotice() {
                 <strong>About “Always Allow”</strong>
                 <p>
                   Choose <b>Always Allow</b> in the macOS dialog to allow future
-                  access to this Cygnus keychain item without repeated approval.
+                  access to this {keyOwner} keychain item without repeated approval.
                   “Allow” grants access for this request. Changes to the app’s
                   signature or keychain permissions may cause macOS to ask
                   again.
@@ -99,7 +123,7 @@ export default function KeychainNotice() {
             </div>
           )}
           <p className="keychain-notice-note">
-            This request is for Cygnus’s own encryption key, not access to all
+            This request is for {keyOwner}’s encryption key, not access to all
             your keychain passwords. Cancel to return without unlocking
             credentials.
           </p>
@@ -112,7 +136,7 @@ export default function KeychainNotice() {
             className="keychain-notice-continue"
             onClick={() => keychainNotice.respond(true)}
           >
-            Continue
+            {notice.denied ? "Retry access" : "Continue"}
           </button>
         </footer>
       </div>
