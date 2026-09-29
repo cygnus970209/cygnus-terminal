@@ -12,6 +12,8 @@ export interface VaultPromptRule {
 
 const STORAGE_KEY = "cygnus.vault-prompts";
 const CHANGE_EVENT = "cygnus-vault-prompts-change";
+const LEGACY_PASSWORD_PATTERN = "[Pp]assword:\\s*$";
+const PASSWORD_PATTERN = "[Pp]assword(?: for '[^'\\r\\n]+')?:\\s*$";
 
 /**
  * 기본 시드 패턴 — localStorage 가 비어있을 때 제공.
@@ -27,7 +29,7 @@ const SEED_RULES: VaultPromptRule[] = [
   },
   {
     id: "seed-password",
-    pattern: "[Pp]assword:\\s*$",
+    pattern: PASSWORD_PATTERN,
     label: "Password 프롬프트",
     enabled: true,
   },
@@ -50,14 +52,20 @@ function sanitize(parsed: unknown): VaultPromptRule[] | null {
   );
 }
 
-function load(): VaultPromptRule[] {
+export function loadVaultPromptRules(): VaultPromptRule[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     // 키 자체가 없으면 최초 실행 — 기본 패턴 시드.
     // 빈 배열("[]")은 사용자가 전부 지운 상태이므로 그대로 존중.
     if (raw === null) return SEED_RULES;
     const cleaned = sanitize(JSON.parse(raw));
-    return cleaned ?? SEED_RULES;
+    // Upgrade only the untouched built-in pattern. Preserve disabled/deleted
+    // defaults and user-authored patterns, including identical custom rules.
+    return cleaned?.map((rule) =>
+      rule.id === "seed-password" && rule.pattern === LEGACY_PASSWORD_PATTERN
+        ? { ...rule, pattern: PASSWORD_PATTERN }
+        : rule,
+    ) ?? SEED_RULES;
   } catch {
     return SEED_RULES;
   }
@@ -99,11 +107,11 @@ export function isTooBroadPattern(pattern: string): boolean {
  * useAlertRules 와 동일한 동기화 패턴 (storage + CustomEvent).
  */
 export function useVaultPromptRules() {
-  const [rules, setRules] = useState<VaultPromptRule[]>(load);
+  const [rules, setRules] = useState<VaultPromptRule[]>(loadVaultPromptRules);
 
   useEffect(() => {
     const onStorage = (e: StorageEvent) => {
-      if (e.key === STORAGE_KEY) setRules(load());
+      if (e.key === STORAGE_KEY) setRules(loadVaultPromptRules());
     };
     window.addEventListener("storage", onStorage);
     return () => window.removeEventListener("storage", onStorage);
