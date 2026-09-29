@@ -1,5 +1,5 @@
 import { useEffect, useState, type FormEvent } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../services/secureInvoke";
 import type { ConnectionProtocol, Profile } from "../../types";
 import Icon from "../common/Icon";
 import ProtocolPicker from "./ProtocolPicker";

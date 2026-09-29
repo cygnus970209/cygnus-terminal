@@ -1,0 +1,102 @@
+.keychain-notice-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20000;
+  background: #000a;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+.keychain-notice {
+  width: 490px;
+  max-width: 100%;
+  max-height: calc(100dvh - 40px);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  padding: 28px;
+  border: 1px solid var(--border-hover);
+  border-radius: 10px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  box-shadow: 0 24px 80px #0008;
+  font-size: 13px;
+}
+.keychain-notice-content {
+  min-height: 0;
+  overflow: auto;
+}
+.keychain-notice-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  height: 44px;
+  margin-bottom: 20px;
+  border-radius: 9px;
+  color: var(--accent);
+  background: var(--bg-hover);
+}
+.keychain-notice-eyebrow {
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--accent);
+}
+.keychain-notice h2 {
+  font-size: 22px;
+  margin: 8px 0 14px;
+}
+.keychain-notice p {
+  color: var(--text-secondary);
+  line-height: 1.65;
+  margin: 0 0 16px;
+}
+.keychain-notice-tip {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  padding: 14px;
+  margin: 12px 0;
+}
+.keychain-notice-tip strong {
+  font-size: 12px;
+}
+.keychain-notice-tip p {
+  margin: 7px 0 0;
+  font-size: 12px;
+}
+.keychain-notice .keychain-notice-note {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin: 16px 0 0;
+}
+.keychain-notice footer {
+  flex-shrink: 0;
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  margin-top: 24px;
+}
+.keychain-notice button {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  padding: 9px 18px;
+  font: inherit;
+  cursor: pointer;
+}
+.keychain-notice button:hover {
+  filter: brightness(1.12);
+}
+.keychain-notice .keychain-notice-continue {
+  background: var(--accent);
+  color: var(--bg-primary);
+  border-color: var(--accent);
+  font-weight: 600;
+}
+.keychain-notice button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}

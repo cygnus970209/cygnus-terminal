@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.13] - 2026-09-29
+
+### Added
+- Import saved SSH connections from OpenSSH configuration and iTerm2 profiles, with preview, duplicate detection, per-connection group selection, and warnings for settings that need manual setup.
+- Explain credential access before the first operating-system keychain request, with cancel/continue controls and macOS Always Allow guidance.
+
+### Changed
+- Redesigned the Vault library and terminal credential picker with search, type filters, linked-server context, and an inline editor and deletion confirmation.
+- Defer keychain access until credentials are needed; browsing saved connections and Vault metadata no longer requests keychain access at startup.
+- Use the personal application identifier `io.github.cygnus970209.cygnus-terminal`. Existing database contents and the original encryption key migrate without deleting the legacy copies. WebView-only preferences may need to be configured again.
+- Keep Settings at a consistent size when switching tabs.
+
+### Fixed
+- Resolve iTerm2 SSH destinations from the active command or startup text instead of treating a profile's display name as a hostname.
+- Allow connections with relative key paths to be imported for later editing while continuing to skip duplicates.
+- Prevent credential-picker keyboard actions from leaking into the terminal or injecting a secret twice.
+
 ## [0.1.12] - 2026-09-28
 
 ### Fixed

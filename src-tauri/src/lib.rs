@@ -1,4 +1,6 @@
+mod app_identity;
 mod commands;
+mod migration;
 pub mod crypto;
 pub mod db;
 pub mod forward;
@@ -137,15 +139,15 @@ pub fn run() {
                 .path()
                 .app_data_dir()
                 .expect("Failed to resolve app data directory");
+            app_identity::migrate_database(&app_data_dir).map_err(std::io::Error::other)?;
             let database =
                 Arc::new(Database::new(app_data_dir).expect("Failed to initialize database"));
-            let crypto = CryptoManager::new().expect("Failed to initialize crypto manager");
-            // 레거시 평문 jump_host → 암호화 저장 전환 (멱등). 실패해도 앱은 동작해야 하므로 로그만 남긴다.
-            match database.migrate_plaintext_jump_hosts(&crypto) {
-                Ok(n) if n > 0 => eprintln!("Encrypted {n} legacy plaintext jump_host entr(ies)"),
-                Ok(_) => {}
-                Err(e) => eprintln!("jump_host encryption migration failed: {e}"),
-            }
+            // No OS keychain access at launch. Secret operations initialize the key lazily.
+            let crypto = CryptoManager::with_existing_credentials(
+                database
+                    .has_encrypted_credentials()
+                    .map_err(std::io::Error::other)?,
+            );
             let ssh_manager = SshManager::new(Arc::clone(&database));
             app.manage(database);
             app.manage(crypto);
@@ -171,6 +173,7 @@ pub fn run() {
             commands::resize_ssh,
             commands::close_ssh,
             commands::ssh_host_key_respond,
+            commands::authorize_keychain_access,
             commands::create_profile,
             commands::list_profiles,
             commands::get_profile,
@@ -213,6 +216,9 @@ pub fn run() {
             commands::import_data,
             commands::export_to_file,
             commands::import_from_file,
+            commands::detect_migration_sources,
+            commands::preview_migration,
+            commands::import_migration,
             commands::create_snippet,
             commands::list_snippets,
             commands::update_snippet,

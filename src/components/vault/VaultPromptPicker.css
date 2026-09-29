@@ -10,8 +10,8 @@
   max-height: 460px;
   display: flex;
   flex-direction: column;
-  background: #1e1e2e;
-  border: 1px solid #45475a;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-hover);
   border-radius: 8px;
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.5);
   font-family: var(--font-sans);
@@ -23,29 +23,29 @@
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  border-bottom: 1px solid #313244;
+  border-bottom: 1px solid var(--border);
   cursor: move;
   user-select: none;
 }
 
 .vpp-grip {
-  color: #45475a;
+  color: var(--border-hover);
   font-size: 13px;
   letter-spacing: -2px;
   flex-shrink: 0;
 }
 
 .vpp-title {
-  color: #cdd6f4;
+  color: var(--text-primary);
   font-size: 13px;
   font-weight: 600;
   flex-shrink: 0;
 }
 
 .vpp-sub {
-  color: #6c7086;
+  color: var(--text-muted);
   font-size: 11px;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
   flex: 1;
   white-space: nowrap;
   overflow: hidden;
@@ -56,35 +56,37 @@
   margin-left: auto;
   background: none;
   border: none;
-  color: #6c7086;
+  color: var(--text-muted);
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
   padding: 0 6px;
   border-radius: 4px;
   flex-shrink: 0;
-  transition: background 120ms ease-out, color 120ms ease-out;
+  transition:
+    background 120ms ease-out,
+    color 120ms ease-out;
 }
 
 .vpp-x:hover {
-  background: #313244;
-  color: #f38ba8;
+  background: var(--border);
+  color: var(--error);
 }
 
 .vpp-search {
   margin: 10px;
   padding: 7px 10px;
-  background: #11111b;
-  border: 1px solid #313244;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  color: #cdd6f4;
+  color: var(--text-primary);
   font-size: 13px;
   font-family: var(--font-sans);
 }
 
 .vpp-search:focus {
   outline: none;
-  border-color: #7aa2f7;
+  border-color: var(--accent);
 }
 
 .vpp-list {
@@ -104,11 +106,11 @@
 
 .vpp-row-active {
   background: rgba(122, 162, 247, 0.12);
-  box-shadow: inset 2px 0 0 #7aa2f7;
+  box-shadow: inset 2px 0 0 var(--accent);
 }
 
 .vpp-label {
-  color: #cdd6f4;
+  color: var(--text-primary);
   font-size: 13px;
   flex: 1;
   white-space: nowrap;
@@ -118,8 +120,8 @@
 
 .vpp-badge {
   font-size: 9px;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
-  color: #7aa2f7;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
+  color: var(--accent);
   background: rgba(122, 162, 247, 0.12);
   padding: 1px 6px;
   border-radius: 10px;
@@ -128,8 +130,8 @@
 
 .vpp-kind {
   font-size: 10px;
-  color: #585b70;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  color: var(--text-dim);
+  font-family: "JetBrains Mono", "Fira Code", monospace;
   flex-shrink: 0;
 }
 
@@ -137,12 +139,12 @@
 .vpp-error {
   padding: 14px 10px;
   font-size: 12px;
-  color: #6c7086;
+  color: var(--text-muted);
   text-align: center;
 }
 
 .vpp-error {
-  color: #f38ba8;
+  color: var(--error);
 }
 
 .vpp-foot {
@@ -150,30 +152,32 @@
   align-items: center;
   justify-content: space-between;
   padding: 8px 10px;
-  border-top: 1px solid #313244;
+  border-top: 1px solid var(--border);
 }
 
 .vpp-add-btn {
   background: none;
-  border: 1px solid #45475a;
+  border: 1px solid var(--border-hover);
   border-radius: 4px;
-  color: #cdd6f4;
+  color: var(--text-primary);
   font-size: 11px;
   font-family: var(--font-sans);
   padding: 5px 12px;
   cursor: pointer;
-  transition: background 120ms ease-out, border-color 120ms ease-out;
+  transition:
+    background 120ms ease-out,
+    border-color 120ms ease-out;
 }
 
 .vpp-add-btn:hover {
-  background: #313244;
-  border-color: #7aa2f7;
+  background: var(--border);
+  border-color: var(--accent);
 }
 
 .vpp-hint {
-  color: #585b70;
+  color: var(--text-dim);
   font-size: 10px;
-  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-family: "JetBrains Mono", "Fira Code", monospace;
 }
 
 /* 새 항목 추가 폼 */
@@ -191,7 +195,7 @@
 }
 
 .vpp-flabel {
-  color: #a6adc8;
+  color: var(--text-secondary);
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
@@ -201,10 +205,10 @@
 .vpp-input {
   width: 100%;
   box-sizing: border-box;
-  background: #11111b;
-  border: 1px solid #313244;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
   border-radius: 4px;
-  color: #cdd6f4;
+  color: var(--text-primary);
   padding: 7px 10px;
   font-size: 13px;
   font-family: var(--font-sans);
@@ -212,7 +216,7 @@
 
 .vpp-input:focus {
   outline: none;
-  border-color: #7aa2f7;
+  border-color: var(--accent);
 }
 
 .vpp-pw {
@@ -226,8 +230,8 @@
 }
 
 .vpp-eye {
-  background: #11111b;
-  border: 1px solid #313244;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
   border-radius: 4px;
   padding: 6px 9px;
   cursor: pointer;
@@ -236,11 +240,11 @@
 }
 
 .vpp-eye:hover {
-  border-color: #45475a;
+  border-color: var(--border-hover);
 }
 
 .vpp-note {
-  color: #7aa2f7;
+  color: var(--accent);
   font-size: 11px;
   background: rgba(122, 162, 247, 0.1);
   padding: 6px 8px;
@@ -256,9 +260,9 @@
 
 .vpp-cancel {
   background: transparent;
-  border: 1px solid #45475a;
+  border: 1px solid var(--border-hover);
   border-radius: 4px;
-  color: #cdd6f4;
+  color: var(--text-primary);
   padding: 6px 14px;
   font-size: 12px;
   font-family: var(--font-sans);
@@ -267,14 +271,14 @@
 }
 
 .vpp-cancel:hover {
-  background: #313244;
+  background: var(--border);
 }
 
 .vpp-save {
-  background: #7aa2f7;
-  border: 1px solid #7aa2f7;
+  background: var(--accent);
+  border: 1px solid var(--accent);
   border-radius: 4px;
-  color: #1e1e2e;
+  color: var(--bg-secondary);
   padding: 6px 16px;
   font-size: 12px;
   font-weight: 600;
@@ -284,10 +288,61 @@
 }
 
 .vpp-save:hover:not(:disabled) {
-  background: #8bb3f8;
+  background: var(--accent-hover);
 }
 
 .vpp-save:disabled {
   opacity: 0.4;
   cursor: not-allowed;
+}
+
+.vpp {
+  max-width: calc(100vw - 16px);
+  max-height: min(460px, calc(100dvh - 16px));
+  border-radius: 10px;
+}
+.vpp-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+.vpp-header {
+  padding: 14px;
+}
+.vpp-search {
+  border-radius: 5px;
+  padding: 9px 10px;
+}
+.vpp-row {
+  border-radius: 4px;
+  margin: 2px 4px;
+}
+.vpp-badge {
+  border-radius: 4px;
+}
+.vpp-eye {
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.vpp-save {
+  color: var(--bg-tertiary);
+}
+
+.vpp-row {
+  width: calc(100% - 8px);
+  border: 0;
+  text-align: left;
+  background: transparent;
+  font: inherit;
+}
+.vpp-row-active {
+  background: var(--accent-soft);
+}
+.vpp-row:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+.vpp-row:disabled {
+  opacity: 0.5;
+  cursor: wait;
 }

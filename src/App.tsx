@@ -1,5 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, keychainNotice } from "./services/secureInvoke";
 import { emit } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
@@ -102,6 +102,7 @@ function App() {
   // e.code 사용 — 한영 IME 상태와 무관하게 물리 K 키를 잡는다.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (keychainNotice.getSnapshot()) return;
       if ((e.metaKey || e.ctrlKey) && e.code === "KeyK") {
         e.preventDefault();
         e.stopPropagation();
@@ -566,10 +567,22 @@ function App() {
     [createSshTab, createTelnetTab, handleSerialConnect],
   );
 
-  const handleEditProfile = useCallback((profile: Profile) => {
-    setEditProfile(profile);
-    setConnectionProtocol(profile.protocol ?? "ssh");
-    setShowConnectDialog(true);
+  const handleEditProfile = useCallback(async (profile: Profile) => {
+    try {
+      // The startup list intentionally omits encrypted jump-host details.
+      // Load them only when the user explicitly opens this connection for editing.
+      const fullProfile = await invoke<Profile>("get_profile", { id: profile.id });
+      if (fullProfile.jump_host) {
+        const jump = JSON.parse(fullProfile.jump_host);
+        delete jump.password;
+        fullProfile.jump_host = JSON.stringify(jump);
+      }
+      setEditProfile({ ...fullProfile, password: undefined });
+      setConnectionProtocol(fullProfile.protocol ?? "ssh");
+      setShowConnectDialog(true);
+    } catch (err) {
+      alert(`Could not open connection settings: ${String(err)}`);
+    }
   }, []);
 
   const handleNewProfile = useCallback(() => {
@@ -1114,28 +1127,7 @@ function App() {
         </div>
       )}
 
-      {showVault && (
-        <div
-          className="sn-modal-overlay"
-          onMouseDown={() => setShowVault(false)}
-        >
-          <div
-            className="sn-modal-body"
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <div className="sn-modal-head">
-              <span className="sn-modal-title">Vault</span>
-              <button
-                className="sn-modal-close"
-                onClick={() => setShowVault(false)}
-              >
-                ✕
-              </button>
-            </div>
-            <VaultView onClose={() => setShowVault(false)} />
-          </div>
-        </div>
-      )}
+      {showVault && <VaultView onClose={() => setShowVault(false)} />}
 
       <CommandPalette
         isOpen={showPalette}

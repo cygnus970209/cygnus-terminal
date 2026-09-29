@@ -55,6 +55,14 @@ impl Database {
         Ok(db)
     }
 
+    /// Avoid silently generating a different master key when encrypted data exists.
+    pub fn has_encrypted_credentials(&self) -> Result<bool, String> {
+        self.conn().query_row(
+            "SELECT EXISTS(SELECT 1 FROM profiles WHERE length(password) > 0 OR (length(jump_host) > 0 AND substr(ltrim(jump_host), 1, 1) != '{')) OR EXISTS(SELECT 1 FROM vault_items WHERE length(encrypted_value) > 0)",
+            [], |row| row.get(0),
+        ).map_err(|e| format!("Cannot inspect encrypted credentials: {e}"))
+    }
+
     pub fn conn(&self) -> std::sync::MutexGuard<'_, Connection> {
         self.conn.lock().expect("Database mutex poisoned")
     }

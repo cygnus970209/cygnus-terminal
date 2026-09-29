@@ -9,3 +9,6 @@ pub use pty::*;
 pub use services::*;
 pub use ssh::*;
 pub use vault::*;
+
+mod migration;
+pub use migration::*;

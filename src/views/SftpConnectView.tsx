@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
-import { invoke, Channel } from "@tauri-apps/api/core";
+import { Channel } from "@tauri-apps/api/core";
+import { invoke } from "../services/secureInvoke";
 import { Profile } from "../types";
 import "./SftpConnectView.css";
 

@@ -1,3 +1,4 @@
+import MigrationDialog from "./MigrationDialog";
 import Select from "../common/Select";
 import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -31,6 +32,7 @@ export default function ConnectionsView({
   connectedProfileIds = [],
   onProfilesLoaded,
 }: ConnectionsViewProps) {
+  const [showImport, setShowImport] = useState(false);
   const [protocolFilter, setProtocolFilter] = useState("");
   const [scope, setScope] = useState("all");
   const [groupFilter, setGroupFilter] = useState("");
@@ -188,6 +190,7 @@ export default function ConnectionsView({
     ].sort();
     return (
       <section className="ssh-page" aria-label="SSH connections">
+        {showImport && <MigrationDialog onClose={() => setShowImport(false)} />}
         <header className="ssh-page-header">
           <div>
             <div className="ssh-eyebrow">
@@ -197,6 +200,12 @@ export default function ConnectionsView({
             <p>SSH, Telnet and Serial. Your connections in one place.</p>
           </div>
           <div className="ssh-header-actions">
+            <button
+              className="ssh-secondary"
+              onClick={() => setShowImport(true)}
+            >
+              Import connections
+            </button>
             <button className="ssh-secondary" onClick={onLocalShell}>
               <Icon name="terminal" />
               Local shell
@@ -398,10 +407,18 @@ export default function ConnectionsView({
                     Clear filters
                   </button>
                 ) : (
-                  <button className="ssh-primary" onClick={onNew}>
-                    <Icon name="plus" />
-                    New connection
-                  </button>
+                  <div className="ssh-header-actions">
+                    <button className="ssh-primary" onClick={onNew}>
+                      <Icon name="plus" />
+                      New connection
+                    </button>
+                    <button
+                      className="ssh-secondary"
+                      onClick={() => setShowImport(true)}
+                    >
+                      Import existing connections
+                    </button>
+                  </div>
                 ))}
             </div>
           )}
@@ -412,6 +429,7 @@ export default function ConnectionsView({
   }
   return (
     <div className="cv-container">
+      {showImport && <MigrationDialog onClose={() => setShowImport(false)} />}
       <div className="cv-toolbar">
         <label className="cv-search-wrap">
           <Icon name="search" size={15} />
@@ -428,6 +446,9 @@ export default function ConnectionsView({
           New connection
         </button>
       </div>
+      <button className="cv-new-btn" onClick={() => setShowImport(true)}>
+        Import connections
+      </button>
       <div className="cv-list">
         {error && (
           <div className="cv-error" role="alert">

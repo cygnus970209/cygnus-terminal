@@ -51,6 +51,8 @@ Choose the right credential for a server instead of copying passwords into your 
 
 Secret injection currently supports SSH and locally stored Cygnus items. External password-manager integration is not advertised as a shipped capability.
 
+Startup and list views do not access the keychain. The first operation requiring the encryption key shows an explanation before **Continue** requests OS access. On macOS, **Always Allow** avoids repeated approval for that Cygnus keychain item. Remembering the explanation does not grant OS permission. [Apple’s keychain access guide](https://support.apple.com/guide/keychain-access/kyca1243/mac)
+
 ## Give file transfers their own workspace
 
 ![SFTP workspace with remote and local file panels](docs/media/sftp.png)
@@ -90,6 +92,10 @@ Download an installer from the [latest release](https://github.com/cygnus970209/
 Installed apps check GitHub Releases for updates. Linux and Intel Mac installers are not part of the current release matrix.
 
 Export/import connections and command/path bookmarks as JSON. This is not a full backup: passwords, Vault items, and snippets are not included.
+
+## Moving from another terminal
+
+Use **Import connections** in Connections to preview and import OpenSSH configuration or iTerm2 profiles (JSON/plist). Local source detection, duplicate skipping and unsupported-setting warnings are included. Passwords are not migrated; direct Termius migration is not supported yet. [Supported formats and instructions](docs/guides/connection-import.md#english)
 
 ## Roadmap
 

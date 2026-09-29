@@ -1,3 +1,4 @@
+import Icon from "../common/Icon";
 import {
   useState,
   useEffect,
@@ -6,7 +7,7 @@ import {
   useCallback,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, keychainNotice } from "../../services/secureInvoke";
 import "./VaultPromptPicker.css";
 
 interface VaultItem {
@@ -47,6 +48,8 @@ export default function VaultPromptPicker({
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const injectingRef = useRef(false);
+  const [injecting, setInjecting] = useState(false);
   const [mode, setMode] = useState<"list" | "add">("list");
 
   // 새 항목 추가 폼
@@ -99,12 +102,18 @@ export default function VaultPromptPicker({
 
   const inject = useCallback(
     async (item: VaultItem) => {
+      if (injectingRef.current) return;
+      injectingRef.current = true;
+      setInjecting(true);
       try {
         await invoke("vault_inject", { sessionId, vaultItemId: item.id });
         onInjected();
         onClose();
       } catch (e) {
         setError(String(e));
+      } finally {
+        injectingRef.current = false;
+        setInjecting(false);
       }
     },
     [sessionId, onInjected, onClose],
@@ -143,24 +152,33 @@ export default function VaultPromptPicker({
   // 키보드 — window capture 로 확실히 가로챈다 (input focus 누수/xterm 간섭 회피).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (keychainNotice.getSnapshot()) return;
+      if (e.isComposing || e.keyCode === 229) return;
       if (mode === "add") {
         if (e.key === "Escape") {
           e.preventDefault();
+          e.stopPropagation();
           setMode("list");
         }
         return; // 나머지 키는 폼 input 으로 통과.
       }
       if (e.key === "Escape") {
         e.preventDefault();
+        e.stopPropagation();
         onClose();
       } else if (e.key === "ArrowDown") {
         e.preventDefault();
+        e.stopPropagation();
         setActive((i) => Math.min(i + 1, sorted.length - 1));
       } else if (e.key === "ArrowUp") {
         e.preventDefault();
+        e.stopPropagation();
         setActive((i) => Math.max(i - 1, 0));
       } else if (e.key === "Enter") {
+        if (e.target instanceof HTMLElement && e.target.closest("button"))
+          return;
         e.preventDefault();
+        e.stopPropagation();
         const item = sorted[active];
         if (item) void inject(item);
       }
@@ -208,7 +226,10 @@ export default function VaultPromptPicker({
       >
         <div className="vpp-header" onMouseDown={onHeaderMouseDown}>
           <span className="vpp-grip">⠿</span>
-          <span className="vpp-title">🔑 Vault</span>
+          <span className="vpp-title">
+            <Icon name="vault" size={16} />
+            Vault
+          </span>
           <span className="vpp-sub">
             {mode === "add" ? "새 비밀번호" : promptLabel}
           </span>
@@ -222,7 +243,8 @@ export default function VaultPromptPicker({
             <input
               ref={searchRef}
               className="vpp-search"
-              placeholder="검색…"
+              aria-label="볼트 검색"
+              placeholder="비밀번호 검색…"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               spellCheck={false}
@@ -235,29 +257,23 @@ export default function VaultPromptPicker({
                 </div>
               )}
               {sorted.map((item, idx) => (
-                <div
+                <button
+                  type="button"
+                  disabled={injecting}
                   key={item.id}
                   className={`vpp-row ${idx === active ? "vpp-row-active" : ""}`}
                   onMouseEnter={() => setActive(idx)}
-                  onMouseDown={(e) => {
-                    e.preventDefault();
-                    void inject(item);
-                  }}
+                  onFocus={() => setActive(idx)}
+                  onClick={() => void inject(item)}
                 >
                   <span className="vpp-label">{item.label}</span>
                   {isMapped(item) && <span className="vpp-badge">매핑됨</span>}
                   <span className="vpp-kind">{item.kind}</span>
-                </div>
+                </button>
               ))}
             </div>
             <div className="vpp-foot">
-              <button
-                className="vpp-add-btn"
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  setMode("add");
-                }}
-              >
+              <button className="vpp-add-btn" onClick={() => setMode("add")}>
                 + 새 비밀번호
               </button>
               <span className="vpp-hint">↑↓ · Enter · Esc</span>
@@ -297,10 +313,9 @@ export default function VaultPromptPicker({
                   className="vpp-eye"
                   type="button"
                   onClick={() => setShowValue((v) => !v)}
-                  tabIndex={-1}
                   title={showValue ? "숨기기" : "보기"}
                 >
-                  {showValue ? "🙈" : "👁"}
+                  {showValue ? "숨기기" : "보기"}
                 </button>
               </div>
             </label>

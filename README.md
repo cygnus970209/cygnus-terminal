@@ -51,6 +51,8 @@ Cygnus는 여러 서버와 네트워크 장비를 오가며 작업하는 사람�
 
 현재 비밀 값 입력은 Cygnus에 로컬 저장한 항목의 SSH 입력을 지원합니다. 외부 비밀번호 관리자 연동은 현재 제공 기능으로 안내하지 않습니다.
 
+앱 시작과 목록 조회만으로는 키체인에 접근하지 않습니다. 암호화 키가 처음 필요한 작업에서 안내 화면을 보여주고 **Continue**를 누른 뒤 운영체제 권한을 요청합니다. macOS의 **항상 허용(Always Allow)**은 해당 Cygnus 키체인 항목의 반복 승인을 생략하는 선택입니다. 안내 확인은 기억하지만 운영체제 권한을 대신 허용하지는 않습니다. [Apple 키체인 권한 안내](https://support.apple.com/guide/keychain-access/kyca1243/mac)
+
 ## 파일 작업은 SFTP 전용 창에서
 
 ![원격·로컬 파일을 나란히 보는 SFTP 전용 창](docs/media/sftp.png)
@@ -90,6 +92,10 @@ Cygnus는 여러 서버와 네트워크 장비를 오가며 작업하는 사람�
 설치된 앱은 GitHub Releases를 통해 업데이트를 확인합니다. Linux와 Intel Mac용 설치 파일은 현재 릴리스 대상에 포함되지 않습니다.
 
 연결 프로필과 명령·경로 북마크는 JSON으로 내보내고 가져올 수 있습니다. 이 내보내기는 비밀번호·Vault·스니펫을 포함하는 전체 백업이 아닙니다.
+
+## 다른 터미널에서 이전
+
+Connections의 **Import connections**에서 OpenSSH 설정과 iTerm2 프로필(JSON·plist)을 미리 보고 선택해 가져올 수 있습니다. 로컬 설정 자동 감지, 중복 제외, 미지원 설정 안내를 제공합니다. 비밀번호는 이전하지 않으며 Termius 직접 이전은 아직 지원하지 않습니다. [지원 범위와 사용법](docs/guides/connection-import.md)
 
 ## 로드맵
 

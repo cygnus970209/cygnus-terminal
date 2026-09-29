@@ -148,7 +148,19 @@ impl Database {
         .and_then(|row| row.into_profile(crypto))
     }
 
+    /// Metadata for startup/sidebar: no secret or jump-host decryption.
+    pub fn list_profile_summaries(&self) -> Result<Vec<Profile>, String> {
+        self.list_profiles_internal(None)
+    }
+
     pub fn list_profiles(&self, crypto: &CryptoManager) -> Result<Vec<Profile>, String> {
+        self.list_profiles_internal(Some(crypto))
+    }
+
+    fn list_profiles_internal(
+        &self,
+        crypto: Option<&CryptoManager>,
+    ) -> Result<Vec<Profile>, String> {
         let conn = self.conn();
         let mut stmt = conn
             .prepare(
@@ -197,7 +209,8 @@ impl Database {
                 key_path: row.key_path,
                 group_name: row.group_name,
                 sort_order: row.sort_order,
-                jump_host: sanitized_jump_host(row.jump_host.as_deref(), crypto),
+                jump_host: crypto
+                    .and_then(|crypto| sanitized_jump_host(row.jump_host.as_deref(), crypto)),
                 agent_forward: row.agent_forward,
                 environment: row.environment,
                 created_at: row.created_at,
@@ -341,7 +354,7 @@ impl Database {
         self.get_profile(id, crypto)
     }
 
-    /// 레거시 평문 jump_host 를 암호화 저장으로 일괄 전환. 앱 시작 시 1회 호출 (멱등).
+    /// 레거시 평문 jump_host 를 암호화 저장으로 일괄 전환. 인증 정보 상세 조회 시 호출 (멱등).
     pub fn migrate_plaintext_jump_hosts(&self, crypto: &CryptoManager) -> Result<usize, String> {
         let conn = self.conn();
         let mut stmt = conn
@@ -414,7 +427,7 @@ impl ProfileRow {
         let jump_host = match self.jump_host {
             Some(ref jh) if !jh.is_empty() => {
                 if is_plaintext_jump_host(jh) {
-                    // 마이그레이션 전 레거시 평문 — 그대로 반환 (앱 시작 시 암호화 마이그레이션됨)
+                    // 마이그레이션 전 레거시 평문 — 그대로 반환 (인증 정보 상세 조회 시 암호화 마이그레이션됨)
                     Some(jh.clone())
                 } else {
                     Some(crypto.decrypt(jh)?)
