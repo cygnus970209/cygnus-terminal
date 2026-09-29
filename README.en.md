@@ -46,13 +46,17 @@ Choose the right credential for a server instead of copying passwords into your 
 - Manage passwords, SSH key passphrases, SSH keys, and PAT username/token entries.
 - Link a credential to multiple servers and control its scope.
 - Search credentials and linked servers, filter by type, and edit items in the same window with confirmation before deletion. Leave the secret field empty when editing to retain its existing value.
-- Detect SSH `sudo`, password, and passphrase prompts and offer matching credentials. Prompt patterns are configurable.
+- Detect `sudo`, password, passphrase, and Git HTTPS password prompts in SSH sessions and offer matching credentials. Configure patterns in **Settings → Autofill**.
 - Local secret values use **AES-256-GCM encryption**, with the master key managed through the operating system's credential store.
 - **Vault injection decrypts in Rust and writes directly to the SSH channel.** That operation does not return the decrypted password to the UI or copy it to the clipboard.
 
 Secret injection currently supports SSH and locally stored Cygnus items. External password-manager integration is not advertised as a shipped capability.
 
+The default password pattern, `[Pp]assword(?: for '[^'\r\n]+')?:\s*$`, recognizes both `Password:` and `Password for 'https://user@github.com':`. Existing default rules are upgraded while custom patterns, deleted rules, and disabled states are preserved. A manually added `[Pp]assword:\s*$` pattern does not allow the `for '…'` portion; update it to recognize Git HTTPS prompts.
+
 Startup and list views do not access the keychain. The first operation requiring the encryption key shows an explanation before **Continue** requests OS access. On macOS, **Always Allow** avoids repeated approval for that Cygnus keychain item. Remembering the explanation does not grant OS permission. If you choose **Allow** only, macOS may ask again after restarting the app without repeating the Cygnus explanation. Changes to the app signature or keychain permissions may require approval again even after Always Allow. [Apple’s keychain access guide](https://support.apple.com/guide/keychain-access/kyca1243/mac)
+
+If keychain access is denied, Cygnus reopens its explanation. Choose **Retry access** to request permission again or **Cancel** to stop the operation. The next access attempt shows the explanation again after cancellation. Termius imports use a separate explanation.
 
 ## Give file transfers their own workspace
 
