@@ -1103,15 +1103,17 @@ dependencies = [
 
 [[package]]
 name = "cygnus-terminal"
-version = "0.1.12"
+version = "0.1.13"
 dependencies = [
  "aes-gcm 0.10.3",
  "base64 0.22.1",
  "chrono",
  "dirs",
+ "glob",
  "keyring",
  "notify",
  "notify-debouncer-mini",
+ "plist",
  "portable-pty",
  "rand 0.10.1",
  "rusqlite",

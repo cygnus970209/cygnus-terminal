@@ -1,5 +1,5 @@
 import { useEffect, useReducer, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
+import { invoke } from "../../services/secureInvoke";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Profile, SshConfig, JumpHostConfig } from "../../types";
 import { DEFAULT_SSH_PORT } from "../../constants";

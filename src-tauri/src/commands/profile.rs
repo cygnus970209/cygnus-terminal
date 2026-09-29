@@ -22,11 +22,8 @@ pub fn create_profile(
 }
 
 #[tauri::command]
-pub fn list_profiles(
-    db: State<'_, Arc<Database>>,
-    crypto: State<'_, CryptoManager>,
-) -> Result<Vec<Profile>, String> {
-    db.list_profiles(&crypto)
+pub fn list_profiles(db: State<'_, Arc<Database>>) -> Result<Vec<Profile>, String> {
+    db.list_profile_summaries()
 }
 
 #[tauri::command]
@@ -35,6 +32,8 @@ pub fn get_profile(
     db: State<'_, Arc<Database>>,
     crypto: State<'_, CryptoManager>,
 ) -> Result<Profile, String> {
+    // Legacy plaintext credentials are migrated on explicit access, not app startup.
+    db.migrate_plaintext_jump_hosts(&crypto)?;
     db.get_profile(id, &crypto)
 }
 
@@ -195,7 +194,11 @@ pub fn import_from_file(
     crypto: State<'_, CryptoManager>,
 ) -> Result<u32, String> {
     let json = std::fs::read_to_string(&path).map_err(|e| format!("Failed to read file: {e}"))?;
-    let data: ExportData =
-        serde_json::from_str(&json).map_err(|e| format!("Invalid JSON: {e}"))?;
+    let data: ExportData = serde_json::from_str(&json).map_err(|e| format!("Invalid JSON: {e}"))?;
     db.import_data(data, &crypto)
+}
+
+#[tauri::command]
+pub fn authorize_keychain_access(crypto: State<'_, CryptoManager>) -> Result<(), String> {
+    crypto.authorize_keychain_access()
 }

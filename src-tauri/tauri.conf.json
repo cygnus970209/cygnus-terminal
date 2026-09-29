@@ -1,8 +1,8 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "cygnus-terminal",
-  "version": "0.1.12",
-  "identifier": "com.intocns.cygnus-terminal",
+  "version": "0.1.13",
+  "identifier": "io.github.cygnus970209.cygnus-terminal",
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
@@ -33,7 +33,12 @@
       "icons/128x128@2x.png",
       "icons/icon.icns",
       "icons/icon.ico"
-    ]
+    ],
+    "windows": {
+      "wix": {
+        "upgradeCode": "3932911e-9221-53e9-b993-8ea8b956da4f"
+      }
+    }
   },
   "plugins": {
     "updater": {

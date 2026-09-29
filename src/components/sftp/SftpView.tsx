@@ -1,7 +1,8 @@
 import Icon from "../common/Icon";
 import Select from "../common/Select";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { invoke, Channel } from "@tauri-apps/api/core";
+import { Channel } from "@tauri-apps/api/core";
+import { invoke } from "../../services/secureInvoke";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { ask, save } from "@tauri-apps/plugin-dialog";
 import { startDrag } from "@crabnebula/tauri-plugin-drag";
