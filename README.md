@@ -131,6 +131,6 @@ bun run tauri build
 
 문제 제보와 기능 제안은 [Issues](https://github.com/cygnus970209/cygnus-terminal/issues)로 남겨주세요.
 
-개발 참고: [입력 문제 조사와 남은 항목](docs/investigations/terminal-input-2026-09-18/README.md) · [창 복원 크기 처리와 재현 방법](docs/investigations/terminal-resize-2026-09-22/README.md) · [화면 자료](docs/media/README.md).
+개발 참고: [공용 SSH 실행 API](docs/guides/execution-engine.md) · [입력 문제 조사와 남은 항목](docs/investigations/terminal-input-2026-09-18/README.md) · [창 복원 크기 처리와 재현 방법](docs/investigations/terminal-resize-2026-09-22/README.md) · [화면 자료](docs/media/README.md).
 
 [MIT License](LICENSE)

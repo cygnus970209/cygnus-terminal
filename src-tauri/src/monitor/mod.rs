@@ -111,6 +111,7 @@ impl MonitorManager {
             .await
             .map_err(|e| format!("Channel open failed: {e}"))?;
 
+        drop(sessions);
         channel
             .exec(true, cmd)
             .await
@@ -126,8 +127,6 @@ impl MonitorManager {
                 _ => {}
             }
         }
-        drop(sessions);
-
         let sections: Vec<&str> = output.split("---").collect();
         let mut stats = ServerStats::default();
         let mut current_cpu = CpuSnapshot::default();

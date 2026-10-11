@@ -157,6 +157,18 @@ const MIGRATIONS: &[Migration] = &[
         sql: "ALTER TABLE profiles ADD COLUMN protocol TEXT NOT NULL DEFAULT 'ssh' CHECK(protocol IN ('ssh', 'telnet', 'serial'));
             ALTER TABLE profiles ADD COLUMN baud_rate INTEGER CHECK(baud_rate > 0 AND baud_rate <= 4294967295);",
     },
+    Migration {
+        version: 8,
+        sql: "CREATE TABLE execution_jobs (
+            id TEXT PRIMARY KEY,
+            profile_id INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            status TEXT NOT NULL,
+            record TEXT NOT NULL,
+            summary TEXT NOT NULL
+        );
+        CREATE INDEX idx_execution_jobs_created ON execution_jobs(created_at DESC, id DESC);",
+    },
 ];
 
 impl Database {

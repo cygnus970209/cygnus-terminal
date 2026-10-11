@@ -4,6 +4,7 @@ use russh::{ChannelMsg, Disconnect};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::io::Cursor;
+use std::ops::{Deref, DerefMut};
 use std::sync::Arc;
 use std::time::Duration;
 use tauri::ipc::Channel;
@@ -41,7 +42,7 @@ pub struct SshHandler {
     db: Arc<Database>,
     host: String,
     port: u16,
-    app_handle: AppHandle,
+    app_handle: Option<AppHandle>,
     pending_prompts: Arc<Mutex<HashMap<String, oneshot::Sender<bool>>>>,
 }
 
@@ -76,6 +77,10 @@ impl client::Handler for SshHandler {
                     Ok(true)
                 }
                 Ok(HostKeyStatus::Unknown) => {
+                    // Unattended execution may only use previously trusted hosts.
+                    let Some(app_handle) = app_handle else {
+                        return Ok(false);
+                    };
                     // MITM 방지: 처음 보는 호스트는 사용자 확인을 받아야 한다.
                     // 프론트에 prompt 이벤트를 보내고 응답을 oneshot 채널로 기다린다.
                     let prompt_id = uuid::Uuid::new_v4().to_string();
@@ -92,11 +97,10 @@ impl client::Handler for SshHandler {
                     });
                     let _ = app_handle.emit("ssh-host-key-prompt", payload);
 
-                    let accept =
-                        match tokio::time::timeout(HOST_KEY_PROMPT_TIMEOUT, rx).await {
-                            Ok(Ok(v)) => v,
-                            _ => false, // timeout 또는 channel 닫힘 → 거부로 처리 (fail-closed)
-                        };
+                    let accept = match tokio::time::timeout(HOST_KEY_PROMPT_TIMEOUT, rx).await {
+                        Ok(Ok(v)) => v,
+                        _ => false, // timeout 또는 channel 닫힘 → 거부로 처리 (fail-closed)
+                    };
                     // timeout 시에는 tx 가 pending 에 남아 있을 수 있으니 정리.
                     pending.lock().await.remove(&prompt_id);
 
@@ -124,17 +128,19 @@ impl client::Handler for SshHandler {
                         "[SSH] WARNING: Host key CHANGED for {}:{} (was {}, now {})",
                         host, port, stored_key_type, key_type
                     );
-                    let _ = app_handle.emit(
-                        "ssh-host-key-rejected",
-                        serde_json::json!({
-                            "host": host,
-                            "port": port,
-                            "reason": "changed",
-                            "stored_type": stored_key_type,
-                            "new_type": key_type,
-                            "new_fingerprint": fingerprint,
-                        }),
-                    );
+                    if let Some(app_handle) = app_handle {
+                        let _ = app_handle.emit(
+                            "ssh-host-key-rejected",
+                            serde_json::json!({
+                                "host": host,
+                                "port": port,
+                                "reason": "changed",
+                                "stored_type": stored_key_type,
+                                "new_type": key_type,
+                                "new_fingerprint": fingerprint,
+                            }),
+                        );
+                    }
                     Ok(false)
                 }
                 Err(e) => {
@@ -143,15 +149,17 @@ impl client::Handler for SshHandler {
                         "[SSH] Error checking host key for {}:{}: {} (rejecting)",
                         host, port, e
                     );
-                    let _ = app_handle.emit(
-                        "ssh-host-key-rejected",
-                        serde_json::json!({
-                            "host": host,
-                            "port": port,
-                            "reason": "db_error",
-                            "detail": e,
-                        }),
-                    );
+                    if let Some(app_handle) = app_handle {
+                        let _ = app_handle.emit(
+                            "ssh-host-key-rejected",
+                            serde_json::json!({
+                                "host": host,
+                                "port": port,
+                                "reason": "db_error",
+                                "detail": e,
+                            }),
+                        );
+                    }
                     Ok(false)
                 }
             }
@@ -167,9 +175,48 @@ enum SshCommand {
 
 pub struct SshSession {
     cmd_tx: mpsc::Sender<SshCommand>,
-    pub(crate) handle: client::Handle<SshHandler>,
+    pub(crate) handle: ManagedSshHandle,
+    _jump_handle: Option<ManagedSshHandle>,
 }
 
+/// Owns a connection independently of any terminal. Disconnect on every exit path,
+/// including dropped connection/authentication futures and cancelled jobs.
+pub(crate) struct ManagedSshHandle(Option<client::Handle<SshHandler>>);
+
+impl Deref for ManagedSshHandle {
+    type Target = client::Handle<SshHandler>;
+    fn deref(&self) -> &Self::Target {
+        self.0.as_ref().expect("owned SSH handle")
+    }
+}
+
+impl DerefMut for ManagedSshHandle {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        self.0.as_mut().expect("owned SSH handle")
+    }
+}
+
+impl Drop for ManagedSshHandle {
+    fn drop(&mut self) {
+        if let (Some(handle), Ok(runtime)) = (self.0.take(), tokio::runtime::Handle::try_current())
+        {
+            runtime.spawn(async move {
+                let _ = tokio::time::timeout(
+                    Duration::from_secs(2),
+                    handle.disconnect(Disconnect::ByApplication, "Connection released", "en"),
+                )
+                .await;
+            });
+        }
+    }
+}
+
+pub(crate) struct SshConnection {
+    pub handle: ManagedSshHandle,
+    _jump_handle: Option<ManagedSshHandle>,
+}
+
+#[derive(Clone)]
 pub struct SshManager {
     sessions: Arc<Mutex<HashMap<String, SshSession>>>,
     db: Arc<Database>,
@@ -267,25 +314,25 @@ impl SshManager {
         Ok(())
     }
 
+    /// Shared transport/authentication; does not allocate a PTY or terminal event channel.
+    /// Without an app, unknown host keys are rejected (never accepted silently).
     #[allow(clippy::too_many_arguments)]
-    pub async fn connect(
+    pub(crate) async fn connect_transport(
         &self,
-        app: AppHandle,
-        session_id: &str,
+        app: Option<AppHandle>,
         host: &str,
         port: u16,
         username: &str,
         auth_type: &str,
         password: Option<&str>,
         key_path: Option<&str>,
-        jump_host: Option<JumpHostConfig>,
-        agent_forward: bool,
-        channel: Channel<PtyEvent>,
-    ) -> Result<(), String> {
+        jump_host: Option<&JumpHostConfig>,
+    ) -> Result<SshConnection, String> {
         let config = Self::make_config();
 
         // Jump Host 경유 또는 직접 연결
-        let mut handle = if let Some(ref jump) = jump_host {
+        let mut jump_connection = None;
+        let mut handle = if let Some(jump) = jump_host {
             eprintln!("[SSH] Connecting via jump host {}:{}", jump.host, jump.port);
 
             // 1. Jump Host에 연결
@@ -296,10 +343,11 @@ impl SshManager {
                 app_handle: app.clone(),
                 pending_prompts: Arc::clone(&self.pending_prompts),
             };
-            let mut jump_handle =
+            let mut jump_handle = ManagedSshHandle(Some(
                 client::connect(config.clone(), (&*jump.host, jump.port), jump_handler)
                     .await
-                    .map_err(|e| format!("Jump host connection failed: {}", e))?;
+                    .map_err(|e| format!("Jump host connection failed: {}", e))?,
+            ));
 
             // 2. Jump Host 인증
             Self::authenticate(
@@ -312,7 +360,10 @@ impl SshManager {
             .await
             .map_err(|e| format!("Jump host auth failed: {}", e))?;
 
-            eprintln!("[SSH] Jump host authenticated, tunneling to {}:{}", host, port);
+            eprintln!(
+                "[SSH] Jump host authenticated, tunneling to {}:{}",
+                host, port
+            );
 
             // 3. Jump Host를 통해 최종 서버로 터널 생성
             let tunnel_channel = jump_handle
@@ -330,9 +381,12 @@ impl SshManager {
                 app_handle: app.clone(),
                 pending_prompts: Arc::clone(&self.pending_prompts),
             };
-            client::connect_stream(config, stream, target_handler)
-                .await
-                .map_err(|e| format!("Connection through tunnel failed: {}", e))?
+            jump_connection = Some(jump_handle);
+            ManagedSshHandle(Some(
+                client::connect_stream(config, stream, target_handler)
+                    .await
+                    .map_err(|e| format!("Connection through tunnel failed: {}", e))?,
+            ))
         } else {
             eprintln!("[SSH] Connecting to {}:{}", host, port);
             let handler = SshHandler {
@@ -342,13 +396,52 @@ impl SshManager {
                 app_handle: app.clone(),
                 pending_prompts: Arc::clone(&self.pending_prompts),
             };
-            client::connect(config, (host, port), handler)
-                .await
-                .map_err(|e| format!("Connection failed: {}", e))?
+            ManagedSshHandle(Some(
+                client::connect(config, (host, port), handler)
+                    .await
+                    .map_err(|e| format!("Connection failed: {}", e))?,
+            ))
         };
 
         eprintln!("[SSH] Connected, authenticating as {}", username);
         Self::authenticate(&mut handle, username, auth_type, password, key_path).await?;
+
+        Ok(SshConnection {
+            handle,
+            _jump_handle: jump_connection,
+        })
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub async fn connect(
+        &self,
+        app: AppHandle,
+        session_id: &str,
+        host: &str,
+        port: u16,
+        username: &str,
+        auth_type: &str,
+        password: Option<&str>,
+        key_path: Option<&str>,
+        jump_host: Option<JumpHostConfig>,
+        agent_forward: bool,
+        channel: Channel<PtyEvent>,
+    ) -> Result<(), String> {
+        let SshConnection {
+            handle,
+            _jump_handle,
+        } = self
+            .connect_transport(
+                Some(app),
+                host,
+                port,
+                username,
+                auth_type,
+                password,
+                key_path,
+                jump_host.as_ref(),
+            )
+            .await?;
 
         eprintln!("[SSH] Authenticated, opening channel");
 
@@ -424,7 +517,11 @@ impl SshManager {
             }
         });
 
-        let session = SshSession { cmd_tx, handle };
+        let session = SshSession {
+            cmd_tx,
+            handle,
+            _jump_handle,
+        };
 
         self.sessions
             .lock()

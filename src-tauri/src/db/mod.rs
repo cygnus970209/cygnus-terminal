@@ -1,5 +1,6 @@
 pub mod command_bookmark;
 pub mod export;
+pub mod execution;
 pub mod history;
 pub mod known_host;
 pub mod migration;

@@ -131,6 +131,6 @@ bun run tauri build
 
 Report bugs and suggest features through [Issues](https://github.com/cygnus970209/cygnus-terminal/issues).
 
-Developer notes (Korean): [input investigation and remaining issues](docs/investigations/terminal-input-2026-09-18/README.md) · [window restoration and reproduction](docs/investigations/terminal-resize-2026-09-22/README.md). Also see [screenshot fixtures](docs/media/README.md).
+Developer notes (Korean): [shared SSH execution API](docs/guides/execution-engine.md) · [input investigation and remaining issues](docs/investigations/terminal-input-2026-09-18/README.md) · [window restoration and reproduction](docs/investigations/terminal-resize-2026-09-22/README.md). Also see [screenshot fixtures](docs/media/README.md).
 
 [MIT License](LICENSE)
