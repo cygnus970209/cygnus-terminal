@@ -3,7 +3,7 @@ use aes_gcm::{
     Aes256Gcm, Nonce,
 };
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use zeroize::Zeroizing;
 
 const KEYRING_SERVICE: &str = crate::app_identity::APP_ID;
@@ -13,9 +13,10 @@ const KEY_SIZE: usize = 32;
 
 /// Load the OS key only after explicit UI authorization for a secret operation. Cached key material
 /// is zeroized on drop; failed/denied keychain access is not cached and can be retried.
+#[derive(Clone)]
 pub struct CryptoManager {
-    master_key: Mutex<Option<Zeroizing<[u8; KEY_SIZE]>>>,
-    key_loader: Box<dyn Fn() -> Result<[u8; KEY_SIZE], String> + Send + Sync>,
+    master_key: Arc<Mutex<Option<Zeroizing<[u8; KEY_SIZE]>>>>,
+    key_loader: Arc<dyn Fn() -> Result<[u8; KEY_SIZE], String> + Send + Sync>,
 }
 
 impl CryptoManager {
@@ -25,8 +26,8 @@ impl CryptoManager {
 
     pub fn with_existing_credentials(requires_existing_key: bool) -> Self {
         Self {
-            master_key: Mutex::new(None),
-            key_loader: Box::new(move || Self::load_or_create_master_key(requires_existing_key)),
+            master_key: Arc::new(Mutex::new(None)),
+            key_loader: Arc::new(move || Self::load_or_create_master_key(requires_existing_key)),
         }
     }
 
@@ -40,6 +41,10 @@ impl CryptoManager {
             *key = Some(Zeroizing::new((self.key_loader)()?));
         }
         Ok(())
+    }
+
+    pub fn require_unlocked(&self) -> Result<(), String> {
+        self.cipher().map(|_| ())
     }
 
     fn cipher(&self) -> Result<Aes256Gcm, String> {
@@ -96,8 +101,8 @@ impl CryptoManager {
     pub fn new_random() -> Self {
         let key: [u8; KEY_SIZE] = rand::random();
         Self {
-            master_key: Mutex::new(Some(Zeroizing::new(key))),
-            key_loader: Box::new(|| Self::load_or_create_master_key(false)),
+            master_key: Arc::new(Mutex::new(Some(Zeroizing::new(key)))),
+            key_loader: Arc::new(|| Self::load_or_create_master_key(false)),
         }
     }
 
@@ -176,8 +181,8 @@ mod tests {
 
     fn counted_loader(calls: Arc<AtomicUsize>, deny_first: bool) -> CryptoManager {
         CryptoManager {
-            master_key: Mutex::new(None),
-            key_loader: Box::new(move || {
+            master_key: Arc::new(Mutex::new(None)),
+            key_loader: Arc::new(move || {
                 let attempt = calls.fetch_add(1, Ordering::SeqCst);
                 if deny_first && attempt == 0 {
                     Err("Keychain access denied".into())
@@ -186,6 +191,24 @@ mod tests {
                 }
             }),
         }
+    }
+    #[test]
+    fn clones_share_explicit_keychain_authorization_without_loading_on_clone() {
+        let calls = Arc::new(AtomicUsize::new(0));
+        let crypto = counted_loader(calls.clone(), false);
+        let adapter = crypto.clone();
+        assert_eq!(
+            adapter.require_unlocked().unwrap_err(),
+            "KEYCHAIN_CONSENT_REQUIRED"
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 0);
+        crypto.authorize_keychain_access().unwrap();
+        adapter.require_unlocked().unwrap();
+        assert_eq!(
+            adapter.decrypt(&crypto.encrypt("test").unwrap()).unwrap(),
+            "test"
+        );
+        assert_eq!(calls.load(Ordering::SeqCst), 1);
     }
     #[test]
     fn keychain_is_lazy_cached_and_retryable_after_denial() {
@@ -272,8 +295,8 @@ mod migration_tests {
         )
         .unwrap();
         let crypto = CryptoManager {
-            master_key: Mutex::new(Some(Zeroizing::new(migrated))),
-            key_loader: Box::new(|| panic!("No keychain load expected")),
+            master_key: Arc::new(Mutex::new(Some(Zeroizing::new(migrated)))),
+            key_loader: Arc::new(|| panic!("No keychain load expected")),
         };
         assert_eq!(crypto.decrypt(&encrypted).unwrap(), "existing-vault-value");
         assert_eq!(

@@ -28,6 +28,18 @@ impl Database {
         serde_json::from_str(&record).map_err(|e| format!("Invalid execution job record: {e}"))
     }
 
+    pub(crate) fn get_execution_summary(&self, id: &str) -> Result<ExecutionSummary, String> {
+        let summary: String = self
+            .conn()
+            .query_row(
+                "SELECT summary FROM execution_jobs WHERE id=?1",
+                [id],
+                |row| row.get(0),
+            )
+            .map_err(|e| format!("Execution job not found or unreadable: {e}"))?;
+        serde_json::from_str(&summary).map_err(|e| format!("Invalid execution summary: {e}"))
+    }
+
     pub(crate) fn list_execution_jobs(
         &self,
         limit: u32,

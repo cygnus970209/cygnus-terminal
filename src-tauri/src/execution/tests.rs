@@ -114,12 +114,12 @@ impl server::Handler for TestServer {
     }
 }
 
-struct Fixture {
-    db: Arc<Database>,
-    crypto: CryptoManager,
-    manager: ExecutionManager,
-    ssh: SshManager,
-    profile_id: i64,
+pub(crate) struct Fixture {
+    pub(crate) db: Arc<Database>,
+    pub(crate) crypto: CryptoManager,
+    pub(crate) manager: ExecutionManager,
+    pub(crate) ssh: SshManager,
+    pub(crate) profile_id: i64,
     server: JoinHandle<()>,
 }
 
@@ -130,7 +130,7 @@ impl Drop for Fixture {
 }
 
 impl Fixture {
-    async fn new(trusted: bool) -> Self {
+    pub(crate) async fn new(trusted: bool) -> Self {
         let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let key =
@@ -212,14 +212,14 @@ impl Fixture {
         }
     }
 
-    async fn start(&self, command: &str) -> String {
+    pub(crate) async fn start(&self, command: &str) -> String {
         self.manager
             .start(self.request(command), &self.crypto, self.ssh.clone())
             .await
             .unwrap()
     }
 
-    async fn finished(&self, id: &str) -> ExecutionJob {
+    pub(crate) async fn finished(&self, id: &str) -> ExecutionJob {
         tokio::time::timeout(Duration::from_secs(8), async {
             loop {
                 let job = self.manager.get(id).await.unwrap();
@@ -233,7 +233,7 @@ impl Fixture {
         .expect("job should finish")
     }
 
-    async fn has_output(&self, id: &str) {
+    pub(crate) async fn has_output(&self, id: &str) {
         tokio::time::timeout(Duration::from_secs(5), async {
             while self.manager.get(id).await.unwrap().stdout.is_empty() {
                 tokio::time::sleep(Duration::from_millis(10)).await;
@@ -521,6 +521,114 @@ async fn timeout_covers_a_server_that_never_sends_an_ssh_greeting() {
     assert!(!job.summary.remote_outcome_unknown);
 }
 
+async fn stalled_key_exchange_closes_transport(via_jump: bool, cancel: bool) {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    let f = Fixture::new(true).await;
+    let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let jump = if via_jump {
+        let profile = f.db.get_profile(f.profile_id, &f.crypto).unwrap();
+        let config = serde_json::json!({
+            "host": profile.host, "port": profile.port, "username": profile.username,
+            "auth_type": "password", "password": "test-only-secret", "key_path": null,
+        });
+        Some(f.crypto.encrypt(&config.to_string()).unwrap())
+    } else {
+        None
+    };
+    f.db.conn()
+        .execute(
+            "UPDATE profiles SET port=?1,jump_host=?2",
+            rusqlite::params![port, jump],
+        )
+        .unwrap();
+    let mut req = f.request("must not execute");
+    req.timeout_seconds = Some(if cancel { 5 } else { 1 });
+    let id = f
+        .manager
+        .start(req, &f.crypto, f.ssh.clone())
+        .await
+        .unwrap();
+
+    let (mut socket, _) = tokio::time::timeout(Duration::from_secs(2), listener.accept())
+        .await
+        .unwrap()
+        .unwrap();
+    tokio::time::timeout(Duration::from_secs(2), async {
+        let mut banner = Vec::new();
+        loop {
+            let byte = socket.read_u8().await.unwrap();
+            banner.push(byte);
+            assert!(banner.len() <= 1024);
+            if byte == b'\n' {
+                break;
+            }
+        }
+        socket
+            .write_all(b"SSH-2.0-stalled_kex_fixture\r\n")
+            .await
+            .unwrap();
+        let packet_len = socket.read_u32().await.unwrap() as usize;
+        assert!((2..=65536).contains(&packet_len));
+        let mut packet = vec![0; packet_len];
+        socket.read_exact(&mut packet).await.unwrap();
+        assert_eq!(
+            packet[1], 20,
+            "wait for SSH_MSG_KEXINIT, after russh spawns its session"
+        );
+    })
+    .await
+    .unwrap();
+    if cancel {
+        f.manager.cancel(&id).await.unwrap();
+    }
+    let job = f.finished(&id).await;
+    assert_eq!(
+        job.summary.status,
+        if cancel {
+            ExecutionStatus::Cancelled
+        } else {
+            ExecutionStatus::TimedOut
+        }
+    );
+    assert!(!job.summary.remote_outcome_unknown);
+    assert!(job.stdout.is_empty());
+    let mut remaining = Vec::new();
+    let closed = tokio::time::timeout(Duration::from_secs(2), socket.read_to_end(&mut remaining))
+        .await
+        .expect("terminal job must close the stalled handshake transport");
+    if let Err(error) = closed {
+        assert!(
+            matches!(
+                error.kind(),
+                std::io::ErrorKind::ConnectionReset | std::io::ErrorKind::ConnectionAborted
+            ),
+            "{error}"
+        );
+    }
+}
+
+#[tokio::test]
+async fn timeout_during_key_exchange_closes_transport() {
+    stalled_key_exchange_closes_transport(false, false).await;
+}
+
+#[tokio::test]
+async fn cancellation_during_key_exchange_closes_transport() {
+    stalled_key_exchange_closes_transport(false, true).await;
+}
+
+#[tokio::test]
+async fn timeout_during_jump_target_key_exchange_closes_transport() {
+    stalled_key_exchange_closes_transport(true, false).await;
+}
+
+#[tokio::test]
+async fn cancellation_during_jump_target_key_exchange_closes_transport() {
+    stalled_key_exchange_closes_transport(true, true).await;
+}
+
 #[tokio::test]
 async fn record_write_failure_prevents_dispatch_and_keeps_the_result_queryable() {
     let f = Fixture::new(true).await;
@@ -586,4 +694,23 @@ async fn stdout_and_stderr_share_the_output_budget() {
     assert_eq!(job.stderr, "di");
     assert!(job.summary.output_truncated);
     assert_eq!(job.summary.status, ExecutionStatus::Succeeded);
+}
+
+#[tokio::test]
+async fn summary_queries_and_completed_cancellation_do_not_load_output_records() {
+    let f = Fixture::new(true).await;
+    let id = f.start("success").await;
+    f.finished(&id).await;
+    // The large output document need not be read to list or cancel a completed job.
+    f.db.conn()
+        .execute(
+            "UPDATE execution_jobs SET record='unreadable output' WHERE id=?1",
+            [&id],
+        )
+        .unwrap();
+    assert_eq!(
+        f.manager.get_summary(&id).await.unwrap().status,
+        ExecutionStatus::Succeeded
+    );
+    f.manager.cancel(&id).await.unwrap();
 }

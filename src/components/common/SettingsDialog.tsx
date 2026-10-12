@@ -4,6 +4,7 @@ import TerminalTab from "./settings/TerminalTab";
 import VaultPromptsTab from "./settings/VaultPromptsTab";
 import DataTab from "./settings/DataTab";
 import ShortcutsTab from "./settings/ShortcutsTab";
+import McpTab from "./settings/McpTab";
 import AboutTab from "./settings/AboutTab";
 import "./SettingsDialog.css";
 
@@ -22,6 +23,7 @@ const TABS: TabDef[] = [
   { id: "theme", label: "Theme", render: () => <ThemeTab /> },
   { id: "terminal", label: "Terminal", render: () => <TerminalTab /> },
   { id: "autofill", label: "Autofill", render: () => <VaultPromptsTab /> },
+  { id: "mcp", label: "MCP", render: () => <McpTab /> },
   { id: "data", label: "Data", render: () => <DataTab /> },
   { id: "shortcuts", label: "Shortcuts", render: () => <ShortcutsTab /> },
   { id: "about", label: "About", render: () => <AboutTab /> },

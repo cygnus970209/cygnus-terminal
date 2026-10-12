@@ -276,6 +276,14 @@ impl ExecutionManager {
         Ok(jobs)
     }
 
+    pub async fn get_summary(&self, id: &str) -> Result<ExecutionSummary, String> {
+        let active = self.active.lock().await;
+        if let Some(job) = active.get(id) {
+            return Ok(job.state.lock().await.summary.clone());
+        }
+        self.db.get_execution_summary(id)
+    }
+
     pub async fn cancel(&self, id: &str) -> Result<(), String> {
         let active = self.active.lock().await;
         if let Some(job) = active.get(id) {
@@ -287,7 +295,7 @@ impl ExecutionManager {
             return Ok(());
         }
         // Cancellation of an already completed job is an idempotent no-op.
-        self.db.get_execution_job(id).map(|_| ())
+        self.db.get_execution_summary(id).map(|_| ())
     }
 
     async fn run(
@@ -428,4 +436,4 @@ impl ExecutionManager {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

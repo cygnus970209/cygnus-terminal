@@ -15,3 +15,6 @@ pub use migration::*;
 
 mod execution;
 pub use execution::*;
+
+mod mcp;
+pub use mcp::*;

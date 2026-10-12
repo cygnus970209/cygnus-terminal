@@ -1,9 +1,11 @@
 mod app_identity;
+mod cancellable_io;
 mod commands;
 mod migration;
 pub mod crypto;
 pub mod db;
 pub mod execution;
+pub mod mcp;
 pub mod forward;
 pub mod monitor;
 mod pty;
@@ -150,10 +152,15 @@ pub fn run() {
                     .map_err(std::io::Error::other)?,
             );
             let ssh_manager = SshManager::new(Arc::clone(&database));
-            app.manage(
-                execution::ExecutionManager::new(Arc::clone(&database))
-                    .map_err(std::io::Error::other)?,
-            );
+            let execution = execution::ExecutionManager::new(Arc::clone(&database))
+                .map_err(std::io::Error::other)?;
+            app.manage(mcp::McpManager::new(
+                Arc::clone(&database),
+                crypto.clone(),
+                execution.clone(),
+                ssh_manager.clone(),
+            ));
+            app.manage(execution);
             app.manage(database);
             app.manage(crypto);
             app.manage(ssh_manager);
@@ -169,6 +176,10 @@ pub fn run() {
         })
         .manage(PtyManager::new())
         .invoke_handler(tauri::generate_handler![
+            commands::mcp_start,
+            commands::mcp_status,
+            commands::mcp_stop,
+            commands::mcp_require_credentials,
             commands::execution_start,
             commands::execution_get,
             commands::execution_list,

@@ -15,6 +15,7 @@ export interface Profile {
   sort_order: number;
   jump_host?: string;
   agent_forward?: boolean;
+  environment?: "development" | "staging" | "production";
   created_at: string;
   updated_at: string;
 }

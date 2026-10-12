@@ -9,10 +9,13 @@ use std::sync::Arc;
 use std::time::Duration;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter};
+use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio_util::sync::{CancellationToken, DropGuard};
 
 use serde::Deserialize;
 
+use crate::cancellable_io::CancellableIo;
 use crate::db::known_host::HostKeyStatus;
 use crate::db::Database;
 use crate::pty::PtyEvent;
@@ -181,31 +184,70 @@ pub struct SshSession {
 
 /// Owns a connection independently of any terminal. Disconnect on every exit path,
 /// including dropped connection/authentication futures and cancelled jobs.
-pub(crate) struct ManagedSshHandle(Option<client::Handle<SshHandler>>);
+pub(crate) struct ManagedSshHandle {
+    handle: Option<client::Handle<SshHandler>>,
+    transport: Option<DropGuard>,
+}
+
+impl ManagedSshHandle {
+    async fn connect_tcp(
+        config: Arc<client::Config>,
+        address: (&str, u16),
+        handler: SshHandler,
+    ) -> Result<Self, russh::Error> {
+        let stream = tokio::net::TcpStream::connect(address).await?;
+        if config.nodelay {
+            stream.set_nodelay(true)?;
+        }
+        Self::connect_stream(config, stream, handler).await
+    }
+
+    async fn connect_stream<T: AsyncRead + AsyncWrite + Unpin + Send + 'static>(
+        config: Arc<client::Config>,
+        stream: T,
+        handler: SshHandler,
+    ) -> Result<Self, russh::Error> {
+        let cancellation = CancellationToken::new();
+        // russh spawns its session before initial key exchange finishes. Own
+        // cancellation BEFORE awaiting it, then transfer that ownership to the handle.
+        let transport = cancellation.clone().drop_guard();
+        let handle =
+            client::connect_stream(config, CancellableIo::new(stream, cancellation), handler)
+                .await?;
+        Ok(Self {
+            handle: Some(handle),
+            transport: Some(transport),
+        })
+    }
+}
 
 impl Deref for ManagedSshHandle {
     type Target = client::Handle<SshHandler>;
     fn deref(&self) -> &Self::Target {
-        self.0.as_ref().expect("owned SSH handle")
+        self.handle.as_ref().expect("owned SSH handle")
     }
 }
 
 impl DerefMut for ManagedSshHandle {
     fn deref_mut(&mut self) -> &mut Self::Target {
-        self.0.as_mut().expect("owned SSH handle")
+        self.handle.as_mut().expect("owned SSH handle")
     }
 }
 
 impl Drop for ManagedSshHandle {
     fn drop(&mut self) {
-        if let (Some(handle), Ok(runtime)) = (self.0.take(), tokio::runtime::Handle::try_current())
+        if let (Some(handle), Ok(runtime)) =
+            (self.handle.take(), tokio::runtime::Handle::try_current())
         {
+            let transport = self.transport.take();
             runtime.spawn(async move {
                 let _ = tokio::time::timeout(
                     Duration::from_secs(2),
                     handle.disconnect(Disconnect::ByApplication, "Connection released", "en"),
                 )
                 .await;
+                // Also closes a transport stuck in rekeying or a blocked write.
+                drop(transport);
             });
         }
     }
@@ -343,11 +385,13 @@ impl SshManager {
                 app_handle: app.clone(),
                 pending_prompts: Arc::clone(&self.pending_prompts),
             };
-            let mut jump_handle = ManagedSshHandle(Some(
-                client::connect(config.clone(), (&*jump.host, jump.port), jump_handler)
-                    .await
-                    .map_err(|e| format!("Jump host connection failed: {}", e))?,
-            ));
+            let mut jump_handle = ManagedSshHandle::connect_tcp(
+                config.clone(),
+                (&*jump.host, jump.port),
+                jump_handler,
+            )
+            .await
+            .map_err(|e| format!("Jump host connection failed: {}", e))?;
 
             // 2. Jump Host 인증
             Self::authenticate(
@@ -382,11 +426,9 @@ impl SshManager {
                 pending_prompts: Arc::clone(&self.pending_prompts),
             };
             jump_connection = Some(jump_handle);
-            ManagedSshHandle(Some(
-                client::connect_stream(config, stream, target_handler)
-                    .await
-                    .map_err(|e| format!("Connection through tunnel failed: {}", e))?,
-            ))
+            ManagedSshHandle::connect_stream(config, stream, target_handler)
+                .await
+                .map_err(|e| format!("Connection through tunnel failed: {}", e))?
         } else {
             eprintln!("[SSH] Connecting to {}:{}", host, port);
             let handler = SshHandler {
@@ -396,11 +438,9 @@ impl SshManager {
                 app_handle: app.clone(),
                 pending_prompts: Arc::clone(&self.pending_prompts),
             };
-            ManagedSshHandle(Some(
-                client::connect(config, (host, port), handler)
-                    .await
-                    .map_err(|e| format!("Connection failed: {}", e))?,
-            ))
+            ManagedSshHandle::connect_tcp(config, (host, port), handler)
+                .await
+                .map_err(|e| format!("Connection failed: {}", e))?
         };
 
         eprintln!("[SSH] Connected, authenticating as {}", username);

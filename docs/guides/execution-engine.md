@@ -1,7 +1,8 @@
 # SSH 공용 실행 기반
 
 MCP와 멀티 서버 관리에서 함께 사용할 단일 서버 작업 API다. 현재는 Rust 서비스와
-Tauri IPC, TypeScript 호출 함수를 제공하며 실행 화면이나 MCP 엔드포인트는 포함하지 않는다.
+Tauri IPC, TypeScript 호출 함수를 제공한다. 외부 AI 도구용 어댑터는
+[Cygnus MCP](mcp.md)에서 이 API를 사용한다. 별도의 실행 관리 화면은 아직 없다.
 
 ## 호출하기
 

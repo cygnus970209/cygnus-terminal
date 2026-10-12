@@ -85,6 +85,13 @@ Monitoring and log viewing use separate SSH channels. Check server resources and
 
 Terminal typing, pasted text, and saved-command execution **convert non-breaking spaces (U+00A0) to regular spaces**. This prevents commands such as `sudo su` from being read as a single command name. The conversion also applies inside quoted text.
 
+## Connect AI clients through MCP
+
+Settings → MCP lets you share selected SSH profiles with a local MCP server.
+AI clients can list servers and, when command execution is enabled, submit jobs,
+inspect results, and request cancellation. Connections require a bearer token;
+MCP is disabled again when the app restarts. See the [setup and tool reference (Korean)](docs/guides/mcp.md).
+
 ## Install
 
 Download an installer from the [latest release](https://github.com/cygnus970209/cygnus-terminal/releases/latest).
