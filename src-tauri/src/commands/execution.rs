@@ -18,7 +18,27 @@ pub async fn execution_get(
     job_id: String,
     execution: State<'_, ExecutionManager>,
 ) -> Result<ExecutionJob, String> {
-    execution.get(&job_id).await
+    execution.get(&job_id).await.map_err(Into::into)
+}
+
+#[tauri::command]
+pub fn execution_history_settings(
+    execution: State<'_, ExecutionManager>,
+) -> Result<crate::execution::history::HistorySettings, String> {
+    execution.history_settings()
+}
+
+#[tauri::command]
+pub async fn execution_history_update(
+    settings: crate::execution::history::HistorySettings,
+    execution: State<'_, ExecutionManager>,
+) -> Result<(), String> {
+    execution.set_history_settings(settings).await
+}
+
+#[tauri::command]
+pub async fn execution_history_clear(execution: State<'_, ExecutionManager>) -> Result<(), String> {
+    execution.clear_history().await
 }
 
 #[tauri::command]

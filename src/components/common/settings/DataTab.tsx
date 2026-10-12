@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save, open } from "@tauri-apps/plugin-dialog";
+import ExecutionHistorySettings from "./ExecutionHistorySettings";
 
 export default function DataTab() {
   const [status, setStatus] = useState<string | null>(null);
@@ -59,6 +60,7 @@ export default function DataTab() {
         </button>
       </div>
       {status && <div className="settings-status">{status}</div>}
+      <ExecutionHistorySettings />
     </div>
   );
 }

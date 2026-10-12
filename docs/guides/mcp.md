@@ -32,6 +32,46 @@ MCP는 기본적으로 꺼져 있으며 **Settings → MCP**에서 직접 켠다
 이 버전은 로컬 클라이언트의 HTTP 연결을 지원한다. stdio 전용 클라이언트, 브라우저에서
 직접 호출하는 클라이언트, 클라우드에서 사용자의 컴퓨터로 연결하는 중계 서비스는 포함하지 않는다.
 
+## 클라이언트별 빠른 등록
+
+Settings → MCP 하단의 **Connect an AI client**에서 Codex CLI, Claude Code,
+Cursor, Kiro IDE를 선택한다. MCP를 시작하면 현재 URL과 토큰을 반영한 내용을 복사할 수 있다.
+Windows는 PowerShell, macOS는 zsh/bash 문법과 사용자 설정 경로를 자동으로 표시한다.
+화면의 `<BEARER_TOKEN>`은 미리보기용이며 복사 버튼은 실제 토큰을 넣는다.
+
+Codex CLI와 Claude Code는 설치된 CLI가 필요하다. 복사한 두 줄을 **이 컴퓨터의 터미널**에
+실행한 뒤 같은 터미널에서 `codex` 또는 `claude`를 시작한다. 첫 줄은 현재 셸의
+`CYGNUS_MCP_TOKEN`을 설정하고, 두 번째 줄은 사용자 범위에 `cygnus` 서버를 등록한다.
+설정 파일에는 토큰 자체 대신 환경변수 참조를 저장한다. 새 터미널에서는 토큰을 다시
+설정해야 한다. 등록 명령어를 붙여넣으면 셸 히스토리에는 토큰이 남을 수 있다.
+
+Codex는 `--bearer-token-env-var CYGNUS_MCP_TOKEN`, Claude Code는
+`--transport http --scope user`와 리터럴 `Authorization: Bearer ${CYGNUS_MCP_TOKEN}`
+헤더를 사용한다. 이미 등록한 `cygnus`를 교체해야 하면 화면에 나온 remove 명령으로
+해당 항목을 지운 뒤 다시 등록한다.
+[OpenAI 구성 문서](https://learn.chatgpt.com/docs/config-file/config-reference)와
+[Claude Code MCP 문서](https://code.claude.com/docs/en/mcp)를 기준으로 하며,
+로컬 Codex CLI 0.160.1·Claude Code 2.1.294의 CLI 도움말에서도 옵션을 확인했다.
+
+Cursor와 Kiro IDE는 아래 사용자 설정 파일의 `mcpServers`에 `cygnus` 항목을 병합한다.
+이미 있는 다른 서버 항목을 덮어쓰지 않는다.
+
+| 클라이언트 | macOS | Windows |
+| --- | --- | --- |
+| Cursor | `~/.cursor/mcp.json` | `%USERPROFILE%\.cursor\mcp.json` |
+| Kiro IDE | `~/.kiro/settings/mcp.json` | `%USERPROFILE%\.kiro\settings\mcp.json` |
+
+Kiro는 명령 팔레트의 **Kiro: Open user MCP config (JSON)**으로도 열 수 있다.
+복사한 JSON은 URL과 Authorization 헤더의 실제 토큰을 포함하므로 개인 설정에만 저장하고
+공유 저장소에 넣지 않는다. Kiro의 `autoApprove`는 빈 배열로 유지한다.
+[Cursor 설정 문서](https://cursor.com/docs/mcp) ·
+[Kiro 설정 문서](https://kiro.dev/docs/mcp/configuration/)
+
+MCP를 중지하고 다시 시작하면 토큰이 바뀌며, 포트 0을 사용하면 URL도 바뀔 수 있다.
+새 명령어 또는 JSON을 복사해 갱신하고 클라이언트를 다시 연결한다.
+이 안내는 같은 컴퓨터에서 실행하는 클라이언트용이다. 원격 개발 환경·컨테이너·WSL 등은
+`127.0.0.1`이 Cygnus를 실행한 컴퓨터를 가리키는지 별도로 확인해야 한다.
+
 ## 제공 도구
 
 | 도구 | 인자 | 동작 |
@@ -74,7 +114,11 @@ cygnus_get_job({"job_id": "..."})
   실제 원격 프로세스 종료는 보장하지 않는다. `remote_outcome_unknown`이 참인 결과나
   응답을 받지 못한 실행 요청은 자동 재시도하지 않는다.
 - MCP 연결이 일시적으로 끊겨도 제출된 작업은 계속된다. Cygnus 앱 자체가 종료되면
-  결과 관리도 중단되고 다음 실행에서 미완료 기록을 `interrupted`로 복구한다.
+  결과 관리도 중단된다. 저장을 켠 경우에만 다음 실행에서 미완료 기록을 `interrupted`로 복구한다.
+- Settings → Data → Execution history에서 작업 기록 저장·보관 기간·삭제를 관리한다.
+  새 설치는 디스크 저장 꺼짐이며, 저장하지 않은 완료 결과는 최대 15분·32개·64 MiB의
+  메모리 캐시에서만 조회할 수 있다. 결과가 만료·삭제되면 목록에서 빠지고 개별 조회는
+  오류를 반환한다. 결과 없음은 원격 실행 실패나 미실행을 뜻하지 않는다.
 - HTTP 요청 본문은 최대 128 KiB, 동시 요청은 32개, 활성화당 작업은 최대 1000개다.
   실행 엔진의 동시 작업 한도 16개와 출력·시간 제한도 함께 적용된다.
 

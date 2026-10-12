@@ -14,6 +14,8 @@ use crate::crypto::CryptoManager;
 use crate::db::profile::Profile;
 use crate::db::Database;
 use crate::ssh::{JumpHostConfig, SshManager};
+pub mod history;
+use history::{HistorySettings, LookupError, ResultCache};
 
 const MAX_ACTIVE_JOBS: usize = 16;
 const DEFAULT_OUTPUT_LIMIT: usize = 1024 * 1024;
@@ -107,12 +109,20 @@ pub struct ExecutionJob {
 }
 
 struct JobState {
+    persist_history: bool,
     summary: ExecutionSummary,
     stdout: Vec<u8>,
     stderr: Vec<u8>,
 }
 
 impl JobState {
+    fn persist(&self, db: &Database) -> Result<bool, String> {
+        if self.persist_history {
+            db.save_execution_job(&self.snapshot())
+        } else {
+            Ok(false)
+        }
+    }
     fn snapshot(&self) -> ExecutionJob {
         // Decode the accumulated bytes, not individual SSH packets: UTF-8 may span packets.
         ExecutionJob {
@@ -188,15 +198,18 @@ impl Drop for Target {
 pub struct ExecutionManager {
     db: Arc<Database>,
     active: Arc<Mutex<HashMap<String, ActiveJob>>>,
+    completed: Arc<Mutex<ResultCache>>,
 }
 
 impl ExecutionManager {
     /// Called once at application startup. Never automatically replay interrupted commands.
     pub fn new(db: Arc<Database>) -> Result<Self, String> {
         db.recover_execution_jobs()?;
+        db.prune_execution_history()?;
         Ok(Self {
             db,
             active: Arc::new(Mutex::new(HashMap::new())),
+            completed: Arc::new(Mutex::new(ResultCache::default())),
         })
     }
 
@@ -215,6 +228,7 @@ impl ExecutionManager {
         }
         let id = uuid::Uuid::new_v4().to_string();
         let state = Arc::new(Mutex::new(JobState {
+            persist_history: self.db.execution_history_settings()?.enabled,
             summary: ExecutionSummary {
                 id: id.clone(),
                 profile_id: req.profile_id,
@@ -240,7 +254,7 @@ impl ExecutionManager {
             stdout: Vec::new(),
             stderr: Vec::new(),
         }));
-        self.db.save_execution_job(&state.lock().await.snapshot())?;
+        state.lock().await.persist(&self.db)?;
         let (cancel, receiver) = watch::channel(false);
         active.insert(
             id.clone(),
@@ -256,30 +270,56 @@ impl ExecutionManager {
         Ok(id)
     }
 
-    pub async fn get(&self, id: &str) -> Result<ExecutionJob, String> {
+    pub async fn get(&self, id: &str) -> Result<ExecutionJob, LookupError> {
         let active = self.active.lock().await;
         if let Some(job) = active.get(id) {
             return Ok(job.state.lock().await.snapshot());
         }
+        let mut completed = self.completed.lock().await;
+        completed.prune();
+        if let Some(entry) = completed.jobs.get(id) {
+            return Ok(entry.job.clone());
+        }
         self.db.get_execution_job(id)
     }
 
-    /// Recent jobs, without output bodies. Active jobs retain their persisted ordering.
+    /// Merge live and retained results before pagination, without loading disk output.
     pub async fn list(&self, limit: u32, offset: u32) -> Result<Vec<ExecutionSummary>, String> {
         let active = self.active.lock().await;
-        let mut jobs = self.db.list_execution_jobs(limit.clamp(1, 100), offset)?;
-        for summary in &mut jobs {
-            if let Some(job) = active.get(&summary.id) {
-                *summary = job.state.lock().await.summary.clone();
-            }
+        let mut completed = self.completed.lock().await;
+        completed.prune();
+        let mut jobs: Vec<_> = completed
+            .jobs
+            .values()
+            .map(|entry| entry.job.summary.clone())
+            .collect();
+        for job in active.values() {
+            jobs.push(job.state.lock().await.summary.clone());
         }
-        Ok(jobs)
+        let ids: Vec<_> = jobs.iter().map(|job| job.id.clone()).collect();
+        let limit = limit.clamp(1, 100);
+        let disk_offset = offset.saturating_sub(ids.len() as u32);
+        jobs.extend(
+            self.db
+                .list_execution_jobs(limit + ids.len() as u32, disk_offset, &ids)?,
+        );
+        jobs.sort_by(|a, b| b.started_at.cmp(&a.started_at).then(b.id.cmp(&a.id)));
+        Ok(jobs
+            .into_iter()
+            .skip((offset - disk_offset) as usize)
+            .take(limit as usize)
+            .collect())
     }
 
-    pub async fn get_summary(&self, id: &str) -> Result<ExecutionSummary, String> {
+    pub async fn get_summary(&self, id: &str) -> Result<ExecutionSummary, LookupError> {
         let active = self.active.lock().await;
         if let Some(job) = active.get(id) {
             return Ok(job.state.lock().await.summary.clone());
+        }
+        let mut completed = self.completed.lock().await;
+        completed.prune();
+        if let Some(entry) = completed.jobs.get(id) {
+            return Ok(entry.job.summary.clone());
         }
         self.db.get_execution_summary(id)
     }
@@ -295,7 +335,57 @@ impl ExecutionManager {
             return Ok(());
         }
         // Cancellation of an already completed job is an idempotent no-op.
-        self.db.get_execution_summary(id).map(|_| ())
+        let mut completed = self.completed.lock().await;
+        completed.prune();
+        if completed.jobs.contains_key(id) {
+            return Ok(());
+        }
+        self.db
+            .get_execution_summary(id)
+            .map(|_| ())
+            .map_err(Into::into)
+    }
+
+    pub fn history_settings(&self) -> Result<HistorySettings, String> {
+        self.db.execution_history_settings()
+    }
+
+    pub async fn set_history_settings(&self, settings: HistorySettings) -> Result<(), String> {
+        settings.validate()?;
+        let mut active = self.active.lock().await;
+        if !settings.enabled {
+            Self::forget_recording(&mut active).await;
+            self.completed.lock().await.jobs.clear();
+        }
+        self.db.set_execution_history_settings(settings)
+    }
+
+    pub async fn clear_history(&self) -> Result<(), String> {
+        let mut active = self.active.lock().await;
+        Self::forget_recording(&mut active).await;
+        self.completed.lock().await.jobs.clear();
+        self.db.clear_execution_history()
+    }
+
+    async fn forget_recording(active: &mut HashMap<String, ActiveJob>) {
+        let mut finished = Vec::new();
+        for (id, job) in active.iter() {
+            let mut state = job.state.lock().await;
+            state.persist_history = false;
+            if state.summary.status.is_terminal() {
+                finished.push(id.clone());
+            }
+        }
+        for id in finished {
+            active.remove(&id);
+        }
+    }
+
+    /// Invoked every minute while the app runs; reads also hide expired records.
+    pub async fn maintain_history(&self) -> Result<(), String> {
+        let _active = self.active.lock().await;
+        self.completed.lock().await.prune();
+        self.db.prune_execution_history()
     }
 
     async fn run(
@@ -342,9 +432,9 @@ impl ExecutionManager {
                     return Err("Execution cancelled before dispatch".to_string());
                 }
                 state.summary.status = ExecutionStatus::Running;
-                // Persist uncertainty BEFORE sending exec, including the crash window.
+                // If history is enabled, persist uncertainty BEFORE sending exec.
                 state.summary.remote_outcome_unknown = true;
-                if let Err(error) = self.db.save_execution_job(&state.snapshot()) {
+                if let Err(error) = state.persist(&self.db) {
                     state.summary.remote_outcome_unknown = false;
                     return Err(error);
                 }
@@ -415,21 +505,23 @@ impl ExecutionManager {
             .await;
         }
         drop(connection);
-        let snapshot = {
-            let mut state = state.lock().await;
-            state.summary.status = outcome.0;
-            state.summary.error = outcome.1;
-            state.summary.finished_at = Some(Utc::now().to_rfc3339());
-            state.summary.duration_ms = Some(started.elapsed().as_millis() as u64);
-            state.snapshot()
-        };
-        match self.db.save_execution_job(&snapshot) {
-            Ok(()) => {
-                self.active.lock().await.remove(&snapshot.summary.id);
+        // Serialize completion against settings changes/deletion and all result reads.
+        let mut active = self.active.lock().await;
+        let mut state = state.lock().await;
+        state.summary.status = outcome.0;
+        state.summary.error = outcome.1;
+        state.summary.finished_at = Some(Utc::now().to_rfc3339());
+        state.summary.duration_ms = Some(started.elapsed().as_millis() as u64);
+        match state.persist(&self.db) {
+            Ok(saved) => {
+                if !saved {
+                    self.completed.lock().await.insert(state.snapshot());
+                }
+                active.remove(&state.summary.id);
             }
             Err(error) => {
                 // Keep the final result queryable in memory if disk writes fail.
-                state.lock().await.summary.persistence_error = Some(error);
+                state.summary.persistence_error = Some(error);
             }
         }
     }

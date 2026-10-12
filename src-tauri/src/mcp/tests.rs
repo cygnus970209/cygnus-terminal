@@ -396,3 +396,47 @@ async fn stopping_closes_incomplete_http_body() {
 async fn stopping_closes_incomplete_http_headers() {
     stopping_closes_incomplete_http_request(false).await;
 }
+
+#[tokio::test]
+async fn deleted_results_do_not_break_mcp_listing_or_pagination() {
+    let f = Fixture::new(true).await;
+    let m = manager(&f);
+    let status = m.start(config(&f, true)).await.unwrap();
+    let execute = || {
+        call(
+            &status,
+            "cygnus_execute",
+            json!({"profile_id":f.profile_id,"command":"success"}),
+        )
+    };
+    let response = execute().await;
+    let old = response["result"]["structuredContent"]["job_id"]
+        .as_str()
+        .unwrap();
+    f.finished(old).await;
+    f.manager.clear_history().await.unwrap();
+    let mut ids = Vec::new();
+    for _ in 0..2 {
+        let response = execute().await;
+        let id = response["result"]["structuredContent"]["job_id"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        f.finished(&id).await;
+        ids.push(id);
+    }
+    let listed = call(&status, "cygnus_list_jobs", json!({})).await;
+    assert_eq!(
+        listed["result"]["structuredContent"]["jobs"]
+            .as_array()
+            .unwrap()
+            .len(),
+        2
+    );
+    let page = call(&status, "cygnus_list_jobs", json!({"limit":1,"offset":1})).await;
+    assert_eq!(page["result"]["structuredContent"]["jobs"][0]["id"], ids[0]);
+    let deleted = call(&status, "cygnus_get_job", json!({"job_id":old})).await;
+    assert_eq!(deleted["result"]["isError"], true);
+    assert!(deleted.to_string().contains("do not automatically repeat"));
+    m.stop().await;
+}

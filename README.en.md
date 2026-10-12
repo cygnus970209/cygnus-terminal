@@ -92,6 +92,8 @@ AI clients can list servers and, when command execution is enabled, submit jobs,
 inspect results, and request cancellation. Connections require a bearer token;
 MCP is disabled again when the app restarts. See the [setup and tool reference (Korean)](docs/guides/mcp.md).
 
+Settings → Data → Execution history controls recording, retention, and deletion. Recording is off on fresh installs; enabling it keeps unencrypted commands and output for 7 days by default.
+
 ## Install
 
 Download an installer from the [latest release](https://github.com/cygnus970209/cygnus-terminal/releases/latest).

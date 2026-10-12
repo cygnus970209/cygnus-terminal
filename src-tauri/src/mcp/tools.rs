@@ -11,6 +11,7 @@ use tokio::sync::{Mutex, RwLock};
 
 use crate::crypto::CryptoManager;
 use crate::db::Database;
+use crate::execution::history::LookupError;
 use crate::execution::{ExecutionManager, StartExecutionRequest};
 use crate::ssh::SshManager;
 
@@ -170,13 +171,21 @@ impl CygnusMcp {
                     .await
                     .iter()
                     .rev()
-                    .skip(request.offset.unwrap_or(0) as usize)
-                    .take(request.limit.unwrap_or(50).clamp(1, 100) as usize)
                     .cloned()
                     .collect();
                 let mut jobs = Vec::new();
+                let mut offset = request.offset.unwrap_or(0);
+                let limit = request.limit.unwrap_or(50).clamp(1, 100) as usize;
                 for id in ids {
-                    jobs.push(self.backend.execution.get_summary(&id).await?);
+                    match self.backend.execution.get_summary(&id).await {
+                        Ok(job) if offset == 0 => jobs.push(job),
+                        Ok(_) => offset -= 1,
+                        Err(LookupError::NotFound) => continue,
+                        Err(error) => return Err(error.into()),
+                    }
+                    if jobs.len() == limit {
+                        break;
+                    }
                 }
                 Ok(json!({"jobs": jobs}))
             }

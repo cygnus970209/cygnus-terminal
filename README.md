@@ -92,6 +92,8 @@ Settings → MCP에서 공유할 SSH 서버를 선택하고 로컬 MCP 서버를
 결과를 조회·취소할 수 있습니다. 토큰 인증을 사용하며 앱을 재시작하면 꺼집니다.
 [설정 방법과 제공 도구](docs/guides/mcp.md)를 참고하세요.
 
+Settings → Data → Execution history에서 작업 기록 저장·보관 기간·삭제를 관리합니다. 새 설치는 저장 꺼짐이며, 저장을 켜면 기본 7일간 암호화하지 않은 명령·출력을 보관합니다.
+
 ## 설치
 
 [최신 릴리스](https://github.com/cygnus970209/cygnus-terminal/releases/latest)에서 설치 파일을 내려받으세요.

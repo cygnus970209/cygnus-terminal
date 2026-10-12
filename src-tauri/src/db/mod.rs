@@ -1,10 +1,11 @@
 pub mod command_bookmark;
-pub mod export;
 pub mod execution;
+pub mod export;
 pub mod history;
 pub mod known_host;
 pub mod migration;
 pub mod path_bookmark;
+mod private_files;
 pub mod profile;
 pub mod snippet;
 
@@ -19,8 +20,7 @@ pub struct Database {
 impl Database {
     /// 데이터베이스 초기화. app_data_dir 아래에 cygnus.db 파일 생성.
     pub fn new(app_data_dir: PathBuf) -> Result<Self, String> {
-        std::fs::create_dir_all(&app_data_dir)
-            .map_err(|e| format!("Failed to create data directory: {e}"))?;
+        private_files::prepare(&app_data_dir)?;
 
         let db_path = app_data_dir.join("cygnus.db");
         let conn =
@@ -29,7 +29,8 @@ impl Database {
         // WAL 모드 + foreign keys 활성화
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
-             PRAGMA foreign_keys=ON;",
+             PRAGMA foreign_keys=ON;
+             PRAGMA secure_delete=ON;",
         )
         .map_err(|e| format!("Failed to set pragmas: {e}"))?;
 
@@ -47,7 +48,7 @@ impl Database {
     pub fn new_in_memory() -> Result<Self, String> {
         let conn = Connection::open_in_memory()
             .map_err(|e| format!("Failed to open in-memory database: {e}"))?;
-        conn.execute_batch("PRAGMA foreign_keys=ON;")
+        conn.execute_batch("PRAGMA foreign_keys=ON; PRAGMA secure_delete=ON;")
             .map_err(|e| format!("Failed to set pragmas: {e}"))?;
         let db = Self {
             conn: Mutex::new(conn),

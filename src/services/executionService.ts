@@ -3,6 +3,7 @@ import type {
   ExecutionJob,
   ExecutionSummary,
   StartExecutionRequest,
+  ExecutionHistorySettings,
 } from "../types/execution";
 
 export function startExecution(req: StartExecutionRequest): Promise<string> {
@@ -19,4 +20,16 @@ export function listExecutions(limit = 50, offset = 0): Promise<ExecutionSummary
 
 export function cancelExecution(jobId: string): Promise<void> {
   return invoke("execution_cancel", { jobId });
+}
+
+export function getExecutionHistorySettings(): Promise<ExecutionHistorySettings> {
+  return invoke("execution_history_settings");
+}
+
+export function updateExecutionHistorySettings(settings: ExecutionHistorySettings): Promise<void> {
+  return invoke("execution_history_update", { settings });
+}
+
+export function clearExecutionHistory(): Promise<void> {
+  return invoke("execution_history_clear");
 }

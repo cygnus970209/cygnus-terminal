@@ -6,6 +6,7 @@ import {
   type McpStatus,
 } from "../../../services/mcpService";
 import type { Profile } from "../../../types";
+import McpClientSetup from "./McpClientSetup";
 import "./McpTab.css";
 
 export default function McpTab() {
@@ -110,6 +111,7 @@ export default function McpTab() {
           </div>
           <p>Choose Streamable HTTP in your MCP client. Use this URL and send the token as the Authorization: Bearer header. The token grants the access selected above.</p>
         </div>}
+        <McpClientSetup key={server.token ?? "stopped"} endpoint={server.running ? server.endpoint : null} token={server.running ? server.token : null} busy={busy} />
       </>}
     </div>
   );
