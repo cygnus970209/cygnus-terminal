@@ -6,6 +6,8 @@ interface Shortcut {
 const SHORTCUTS: Shortcut[] = [
   { keys: "⌘ ,", label: "Settings" },
   { keys: "⌘ K", label: "Command Palette" },
+  { keys: "F10", label: "Pin / unpin active tab (Fn + F10 on some keyboards)" },
+  { keys: "Shift F10", label: "Open focused tab menu" },
 ];
 
 export default function ShortcutsTab() {

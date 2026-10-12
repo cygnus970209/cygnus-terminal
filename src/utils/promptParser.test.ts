@@ -30,7 +30,7 @@ describe("extractCommand", () => {
     expect(extractCommand("bash-4.2# ls")).toBe("ls");
   });
 
-  test("명령어 안에 prompt 문자 포함 — backtracking 으로 정상 처리", () => {
+  test("명령어 안에 prompt 문자 포함", () => {
     expect(extractCommand('[host ~]$ echo "test$"')).toBe('echo "test$"');
     expect(extractCommand("user@h$ echo $HOME")).toBe("echo $HOME");
   });
@@ -51,5 +51,33 @@ describe("extractCommand", () => {
 
   test("git continuation > prompt", () => {
     expect(extractCommand("> commit message body")).toBe("commit message body");
+  });
+
+  test("root prompt without a command is not history", () => {
+    expect(extractCommand("root@master:/home/Intopet-v4-frontend/service/intopet_v3# ")).toBeNull();
+    expect(extractCommand("root@master:/home/Intopet-v4-frontend/service/intopet_v3# ls -la")).toBe("ls -la");
+  });
+
+  test("a pasted prompt following another prompt is not a command", () => {
+    expect(extractCommand("ubuntu@master:~$ root@master:/home/Intopet-v4-frontend/service/intopet_v3#")).toBeNull();
+    expect(extractCommand("ubuntu@master:~$ root@master:/srv/app# npm run build")).toBe("npm run build");
+  });
+
+  test("preserves redirection, comments and quoted prompt characters", () => {
+    for (const command of [
+      "echo hello > output.log",
+      "cat < input.txt >> output.log 2>&1",
+      "echo hello # comment",
+      'printf "%s > %s\\n" "$USER" "$HOME"',
+      'echo "price $ 10 and # text"',
+      'echo "root@master:/srv/app#"',
+      "echo end#",
+    ]) {
+      expect(extractCommand(`ubuntu@master:~$ ${command}`)).toBe(command);
+    }
+  });
+
+  test("bracketed prompts can contain delimiter characters in the directory name", () => {
+    expect(extractCommand("[root@host dir > name]# ls")).toBe("ls");
   });
 });

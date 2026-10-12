@@ -215,6 +215,7 @@ pub fn run() {
             commands::search_command_history,
             commands::save_command_history,
             commands::delete_command_history,
+            commands::clear_command_history,
             commands::create_command_bookmark,
             commands::list_command_bookmarks,
             commands::delete_command_bookmark,

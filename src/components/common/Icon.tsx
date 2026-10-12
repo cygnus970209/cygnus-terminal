@@ -6,6 +6,7 @@ const paths = {
   trash: "M3 6h18M9 6V3h6v3M6 6l1 15h10l1-15M10 10v7M14 10v7",
   external: "M14 3h7v7M21 3l-11 11M10 3H3v18h18v-7",
   plus: "M12 5v14M5 12h14",
+  pin: "m16 3 5 5-4 1-4 4-1 4-5-5 4-1 4-4zM7 17l-4 4",
   close: "m6 6 12 12M6 18 18 6",
   search: "M21 21l-5-5M18 10a8 8 0 1 1-16 0 8 8 0 0 1 16 0",
   server: "M4 3h16v7H4zM4 14h16v7H4zM7 6.5h.01M7 17.5h.01M11 6.5h6M11 17.5h6",

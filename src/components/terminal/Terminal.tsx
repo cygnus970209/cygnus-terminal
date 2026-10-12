@@ -248,6 +248,12 @@ export default function Terminal({
 
   useEffect(() => {
     if (!terminalRef.current) return;
+    let disposed = false;
+    const closeSession = (sessionId: string) => {
+      const command = type === "ssh" ? "close_ssh" : type === "telnet" ? "close_telnet"
+        : type === "serial" ? "close_serial" : "close_pty";
+      void invoke(command, { sessionId }).catch((error) => console.error("Session cleanup failed:", error));
+    };
 
     const xterm = new XTerm({
       cursorBlink: true,
@@ -386,6 +392,7 @@ export default function Terminal({
       try {
         const onEvent = new Channel<PtyEvent>();
         onEvent.onmessage = (event) => {
+          if (disposed) return;
           if (event.type === "Output") {
             scheduleWrite(event.data);
           } else if (event.type === "Exit") {
@@ -412,7 +419,7 @@ export default function Terminal({
             agentForward: sshConfig.agentForward || false,
             onEvent,
           });
-          onTitleChange?.(tabId, `${sshConfig.username}@${sshConfig.host}`);
+          if (!disposed) onTitleChange?.(tabId, `${sshConfig.username}@${sshConfig.host}`);
         } else if (type === "telnet" && telnetConfig) {
           xterm.write(
             `Connecting via Telnet to ${telnetConfig.host}:${telnetConfig.port}...\r\n`,
@@ -422,7 +429,7 @@ export default function Terminal({
             port: telnetConfig.port,
             onEvent,
           });
-          onTitleChange?.(tabId, `telnet://${telnetConfig.host}`);
+          if (!disposed) onTitleChange?.(tabId, `telnet://${telnetConfig.host}`);
         } else if (type === "serial" && serialConfig) {
           xterm.write(
             `Opening ${serialConfig.portName} at ${serialConfig.baudRate} baud...\r\n`,
@@ -432,14 +439,19 @@ export default function Terminal({
             baudRate: serialConfig.baudRate,
             onEvent,
           });
-          onTitleChange?.(tabId, `${serialConfig.portName}`);
+          if (!disposed) onTitleChange?.(tabId, `${serialConfig.portName}`);
         } else {
           sessionId = await invoke<string>("create_pty_session", {
             onEvent,
           });
-          onTitleChange?.(tabId, "Local Shell");
+          if (!disposed) onTitleChange?.(tabId, "Local Shell");
         }
 
+        // A connecting tab can be closed before the async transport is ready.
+        if (disposed) {
+          closeSession(sessionId);
+          return;
+        }
         sessionIdRef.current = sessionId;
         onSessionCreated?.(tabId, sessionId);
         if (!ended) onSessionStatus?.(tabId, "connected");
@@ -485,21 +497,10 @@ export default function Terminal({
             const line = buffer.getLine(cursorLine);
             if (line) {
               const text = line.translateToString(true);
-              // Right-most prompt 종결 문자(`$ # > % ❯ →`) 뒤의 명령어만 추출.
-              // Amazon Linux 식 `[ec2-user@host ~]$ ls` 처럼 prompt 안에 공백이 있어도
-              // 잘리지 않는다. 자세한 정규식 근거는 utils/promptParser.ts 주석 참조.
-              let cmd = extractCommand(text) ?? "";
-              // prompt regex 가 실패하면 cursor 위치 기반 fallback (PS1 에 prompt 종결 문자가
-              // 없는 비표준 환경 대비). 이 경로에서는 prompt 잔여물이 남을 수 있어 보수적으로만 사용.
-              if (!cmd && buffer.cursorX > 0) {
-                const cursorPos = buffer.cursorX;
-                const rawText = line.translateToString(false);
-                const beforeCursor = rawText.substring(0, cursorPos).trim();
-                if (beforeCursor.length > 0) {
-                  cmd = beforeCursor;
-                }
-              }
-              if (cmd && cmd.length > 0 && cmd.length < 1000) {
+              // 빈 프롬프트/미인식 라인은 저장하지 않는다. 커서 앞 원문으로 대체하면
+              // Enter만 눌렀을 때 `root@host:/path#` 자체가 명령어로 기록된다.
+              const cmd = extractCommand(text);
+              if (cmd && cmd.length < 1000) {
                 invoke("save_command_history", { profileId, command: cmd });
                 // 명령 실행 시작 — 알림 elapsed 측정 시작점.
                 runStateRef.current = {
@@ -536,6 +537,7 @@ export default function Terminal({
         }
         layout.schedule();
       } catch (err) {
+        if (disposed) return;
         onSessionStatus?.(tabId, "error");
         xterm.write(`\x1b[31mError: ${err}\x1b[0m\r\n`);
       }
@@ -549,6 +551,7 @@ export default function Terminal({
     document.addEventListener("visibilitychange", layout.schedule);
 
     return () => {
+      disposed = true;
       window.removeEventListener("resize", layout.schedule);
       window.removeEventListener("focus", layout.schedule);
       window.removeEventListener("pageshow", layout.schedule);
@@ -561,15 +564,8 @@ export default function Terminal({
       oscHandler.dispose();
       lineFeedHandler.dispose();
       if (sessionIdRef.current) {
-        const closeCmd =
-          type === "ssh"
-            ? "close_ssh"
-            : type === "telnet"
-              ? "close_telnet"
-              : type === "serial"
-                ? "close_serial"
-                : "close_pty";
-        invoke(closeCmd, { sessionId: sessionIdRef.current });
+        closeSession(sessionIdRef.current);
+        sessionIdRef.current = null;
       }
       xterm.dispose();
     };

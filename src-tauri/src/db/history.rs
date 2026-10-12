@@ -107,4 +107,14 @@ impl Database {
         }
         Ok(())
     }
+
+    /// Clear this profile's entire history, independent of UI search and pagination.
+    pub fn clear_command_history(&self, profile_id: i64) -> Result<usize, String> {
+        self.conn()
+            .execute(
+                "DELETE FROM command_history WHERE profile_id = ?1",
+                [profile_id],
+            )
+            .map_err(|e| format!("Failed to clear command history: {e}"))
+    }
 }
