@@ -73,6 +73,13 @@
   padding: 4px 8px;
 }
 
+.sc-history-error {
+  color: var(--error);
+  font-size: 12px;
+  line-height: 1.5;
+  padding: 8px;
+}
+
 .sc-add-btn {
   background: none;
   border: none;
@@ -88,6 +95,7 @@
 .sc-add-btn:hover {
   background: rgba(122, 162, 247, 0.1);
 }
+.sc-add-btn.sc-history-clear { color: var(--error); }
 
 .sc-add-form {
   padding: 0 8px 6px;

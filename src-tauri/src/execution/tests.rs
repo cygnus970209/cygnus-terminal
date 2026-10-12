@@ -247,6 +247,13 @@ impl Fixture {
 #[tokio::test]
 async fn exec_captures_streams_exit_after_eof_and_persists_without_credentials() {
     let f = Fixture::new(true).await;
+    f.manager
+        .set_history_settings(HistorySettings {
+            enabled: true,
+            retention_days: 7,
+        })
+        .await
+        .unwrap();
     let id = f.start("success").await;
     let job = f.finished(&id).await;
     assert_eq!(job.summary.status, ExecutionStatus::Succeeded);
@@ -412,6 +419,13 @@ async fn validation_and_keychain_consent_happen_before_job_creation() {
 #[tokio::test]
 async fn startup_marks_unfinished_jobs_interrupted_without_replaying() {
     let f = Fixture::new(true).await;
+    f.manager
+        .set_history_settings(HistorySettings {
+            enabled: true,
+            retention_days: 7,
+        })
+        .await
+        .unwrap();
     let id = f.start("success").await;
     let mut job = f.finished(&id).await;
     job.summary.status = ExecutionStatus::Running;
@@ -632,6 +646,13 @@ async fn cancellation_during_jump_target_key_exchange_closes_transport() {
 #[tokio::test]
 async fn record_write_failure_prevents_dispatch_and_keeps_the_result_queryable() {
     let f = Fixture::new(true).await;
+    f.manager
+        .set_history_settings(HistorySettings {
+            enabled: true,
+            retention_days: 7,
+        })
+        .await
+        .unwrap();
     f.db.conn().execute_batch("CREATE TRIGGER fail_execution_updates BEFORE UPDATE ON execution_jobs BEGIN SELECT RAISE(FAIL, 'simulated disk failure'); END;").unwrap();
     let id = f.start("success").await;
     let job = f.finished(&id).await;
@@ -699,6 +720,13 @@ async fn stdout_and_stderr_share_the_output_budget() {
 #[tokio::test]
 async fn summary_queries_and_completed_cancellation_do_not_load_output_records() {
     let f = Fixture::new(true).await;
+    f.manager
+        .set_history_settings(HistorySettings {
+            enabled: true,
+            retention_days: 7,
+        })
+        .await
+        .unwrap();
     let id = f.start("success").await;
     f.finished(&id).await;
     // The large output document need not be read to list or cancel a completed job.
@@ -713,4 +741,251 @@ async fn summary_queries_and_completed_cancellation_do_not_load_output_records()
         ExecutionStatus::Succeeded
     );
     f.manager.cancel(&id).await.unwrap();
+}
+
+#[tokio::test]
+async fn history_is_off_by_default_and_temporary_results_expire() {
+    let f = Fixture::new(true).await;
+    assert_eq!(
+        f.manager.history_settings().unwrap(),
+        HistorySettings {
+            enabled: false,
+            retention_days: 7
+        }
+    );
+    let id = f.start("hang").await;
+    f.has_output(&id).await;
+    assert!(matches!(
+        f.db.get_execution_job(&id),
+        Err(LookupError::NotFound)
+    ));
+    f.manager.cancel(&id).await.unwrap();
+    let job = f.finished(&id).await;
+    assert!(job.summary.remote_outcome_unknown);
+    assert!(matches!(
+        f.db.get_execution_job(&id),
+        Err(LookupError::NotFound)
+    ));
+    let restarted = ExecutionManager::new(f.db.clone()).unwrap();
+    assert!(matches!(
+        restarted.get(&id).await,
+        Err(LookupError::NotFound)
+    ));
+    history::tests::expire(&mut *f.manager.completed.lock().await, &id);
+    assert!(matches!(
+        f.manager.get(&id).await,
+        Err(LookupError::NotFound)
+    ));
+    assert!(f.manager.list(50, 0).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn disabling_then_reenabling_does_not_restore_inflight_history() {
+    let f = Fixture::new(true).await;
+    let on = HistorySettings {
+        enabled: true,
+        retention_days: 7,
+    };
+    f.manager.set_history_settings(on).await.unwrap();
+    let id = f.start("hang").await;
+    f.has_output(&id).await;
+    assert!(f.db.get_execution_job(&id).is_ok());
+    f.manager
+        .set_history_settings(HistorySettings {
+            enabled: false,
+            ..on
+        })
+        .await
+        .unwrap();
+    f.manager.set_history_settings(on).await.unwrap();
+    f.manager.cancel(&id).await.unwrap();
+    f.finished(&id).await;
+    assert!(matches!(
+        f.db.get_execution_job(&id),
+        Err(LookupError::NotFound)
+    ));
+    let next = f.start("success").await;
+    f.finished(&next).await;
+    assert!(f.db.get_execution_job(&next).is_ok());
+}
+
+#[tokio::test]
+async fn clearing_history_preserves_live_jobs_without_recreating_disk_records() {
+    let f = Fixture::new(true).await;
+    let memory = f.start("success").await;
+    f.finished(&memory).await;
+    f.manager
+        .set_history_settings(HistorySettings {
+            enabled: true,
+            retention_days: 7,
+        })
+        .await
+        .unwrap();
+    let disk = f.start("success").await;
+    f.finished(&disk).await;
+    let running = f.start("hang").await;
+    f.has_output(&running).await;
+    f.manager.clear_history().await.unwrap();
+    assert!(matches!(
+        f.manager.get(&memory).await,
+        Err(LookupError::NotFound)
+    ));
+    assert!(matches!(
+        f.manager.get(&disk).await,
+        Err(LookupError::NotFound)
+    ));
+    assert_eq!(f.manager.list(50, 0).await.unwrap().len(), 1);
+    assert!(f.manager.history_settings().unwrap().enabled);
+    f.manager.cancel(&running).await.unwrap();
+    f.finished(&running).await;
+    assert!(matches!(
+        f.db.get_execution_job(&running),
+        Err(LookupError::NotFound)
+    ));
+    f.manager.clear_history().await.unwrap();
+    assert!(f.manager.list(50, 0).await.unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn retention_hides_expired_results_and_cleanup_keeps_active_jobs() {
+    let f = Fixture::new(true).await;
+    f.manager
+        .set_history_settings(HistorySettings {
+            enabled: true,
+            retention_days: 30,
+        })
+        .await
+        .unwrap();
+    let old = f.start("success").await;
+    f.finished(&old).await;
+    let recent = f.start("success").await;
+    f.finished(&recent).await;
+    let running = f.start("hang").await;
+    f.has_output(&running).await;
+    f.db.conn()
+        .execute(
+            "UPDATE execution_jobs SET created_at=datetime('now','-10 days') WHERE id IN (?1,?2)",
+            rusqlite::params![old, running],
+        )
+        .unwrap();
+    f.manager
+        .set_history_settings(HistorySettings {
+            enabled: true,
+            retention_days: 7,
+        })
+        .await
+        .unwrap();
+    assert!(matches!(
+        f.manager.get(&old).await,
+        Err(LookupError::NotFound)
+    ));
+    assert!(f.manager.get(&recent).await.is_ok());
+    assert!(f.db.get_execution_job(&running).is_ok());
+    // Results also become invisible before the next periodic sweep runs.
+    f.db.conn()
+        .execute(
+            "UPDATE execution_jobs SET created_at=datetime('now','-10 days') WHERE id=?1",
+            [&recent],
+        )
+        .unwrap();
+    assert!(matches!(
+        f.manager.get_summary(&recent).await,
+        Err(LookupError::NotFound)
+    ));
+    f.manager.maintain_history().await.unwrap();
+    assert_eq!(
+        f.db.conn()
+            .query_row("SELECT count(*) FROM execution_jobs", [], |row| row
+                .get::<_, u32>(0))
+            .unwrap(),
+        1
+    );
+    // Restore the artificial age so the completion helper can still retrieve it.
+    f.db.conn()
+        .execute(
+            "UPDATE execution_jobs SET created_at=?1 WHERE id=?2",
+            rusqlite::params![Utc::now().to_rfc3339(), running],
+        )
+        .unwrap();
+    f.manager.cancel(&running).await.unwrap();
+    f.finished(&running).await;
+}
+
+#[tokio::test]
+async fn invalid_history_settings_leave_existing_policy_unchanged() {
+    let f = Fixture::new(true).await;
+    let settings = f.manager.history_settings().unwrap();
+    for days in [0, 366, u32::MAX] {
+        assert!(f
+            .manager
+            .set_history_settings(HistorySettings {
+                enabled: true,
+                retention_days: days
+            })
+            .await
+            .is_err());
+        assert_eq!(f.manager.history_settings().unwrap(), settings);
+    }
+}
+
+#[tokio::test]
+async fn temporary_results_are_bounded_by_count_and_bytes() {
+    let f = Fixture::new(true).await;
+    let id = f.start("success").await;
+    let job = f.finished(&id).await;
+    let mut cache = ResultCache::default();
+    for i in 0..40 {
+        let mut copy = job.clone();
+        copy.summary.id = i.to_string();
+        cache.insert(copy);
+    }
+    assert_eq!(cache.jobs.len(), 32);
+    assert!(!cache.jobs.contains_key("0"));
+    for i in 40..72 {
+        let mut copy = job.clone();
+        copy.summary.id = i.to_string();
+        copy.stdout = "x".repeat(3 * 1024 * 1024);
+        cache.insert(copy);
+    }
+    assert!(
+        cache
+            .jobs
+            .values()
+            .map(|entry| entry.job.stdout.len())
+            .sum::<usize>()
+            < 64 * 1024 * 1024
+    );
+    assert!(cache.jobs.len() < 32);
+    assert!(cache.jobs.contains_key("71"));
+}
+
+#[tokio::test]
+async fn pagination_merges_disk_memory_and_running_jobs_without_gaps() {
+    let f = Fixture::new(true).await;
+    let memory = f.start("hang").await;
+    f.has_output(&memory).await;
+    f.manager
+        .set_history_settings(HistorySettings {
+            enabled: true,
+            retention_days: 7,
+        })
+        .await
+        .unwrap();
+    for _ in 0..4 {
+        let id = f.start("success").await;
+        f.finished(&id).await;
+    }
+    let running = f.start("hang").await;
+    f.has_output(&running).await;
+    f.manager.cancel(&memory).await.unwrap();
+    f.finished(&memory).await;
+    let all = f.manager.list(100, 0).await.unwrap();
+    assert_eq!(all.len(), 6);
+    for (i, expected) in all.iter().enumerate() {
+        let page = f.manager.list(1, i as u32).await.unwrap();
+        assert_eq!(page[0].id, expected.id);
+    }
+    assert!(f.manager.list(1, u32::MAX).await.unwrap().is_empty());
+    f.manager.cancel(&running).await.unwrap();
+    f.finished(&running).await;
 }

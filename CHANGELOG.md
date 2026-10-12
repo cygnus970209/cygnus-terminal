@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.1.15] - 2026-10-12
+
+### Added
+- Connect Codex CLI, Claude Code, Cursor and Kiro to an opt-in, authenticated local MCP server with explicitly shared SSH profiles, command execution, job results and cancellation.
+- Use seven SFTP MCP tools for directory listings, metadata, bounded file reads and writes, directory creation, renaming and nonrecursive deletion, with separate read/change permissions that default to off.
+- Drag terminal tabs to reorder them, pin tabs with F10, and use the context menu to close other tabs or tabs to the left/right. Pinned tabs survive bulk closing and can still be closed directly.
+- Copy full commands from server history and clear the current server's entire history after confirmation, including entries hidden by search.
+
+### Changed
+- Make SSH execution history opt-in on new installations, with configurable retention, bounded temporary results, explicit deletion and restricted database file permissions on macOS/Linux. Existing recorded jobs migrate to seven-day retention.
+- Keep Connections in the sidebar and command palette while reserving the tab strip for sessions and retaining a single sidebar toggle.
+
+### Fixed
+- Show full commands in history tooltips and avoid recording bare shell prompts or stripping command redirections and comments.
+- Close connections that finish opening after their terminal tab has closed, and release stalled automation connections and pending MCP requests on cancellation.
+- Preserve trusted host-key verification and credential consent for automation; prevent MCP clients from reading jobs outside their activation.
+
 ## [0.1.14] - 2026-09-29
 
 ### Added

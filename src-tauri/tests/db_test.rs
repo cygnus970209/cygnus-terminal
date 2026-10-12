@@ -240,6 +240,84 @@ fn password_encrypted_in_db() {
     assert_eq!(crypto.decrypt(&stored).unwrap(), "secret123");
 }
 
+// ── Command History ──
+
+#[test]
+fn clear_command_history_is_profile_scoped_and_not_limited_to_visible_rows() {
+    use cygnus_terminal_lib::db::command_bookmark::CreateCommandBookmarkRequest;
+
+    let (db, crypto) = setup();
+    let target = db.create_profile(make_password_profile(), &crypto).unwrap();
+    let other = db.create_profile(make_key_profile(), &crypto).unwrap();
+    for i in 0..150 {
+        db.add_command_history(target.id, &format!("echo command-{i}"))
+            .unwrap();
+    }
+    db.add_command_history(other.id, "keep this history")
+        .unwrap();
+    db.create_command_bookmark(CreateCommandBookmarkRequest {
+        profile_id: target.id,
+        command: "keep this bookmark".into(),
+        label: None,
+    })
+    .unwrap();
+
+    assert_eq!(
+        db.search_command_history(target.id, None, 100)
+            .unwrap()
+            .len(),
+        100
+    );
+    assert!(db
+        .search_command_history(target.id, Some("no match"), 100)
+        .unwrap()
+        .is_empty());
+    assert_eq!(db.clear_command_history(target.id).unwrap(), 150);
+    assert!(db
+        .search_command_history(target.id, None, 200)
+        .unwrap()
+        .is_empty());
+    assert_eq!(
+        db.search_command_history(other.id, None, 100).unwrap()[0].command,
+        "keep this history"
+    );
+    assert_eq!(db.list_command_bookmarks(target.id).unwrap().len(), 1);
+    assert!(db.get_profile(target.id, &crypto).is_ok());
+
+    assert_eq!(db.clear_command_history(target.id).unwrap(), 0);
+    assert_eq!(db.clear_command_history(9999).unwrap(), 0);
+    db.add_command_history(target.id, "new command after clear")
+        .unwrap();
+    assert_eq!(
+        db.search_command_history(target.id, None, 100).unwrap()[0].command,
+        "new command after clear"
+    );
+}
+
+#[test]
+fn clear_command_history_failure_does_not_partially_delete_rows() {
+    let (db, crypto) = setup();
+    let profile = db.create_profile(make_password_profile(), &crypto).unwrap();
+    db.add_command_history(profile.id, "first command").unwrap();
+    db.add_command_history(profile.id, "blocked command")
+        .unwrap();
+    db.conn()
+        .execute_batch(
+            "CREATE TRIGGER block_history_delete BEFORE DELETE ON command_history
+         WHEN OLD.command = 'blocked command'
+         BEGIN SELECT RAISE(ABORT, 'test deletion failure'); END;",
+        )
+        .unwrap();
+
+    assert!(db.clear_command_history(profile.id).is_err());
+    assert_eq!(
+        db.search_command_history(profile.id, None, 100)
+            .unwrap()
+            .len(),
+        2
+    );
+}
+
 // ── Known Hosts ──
 
 #[test]

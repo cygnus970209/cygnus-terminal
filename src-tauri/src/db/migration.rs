@@ -169,6 +169,16 @@ const MIGRATIONS: &[Migration] = &[
         );
         CREATE INDEX idx_execution_jobs_created ON execution_jobs(created_at DESC, id DESC);",
     },
+    Migration {
+        version: 9,
+        sql: "CREATE TABLE execution_history_settings (
+            id INTEGER PRIMARY KEY CHECK(id=1),
+            enabled INTEGER NOT NULL CHECK(enabled IN (0,1)),
+            retention_days INTEGER NOT NULL CHECK(retention_days BETWEEN 1 AND 365)
+        );
+        -- Preserve an existing user's history preference on upgrade.
+        INSERT INTO execution_history_settings VALUES(1, EXISTS(SELECT 1 FROM execution_jobs), 7);",
+    },
 ];
 
 impl Database {
@@ -216,6 +226,41 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn existing_execution_history_enables_bounded_retention_on_upgrade() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        for migration in MIGRATIONS.iter().filter(|m| m.version <= 8) {
+            conn.execute_batch(migration.sql).unwrap();
+        }
+        conn.execute_batch("CREATE TABLE schema_version(version INTEGER PRIMARY KEY); INSERT INTO schema_version VALUES(8);
+            INSERT INTO execution_jobs VALUES('legacy',1,datetime('now'),'succeeded','record','summary');").unwrap();
+        let db = Database {
+            conn: std::sync::Mutex::new(conn),
+        };
+        db.run_migrations().unwrap();
+        assert_eq!(
+            db.execution_history_settings().unwrap(),
+            crate::execution::history::HistorySettings {
+                enabled: true,
+                retention_days: 7
+            }
+        );
+        assert_eq!(
+            db.conn()
+                .query_row("SELECT count(*) FROM execution_jobs", [], |row| row
+                    .get::<_, u32>(0))
+                .unwrap(),
+            1
+        );
+        db.set_execution_history_settings(crate::execution::history::HistorySettings {
+            enabled: false,
+            retention_days: 3,
+        })
+        .unwrap();
+        db.run_migrations().unwrap();
+        assert!(!db.execution_history_settings().unwrap().enabled);
+    }
+
     #[test]
     fn legacy_profiles_keep_identity_and_default_to_ssh() {
         let conn = rusqlite::Connection::open_in_memory().unwrap();

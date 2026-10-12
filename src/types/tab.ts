@@ -6,8 +6,8 @@ export interface Tab {
   telnetConfig?: { host: string; port: number };
   serialConfig?: { portName: string; baudRate: number };
   title: string;
-  type:
-    "local" | "ssh" | "telnet" | "serial" | "connections" | "snippets" | "sftp";
+  type: "local" | "ssh" | "telnet" | "serial" | "sftp";
+  pinned?: boolean;
   /** SFTP 탭이 어떤 SSH 세션과 연결되는지 */
   linkedSessionId?: string;
 }

@@ -25,6 +25,14 @@ import { useTauriListener } from "./hooks/useTauriListener";
 import { useTransferChannel } from "./hooks/useTransferChannel";
 import { type ShellIntegrationStatus } from "./utils/osc7";
 import { normalizeTerminalInput } from "./utils/terminalInput";
+import {
+  activeTabAfterClose,
+  moveTab,
+  tabsToClose,
+  toggleTabPin,
+  type TabCloseAction,
+  type TabDropSide,
+} from "./utils/tabs";
 import CommandPalette, {
   PaletteItem,
 } from "./components/common/CommandPalette";
@@ -45,16 +53,8 @@ import "./App.css";
 
 let tabCounter = 1;
 
-const connectionsTab: Tab = {
-  id: "connections",
-  title: "Connections",
-  type: "connections",
-};
-
 function App() {
-  const [tabs, setTabs] = useState<(Tab & { sshConfig?: SshConfig })[]>([
-    connectionsTab,
-  ]);
+  const [tabs, setTabs] = useState<(Tab & { sshConfig?: SshConfig })[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>("connections");
   const [showConnectDialog, setShowConnectDialog] = useState(false);
   const [editProfile, setEditProfile] = useState<Profile | null>(null);
@@ -438,56 +438,57 @@ function App() {
     }
   }, [activeTabId, sessionMap, tabs]);
 
-  const closeTab = useCallback(
-    (id: string) => {
-      if (id === "connections" || id === "snippets") return;
+  const closeTabs = useCallback((id: string, action: TabCloseAction) => {
+    const closing = tabsToClose(tabs, id, action);
+    if (!closing.size) return;
+    setTabs((prev) => prev.filter((tab) => !closing.has(tab.id)));
+    setActiveTabId((current) => activeTabAfterClose(tabs, current, closing));
 
-      setTabs((prev) => {
-        const tab = prev.find((t) => t.id === id);
+    // Terminal owns transport cleanup on unmount. Keep side effects outside state updaters.
+    const closedSessions = new Set<string>();
+    for (const tab of tabs) {
+      if (!closing.has(tab.id)) continue;
+      const sessionId = sessionMap[tab.id];
+      if (sessionId) {
+        closedSessions.add(sessionId);
+        const sftp = sftpSessions[sessionId];
+        if (sftp) void invoke("sftp_close", { sftpId: sftp.sftpId }).catch(console.error);
+      }
+      delete capturePathFns.current[tab.id];
+      delete bufferCheckFns.current[tab.id];
+    }
+    const omitClosed = <T,>(values: Record<string, T>) =>
+      Object.fromEntries(Object.entries(values).filter(([key]) => !closing.has(key)));
+    setSessionMap(omitClosed);
+    setSessionStatuses(omitClosed);
+    setCwdByTab(omitClosed);
+    setShellIntegrationByTab(omitClosed);
+    setSftpSessions((prev) => Object.fromEntries(
+      Object.entries(prev).filter(([key]) => !closedSessions.has(key)),
+    ));
+  }, [tabs, sessionMap, sftpSessions]);
 
-        // SSH 탭 닫을 때 연관 리소스 정리
-        if (tab?.type === "ssh") {
-          const sshSessionId = sessionMap[id];
-          if (sshSessionId) {
-            // SFTP 세션 정리
-            const sftpInfo = sftpSessions[sshSessionId];
-            if (sftpInfo) {
-              invoke("sftp_close", { sftpId: sftpInfo.sftpId });
-              setSftpSessions((p) => {
-                const next = { ...p };
-                delete next[sshSessionId];
-                return next;
-              });
-            }
-            // SSH 세션 정리
-            invoke("close_ssh", { sessionId: sshSessionId });
-          }
+  const togglePin = useCallback((id: string) => {
+    setTabs((prev) => toggleTabPin(prev, id));
+  }, []);
+  const reorderTab = useCallback((id: string, targetId: string, side: TabDropSide) => {
+    setTabs((prev) => moveTab(prev, id, targetId, side));
+  }, []);
 
-          // 연결된 SFTP 탭도 함께 제거
-          const sftpTabId = `sftp-${id}`;
-          const filtered = prev.filter(
-            (t) => t.id !== id && t.id !== sftpTabId,
-          );
-          if (activeTabId === id || activeTabId === sftpTabId) {
-            const idx = prev.findIndex((t) => t.id === id);
-            const newActive =
-              filtered[Math.min(idx, filtered.length - 1)]?.id ?? null;
-            setActiveTabId(newActive);
-          }
-          return filtered;
-        }
-
-        const next = prev.filter((t) => t.id !== id);
-        if (activeTabId === id) {
-          const idx = prev.findIndex((t) => t.id === id);
-          const newActive = next[Math.min(idx, next.length - 1)]?.id ?? null;
-          setActiveTabId(newActive);
-        }
-        return next;
-      });
-    },
-    [activeTabId, sessionMap, sftpSessions],
-  );
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== "F10" || event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return;
+      if (!activeTab || showConnectDialog || showSettings || showPalette || showSnippets || showVault ||
+        hostKeyPrompts.length || keychainNotice.getSnapshot() ||
+        document.querySelector('[role="dialog"], [aria-modal="true"]')) return;
+      // Capture before xterm: F10 must not also be sent to the remote shell.
+      event.preventDefault();
+      event.stopPropagation();
+      if (!event.repeat) togglePin(activeTab.id);
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, [activeTab, showConnectDialog, showSettings, showPalette, showSnippets, showVault, hostKeyPrompts.length, togglePin]);
 
   const handleTitleChange = useCallback((tabId: string, title: string) => {
     setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, title } : t)));
@@ -702,14 +703,6 @@ function App() {
               <button onClick={() => setActiveTabId("connections")}>
                 Cygnus <span>Terminal</span>
               </button>
-              <button
-                className="icon-button"
-                onClick={() => setLeftCollapsed(true)}
-                aria-label="Hide connections sidebar"
-                title="Hide connections"
-              >
-                <Icon name="panel" size={15} />
-              </button>
             </div>
             {canShowContext && (
               <nav className="sidebar-section-switch" aria-label="Sidebar view">
@@ -765,6 +758,10 @@ function App() {
               />
             )}
             <nav className="sidebar-tools" aria-label="Workspace tools">
+              <button onClick={() => setActiveTabId("connections")}>
+                <Icon name="server" />
+                Connections<span>All servers</span>
+              </button>
               <button
                 onClick={() =>
                   openSftpPopout(
@@ -797,7 +794,9 @@ function App() {
             activeTabId={activeTabId}
             statuses={sessionStatuses}
             onSelectTab={setActiveTabId}
-            onCloseTab={closeTab}
+            onCloseTabs={closeTabs}
+            onTogglePin={togglePin}
+            onMoveTab={reorderTab}
             onNewLocalTab={createLocalTab}
             onNewSshTab={handleNewProfile}
             onNewSerialTab={() => {
@@ -816,14 +815,10 @@ function App() {
           {activeTabId !== "connections" && (
             <header className="session-header">
               <div className="session-heading">
-                {activeTab?.type === "connections" ? (
-                  <Icon name="server" />
-                ) : (
-                  <span
-                    className={`session-dot session-dot-${activeStatus}`}
-                    title={activeStatus}
-                  />
-                )}
+                <span
+                  className={`session-dot session-dot-${activeStatus}`}
+                  title={activeStatus}
+                />
                 <h1 title={activeTitle}>{activeTitle}</h1>
                 {activeProfile?.group_name && (
                   <span
@@ -983,23 +978,22 @@ function App() {
                       }))}
                   />
                 )}
+              {activeTab?.type === "sftp" && (!activeTab.linkedSessionId || !sessionMap[activeTab.linkedSessionId]) && (
+                <p className="disconnected-tab-notice">
+                  The linked SSH session has closed. Open SFTP from a connected session to continue.
+                </p>
+              )}
               <div
                 style={{
                   display:
                     activeTabId === "connections" ||
-                    activeTabId === "snippets" ||
                     activeTab?.type === "sftp"
                       ? "none"
                       : "contents",
                 }}
               >
                 {tabs
-                  .filter(
-                    (t) =>
-                      t.type !== "connections" &&
-                      t.type !== "snippets" &&
-                      t.type !== "sftp",
-                  )
+                  .filter((t) => t.type !== "sftp")
                   .map((tab) => (
                     <Terminal
                       key={tab.id}

@@ -160,6 +160,16 @@ pub fn run() {
                 execution.clone(),
                 ssh_manager.clone(),
             ));
+            let history_maintenance = execution.clone();
+            tauri::async_runtime::spawn(async move {
+                let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+                loop {
+                    interval.tick().await;
+                    if let Err(error) = history_maintenance.maintain_history().await {
+                        eprintln!("Execution history cleanup failed: {error}");
+                    }
+                }
+            });
             app.manage(execution);
             app.manage(database);
             app.manage(crypto);
@@ -184,6 +194,9 @@ pub fn run() {
             commands::execution_get,
             commands::execution_list,
             commands::execution_cancel,
+            commands::execution_history_settings,
+            commands::execution_history_update,
+            commands::execution_history_clear,
             commands::create_pty_session,
             commands::write_pty,
             commands::resize_pty,
@@ -202,6 +215,7 @@ pub fn run() {
             commands::search_command_history,
             commands::save_command_history,
             commands::delete_command_history,
+            commands::clear_command_history,
             commands::create_command_bookmark,
             commands::list_command_bookmarks,
             commands::delete_command_bookmark,

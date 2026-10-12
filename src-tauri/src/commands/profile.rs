@@ -70,6 +70,14 @@ pub fn delete_command_history(id: i64, db: State<'_, Arc<Database>>) -> Result<(
 }
 
 #[tauri::command]
+pub fn clear_command_history(
+    profile_id: i64,
+    db: State<'_, Arc<Database>>,
+) -> Result<usize, String> {
+    db.clear_command_history(profile_id)
+}
+
+#[tauri::command]
 pub fn save_command_history(
     profile_id: i64,
     command: String,

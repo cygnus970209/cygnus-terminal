@@ -1,3 +1,5 @@
+pub(crate) mod target;
+
 use russh::client;
 use russh::keys::key::PrivateKeyWithHashAlg;
 use russh::{ChannelMsg, Disconnect};

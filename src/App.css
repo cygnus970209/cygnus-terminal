@@ -232,6 +232,11 @@ button:disabled {
   min-height: 0;
   overflow: hidden;
 }
+.disconnected-tab-notice {
+  padding: 24px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
 .session-header {
   display: flex;
   align-items: center;

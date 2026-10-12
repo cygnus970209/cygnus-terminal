@@ -59,7 +59,11 @@ export default function ServerContext({
 
       <div className="sc-content">
         {activeTab === "history" && (
-          <HistoryTab profileId={profileId} onExecuteCommand={onExecuteCommand} />
+          <HistoryTab
+            profileId={profileId}
+            onExecuteCommand={onExecuteCommand}
+            showToast={showToast}
+          />
         )}
         {activeTab === "commands" && (
           <CommandsTab profileId={profileId} onExecuteCommand={onExecuteCommand} />
@@ -77,7 +81,7 @@ export default function ServerContext({
         )}
       </div>
 
-      {toast && <div className="sc-toast">{toast}</div>}
+      {toast && <div className="sc-toast" role="status">{toast}</div>}
     </div>
   );
 }

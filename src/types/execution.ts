@@ -15,6 +15,11 @@ export interface StartExecutionRequest {
   output_limit_bytes?: number;
 }
 
+export interface ExecutionHistorySettings {
+  enabled: boolean;
+  retention_days: number;
+}
+
 export interface ExecutionSummary {
   id: string;
   profile_id: number;
