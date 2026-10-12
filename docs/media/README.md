@@ -3,7 +3,7 @@
 These PNGs were captured from the v0.1.11 Cygnus UI at 1280 × 900 with synthetic IPC fixtures. No real hosts, passwords, tokens, or personal file listings are shown. Terminal output is illustrative, not a performance measurement.
 
 - `connections.png`: saved SSH, Telnet, and Serial profiles.
-- `workspace.png`: terminal, server tools, and the SFTP entry point.
+- `workspace.png`: terminal, server tools, and the SFTP entry point. This image predates v0.1.15: Connections is now opened from the sidebar or command palette, the tab strip supports pinning, and History includes copy and clear actions. It needs a new capture.
 - `vault.png`: example credential metadata and server mappings; no secret values. This image predates the v0.1.13 Vault redesign and needs a new capture.
 - `sftp.png`: local/remote file panels and transfer actions.
 

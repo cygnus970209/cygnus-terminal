@@ -13,7 +13,7 @@ Cygnus is a desktop terminal for people working across servers and network equip
 
 **A Rust backend and Tauri's system WebView** keep the architecture lightweight without bundling a separate Chromium runtime. Cygnus is designed to reduce memory overhead; actual usage depends on the OS, open sessions, and workload. No comparative memory benchmark is claimed here.
 
-> Screenshots use synthetic demo servers, files, and credential metadata. The Vault image predates the v0.1.13 redesign.
+> Screenshots use synthetic demo servers, files, and credential metadata. The workspace image predates v0.1.15's removal of the Connections tab, tab pinning, and history actions. The Vault image predates the v0.1.13 redesign.
 
 ## Features
 
