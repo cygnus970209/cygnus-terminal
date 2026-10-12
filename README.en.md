@@ -37,6 +37,10 @@ Cygnus is a desktop terminal for people working across servers and network equip
 
 Once a group is saved with a connection, select it from the list next time. Use protocol/group filters and favorites to find a connection, then choose **Save** or **Save & Connect**.
 
+Drag tabs to reorder them, or right-click for **Close other tabs / Close tabs to the left / Close tabs to the right / Pin tab**. **F10** toggles the active tab’s pin (**Fn+F10** on some Mac keyboards). Pinned tabs stay on the left and survive bulk closing; their close button or **Close tab** still closes them directly. Dragging reorders within the pinned or regular group. Focus a tab and press **Shift+F10** to open its menu with the keyboard.
+
+Open Connections from **Connections** at the bottom of the sidebar or **Open Connections** in the command palette. The panel button at the left of the tab strip collapses or expands the sidebar. Returning to Connections keeps sessions open.
+
 ## A Vault that knows your servers
 
 ![Vault items mapped to servers](docs/media/vault.png)
@@ -74,7 +78,7 @@ Click **SFTP Files** above the terminal to open the right-hand file panel. Its v
 
 For saved SSH connections, the left-hand **Server tools** panel keeps frequent tasks close:
 
-- **History**: search past commands, run them again, or save them to Commands.
+- **History**: search past commands, run them again, or right-click to copy the full command or save it to Commands. **Delete all…** asks for confirmation before deleting this server's entire history, including entries hidden by search.
 - **Commands**: bookmark health checks, restarts, and deployment commands.
 - **Paths**: bookmark frequently used directories.
 - **Ports**: manage SSH local port forwarding.
@@ -91,6 +95,9 @@ Settings → MCP lets you share selected SSH profiles with a local MCP server.
 AI clients can list servers and, when command execution is enabled, submit jobs,
 inspect results, and request cancellation. Connections require a bearer token;
 MCP is disabled again when the app restarts. See the [setup and tool reference (Korean)](docs/guides/mcp.md).
+Separate SFTP read and change permissions enable listing, metadata, reading, writing,
+directory creation, renaming, and deletion. File content is limited to 64 KiB per request
+and is not stored in Cygnus execution history.
 
 Settings → Data → Execution history controls recording, retention, and deletion. Recording is off on fresh installs; enabling it keeps unencrypted commands and output for 7 days by default.
 
