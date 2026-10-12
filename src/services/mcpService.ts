@@ -4,6 +4,8 @@ export interface McpConfig {
   port: number;
   profile_ids: number[];
   allow_execution: boolean;
+  allow_sftp_read: boolean;
+  allow_sftp_write: boolean;
 }
 
 export interface McpStatus {

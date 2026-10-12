@@ -15,6 +15,8 @@ export default function McpTab() {
   const [selected, setSelected] = useState<number[]>([]);
   const [port, setPort] = useState("38473");
   const [allowExecution, setAllowExecution] = useState(false);
+  const [allowSftpRead, setAllowSftpRead] = useState(false);
+  const [allowSftpWrite, setAllowSftpWrite] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -31,6 +33,8 @@ export default function McpTab() {
           setSelected(status.config.profile_ids);
           setPort(String(status.config.port));
           setAllowExecution(status.config.allow_execution);
+          setAllowSftpRead(status.config.allow_sftp_read ?? false);
+          setAllowSftpWrite(status.config.allow_sftp_write ?? false);
         }
       })
       .catch((err) => { if (!disposed) setError(String(err)); });
@@ -83,21 +87,32 @@ export default function McpTab() {
           <input type="checkbox" checked={allowExecution} disabled={disabled} onChange={(e) => setAllowExecution(e.target.checked)} />
           <span>Allow remote command execution<small>The connected AI client can run any command permitted by these SSH accounts, including commands that change or delete files.</small></span>
         </label>
+        <label className="mcp-permission">
+          <input type="checkbox" checked={allowSftpRead} disabled={disabled} onChange={(e) => {
+            setAllowSftpRead(e.target.checked);
+            if (!e.target.checked) setAllowSftpWrite(false);
+          }} />
+          <span>Allow SFTP file reading<small>List and read remote files accessible to these SSH accounts, including files containing secrets. File content is sent to the AI client and is not saved in Cygnus execution history.</small></span>
+        </label>
+        <label className="mcp-permission">
+          <input type="checkbox" checked={allowSftpWrite} disabled={disabled || !allowSftpRead} onChange={(e) => setAllowSftpWrite(e.target.checked)} />
+          <span>Allow SFTP file changes<small>Create, overwrite, rename and delete remote files. Requires SFTP reading. Each file write is limited to 64 KiB; larger transfers use the SFTP window.</small></span>
+        </label>
         <div className="settings-actions">
           {configured ? (
             <button className="settings-btn" disabled={busy} onClick={() => void act(async () => {
-              await stopMcp(); setServer(await getMcpStatus()); setNotice("MCP stopped. Cancellation was requested for its active jobs.");
+              await stopMcp(); setServer(await getMcpStatus()); setNotice("MCP stopped. Cancellation was requested for its active SSH jobs and SFTP requests.");
             })}>Stop MCP</button>
           ) : (
             <button className="settings-btn" disabled={busy || !selected.length || !validPort} onClick={() => void act(async () => {
-              setServer(await startMcp({ port: Number(port), profile_ids: selected, allow_execution: allowExecution }));
+              setServer(await startMcp({ port: Number(port), profile_ids: selected, allow_execution: allowExecution, allow_sftp_read: allowSftpRead, allow_sftp_write: allowSftpWrite }));
             })}>Start MCP</button>
           )}
-          {allowExecution && <button className="settings-btn" disabled={busy} onClick={() => void act(async () => {
+          {(allowExecution || allowSftpRead) && <button className="settings-btn" disabled={busy} onClick={() => void act(async () => {
             await unlockMcpCredentials(); setNotice("Saved credentials are unlocked for this app session.");
           })}>Unlock saved credentials</button>}
         </div>
-        <p>For first-time connections, verify the host key in a terminal first. Stopping MCP revokes its token and requests cancellation of its active jobs; remote termination may remain unconfirmed.</p>
+        <p>For first-time connections, verify the host key in a terminal first. Stopping MCP revokes its token and cancels active requests. Remote commands or file changes may already have taken effect.</p>
         {server.endpoint && server.token && <div className="mcp-connection">
           <label className="mcp-field" htmlFor="mcp-endpoint">MCP URL
             <input id="mcp-endpoint" readOnly value={server.endpoint} />

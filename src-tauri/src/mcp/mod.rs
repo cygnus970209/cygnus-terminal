@@ -1,4 +1,6 @@
 //! Opt-in, loopback-only MCP adapter. Tokens and grants exist only for this app run.
+mod sftp;
+mod sftp_stream;
 mod tools;
 
 use std::collections::HashSet;
@@ -37,6 +39,10 @@ pub struct McpConfig {
     pub port: u16,
     pub profile_ids: Vec<i64>,
     pub allow_execution: bool,
+    #[serde(default)]
+    pub allow_sftp_read: bool,
+    #[serde(default)]
+    pub allow_sftp_write: bool,
 }
 
 #[derive(Clone, Default, Serialize)]
@@ -60,6 +66,7 @@ struct Running {
 impl Drop for Running {
     fn drop(&mut self) {
         self.shutdown.cancel();
+        self.handler.access.sftp_cancel.cancel();
         self.task.abort();
     }
 }
@@ -153,6 +160,9 @@ impl McpManager {
         if running.is_some() {
             return Err("MCP is already running. Stop it before changing access.".into());
         }
+        if config.allow_sftp_write && !config.allow_sftp_read {
+            return Err("SFTP file changes require SFTP read access".into());
+        }
         config.profile_ids.sort_unstable();
         config.profile_ids.dedup();
         if config.profile_ids.is_empty() {
@@ -179,6 +189,10 @@ impl McpManager {
                 enabled: RwLock::new(true),
                 profile_ids: config.profile_ids.iter().copied().collect::<HashSet<_>>(),
                 allow_execution: config.allow_execution,
+                allow_sftp_read: config.allow_sftp_read,
+                allow_sftp_write: config.allow_sftp_write,
+                sftp_cancel: CancellationToken::new(),
+                sftp_slots: Semaphore::new(4),
                 jobs: Mutex::new(Vec::new()),
             }),
         };
@@ -257,5 +271,7 @@ impl McpManager {
     }
 }
 
+#[cfg(test)]
+mod sftp_tests;
 #[cfg(test)]
 mod tests;

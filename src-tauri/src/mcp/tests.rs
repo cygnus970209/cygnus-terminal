@@ -8,7 +8,7 @@ use rmcp::transport::streamable_http_client::{
 use rmcp::ServiceExt;
 use serde_json::{json, Value};
 
-fn manager(f: &Fixture) -> McpManager {
+pub(super) fn manager(f: &Fixture) -> McpManager {
     McpManager::new(
         f.db.clone(),
         f.crypto.clone(),
@@ -17,11 +17,13 @@ fn manager(f: &Fixture) -> McpManager {
     )
 }
 
-fn config(f: &Fixture, execution: bool) -> McpConfig {
+pub(super) fn config(f: &Fixture, execution: bool) -> McpConfig {
     McpConfig {
         port: 0,
         profile_ids: vec![f.profile_id],
         allow_execution: execution,
+        allow_sftp_read: false,
+        allow_sftp_write: false,
     }
 }
 
@@ -38,7 +40,7 @@ fn request(status: &McpStatus, body: Value) -> reqwest::RequestBuilder {
         .json(&body)
 }
 
-async fn rpc(status: &McpStatus, method: &str, params: Value) -> Value {
+pub(super) async fn rpc(status: &McpStatus, method: &str, params: Value) -> Value {
     let response = request(
         status,
         json!({"jsonrpc":"2.0", "id":1, "method":method, "params":params}),
@@ -52,7 +54,7 @@ async fn rpc(status: &McpStatus, method: &str, params: Value) -> Value {
     serde_json::from_str(&body).unwrap()
 }
 
-async fn call(status: &McpStatus, name: &str, arguments: Value) -> Value {
+pub(super) async fn call(status: &McpStatus, name: &str, arguments: Value) -> Value {
     rpc(
         status,
         "tools/call",
@@ -320,7 +322,9 @@ async fn invalid_config_arguments_and_duplicate_start_do_not_expand_access() {
         .start(McpConfig {
             port: 0,
             profile_ids: vec![],
-            allow_execution: true
+            allow_execution: true,
+            allow_sftp_read: false,
+            allow_sftp_write: false,
         })
         .await
         .is_err());
@@ -328,7 +332,9 @@ async fn invalid_config_arguments_and_duplicate_start_do_not_expand_access() {
         .start(McpConfig {
             port: 0,
             profile_ids: vec![999999],
-            allow_execution: true
+            allow_execution: true,
+            allow_sftp_read: false,
+            allow_sftp_write: false,
         })
         .await
         .is_err());

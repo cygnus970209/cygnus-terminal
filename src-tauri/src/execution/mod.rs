@@ -8,12 +8,10 @@ use chrono::Utc;
 use russh::{ChannelMsg, Sig};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{watch, Mutex};
-use zeroize::Zeroize;
 
 use crate::crypto::CryptoManager;
-use crate::db::profile::Profile;
 use crate::db::Database;
-use crate::ssh::{JumpHostConfig, SshManager};
+use crate::ssh::{target::ProfileTarget, SshManager};
 pub mod history;
 use history::{HistorySettings, LookupError, ResultCache};
 
@@ -153,47 +151,6 @@ struct ActiveJob {
     cancel: watch::Sender<bool>,
 }
 
-/// Resolved secrets live only for connection/authentication, never in job records.
-struct Target {
-    profile: Profile,
-    jump: Option<JumpHostConfig>,
-}
-
-impl Target {
-    fn resolve(db: &Database, crypto: &CryptoManager, profile_id: i64) -> Result<Self, String> {
-        let mut target = Self {
-            profile: db.get_profile(profile_id, crypto)?,
-            jump: None,
-        };
-        if target.profile.protocol != "ssh" {
-            return Err("Execution jobs support SSH profiles only".into());
-        }
-        target.jump = target
-            .profile
-            .jump_host
-            .as_deref()
-            .filter(|raw| !raw.is_empty())
-            .map(serde_json::from_str)
-            .transpose()
-            .map_err(|_| "Invalid jump host configuration".to_string())?;
-        Ok(target)
-    }
-}
-
-impl Drop for Target {
-    fn drop(&mut self) {
-        if let Some(value) = &mut self.profile.password {
-            value.zeroize();
-        }
-        if let Some(value) = &mut self.profile.jump_host {
-            value.zeroize();
-        }
-        if let Some(value) = self.jump.as_mut().and_then(|jump| jump.password.as_mut()) {
-            value.zeroize();
-        }
-    }
-}
-
 #[derive(Clone)]
 pub struct ExecutionManager {
     db: Arc<Database>,
@@ -221,7 +178,7 @@ impl ExecutionManager {
     ) -> Result<String, String> {
         req.validate()?;
         // Resolve before creating a job: KEYCHAIN_CONSENT_REQUIRED can safely retry submission.
-        let target = Target::resolve(&self.db, crypto, req.profile_id)?;
+        let target = ProfileTarget::resolve(&self.db, crypto, req.profile_id)?;
         let mut active = self.active.lock().await;
         if active.len() >= MAX_ACTIVE_JOBS {
             return Err("Too many active execution jobs (maximum 16)".into());
@@ -391,7 +348,7 @@ impl ExecutionManager {
     async fn run(
         &self,
         state: Arc<Mutex<JobState>>,
-        target: Target,
+        target: ProfileTarget,
         ssh: SshManager,
         mut cancel: watch::Receiver<bool>,
     ) {

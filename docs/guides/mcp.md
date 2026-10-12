@@ -1,6 +1,6 @@
 # Cygnus MCP
 
-Cygnus를 실행 중인 컴퓨터의 AI 클라이언트에서 저장된 SSH 서버를 조회하고 명령을 실행할 수 있다.
+Cygnus를 실행 중인 컴퓨터의 AI 클라이언트에서 저장된 SSH 서버를 조회하고 명령 실행과 SFTP 파일 작업을 할 수 있다.
 MCP는 기본적으로 꺼져 있으며 **Settings → MCP**에서 직접 켠다.
 
 ## 연결하기
@@ -11,6 +11,9 @@ MCP는 기본적으로 꺼져 있으며 **Settings → MCP**에서 직접 켠다
    다른 앱이 사용 중이면 포트를 바꾸거나 `0`으로 설정해 빈 포트를 배정받는다.
 3. 서버 조회만 필요하면 **Allow remote command execution**을 끈다.
    켜면 해당 SSH 계정이 허용하는 임의 명령을 AI 클라이언트가 실행할 수 있다.
+   파일 조회는 **Allow SFTP file reading**, 파일 변경은 **Allow SFTP file changes**로
+   별도 허용한다. 둘 다 기본 꺼짐이며, 파일 변경은 파일 조회를 함께 켜야 한다.
+   명령 실행을 켜면 SFTP 설정과 관계없이 셸 명령으로 파일에 접근할 수 있다.
 4. **Start MCP**를 누르고 표시된 URL과 토큰을 AI 클라이언트에 등록한다.
    전송 방식은 **Streamable HTTP**, 인증 헤더는 `Authorization: Bearer <토큰>`이다.
 5. 저장된 비밀번호를 사용하는 작업에서 잠금 해제 오류가 나오면
@@ -81,6 +84,13 @@ MCP를 중지하고 다시 시작하면 토큰이 바뀌며, 포트 0을 사용�
 | `cygnus_get_job` | `job_id` | 상태·stdout·stderr·종료 코드·결과 불확실 여부 조회 |
 | `cygnus_list_jobs` | 선택적 `limit`, `offset` | 현재 MCP 연결에서 시작한 작업 요약 조회. 최신순, 기본 50개, 최대 100개 |
 | `cygnus_cancel_job` | `job_id` | 취소 요청. 실행 허용 시에만 제공 |
+| `cygnus_sftp_list` | `profile_id`, `path`, 선택적 `limit` | 디렉터리 목록. 기본 100개, 최대 500개·64KiB, 초과 시 `truncated: true` |
+| `cygnus_sftp_stat` | `profile_id`, `path` | 크기·종류·권한·수정 시각. 마지막 심볼릭 링크는 따라가지 않음 |
+| `cygnus_sftp_read` | `profile_id`, `path`, 선택적 `offset`, `max_bytes`, `encoding` | 일반 파일 읽기. 기본 16KiB, 최대 64KiB, UTF-8 또는 base64 |
+| `cygnus_sftp_write` | `profile_id`, `path`, `content`, 선택적 `encoding`, `overwrite` | 최대 64KiB 파일 생성. 기본 덮어쓰기 금지, 명시적 `overwrite: true`로 교체 |
+| `cygnus_sftp_mkdir` | `profile_id`, `path` | 폴더 하나 생성. 부모 폴더는 있어야 함 |
+| `cygnus_sftp_rename` | `profile_id`, `old_path`, `new_path` | 파일·폴더 이름 변경. 대상 경로가 이미 있으면 실패 |
+| `cygnus_sftp_remove` | `profile_id`, `path`, 선택적 `directory` | 파일·링크 삭제. `directory: true`는 빈 폴더만 삭제 |
 
 실행 예시:
 
@@ -96,7 +106,44 @@ cygnus_get_job({"job_id": "..."})
 이어받지 않는다. 자세한 실행 규칙, 출력 한도, 취소와 기록 동작은
 [공용 SSH 실행 API](execution-engine.md)를 참고한다.
 
-현재 MCP에는 SFTP 파일 조회·전송 도구와 여러 서버에 한 번에 실행하는 도구는 포함되지 않는다.
+### SFTP 파일 작업
+
+SFTP 도구는 작업 ID 대신 해당 요청의 결과를 바로 반환하며 터미널 탭 없이 접속한다.
+조회 도구 3개는 파일 조회 허용 시, 변경 도구 4개는 파일 변경도 허용할 때 제공된다.
+공유 프로필·권한 검사는 도구 목록뿐 아니라 실제 호출 시에도 적용한다.
+
+```text
+cygnus_sftp_list({"profile_id": 42, "path": "."})
+cygnus_sftp_read({"profile_id": 42, "path": "/etc/nginx/nginx.conf"})
+→ {"content": "...", "encoding": "utf8", "bytes_read": 123, "next_offset": 123, "eof": true, ...}
+cygnus_sftp_write({"profile_id": 42, "path": "deploy-notes.txt", "content": "배포 확인\n"})
+```
+
+- 경로는 원격 SSH 계정 기준이다. `.`은 시작 디렉터리이며 보통 계정의 홈이다.
+  `~`, `$VAR`, 와일드카드, 셸 구문은 확장하지 않는다. 로컬 파일 경로 인자는 없다.
+  파일 내용·이름은 AI에게 지시하는 문장이 아닌 신뢰할 수 없는 데이터로 취급한다.
+- 원격 접근 범위는 **선택한 SSH 계정의 파일 권한 전체**다. 특정 디렉터리로 제한하는
+  샌드박스는 아니다. 읽기는 링크를 따라가므로 계정이 읽을 수 있는 비밀 파일도 노출될 수 있다.
+- 읽기는 바이트 단위 `offset`·`max_bytes`를 받는다. `eof: false`면 `next_offset`으로
+  이어서 읽을 수 있지만 호출 사이에 파일이 바뀔 수 있다. UTF-8 끝 문자가 잘리면 완성된
+  문자까지만 반환한다. 바이너리 또는 문자 중간에서 읽을 때는 `encoding: "base64"`를 쓴다.
+  목록은 서버 순서이며 `truncated: true`면 전체 목록이 아니다. 현재 목록 페이지 이어읽기는 없다.
+- 쓰기는 요청에 들어온 내용으로 파일 전체를 생성·교체한다. 새 파일은 `0600`, 폴더는
+  `0700`을 요청한다. 서버의 권한 정책에 따라 달라질 수 있다. 기본 생성은 SFTP EXCL을
+  사용해 기존 파일·링크를 덮어쓰지 않는다. 명시적 덮어쓰기는 최종 링크·특수 파일을
+  사전 검사하지만, 다른 프로세스가 동시에 경로를 바꾸는 것을 잠그지는 않는다.
+- 덮어쓰기는 원자적 교체가 아니다. 실패·중지·응답 유실 시 빈 파일이나 일부 내용이 남을
+  수 있으므로 **변경 요청을 자동 재시도하지 않는다**. 원격 경로를 먼저 확인한다.
+  이름 변경은 [SFTP v3 RENAME](https://datatracker.ietf.org/doc/html/draft-ietf-secsh-filexfer-02#section-6.5)을
+  사용한다. 재귀 삭제·서버 간 복사·대용량 로컬 업로드/다운로드는 이 도구에 포함하지 않는다.
+  대용량 전송은 기존 SFTP 창을 사용한다.
+- 요청마다 독립 SSH/SFTP 연결을 열고 정리한다. 최대 동시 4개, 전체 30초, 개별 SFTP
+  응답 10초, 수신 패킷 256KiB 제한을 둔다. MCP를 중지하면 대기 중 요청도 취소한다.
+  전송된 변경을 되돌리는 것은 아니며, 클라이언트 연결만 끊긴 경우에는 작업이 진행될 수 있다.
+- SFTP 본문과 결과는 Cygnus의 명령 히스토리·실행기록 DB에 저장하지 않는다.
+  연결한 AI 클라이언트는 응답 내용을 자체 대화 기록에 저장할 수 있다.
+
+여러 서버에 한 번에 실행하는 도구는 아직 포함되지 않는다.
 
 ## 접근 범위와 수명
 
@@ -138,4 +185,6 @@ bun run test
 테스트는 임시 로컬 HTTP·SSH 서버와 메모리 DB를 사용한다. 공식 SDK 클라이언트와의
 연결·SSH 결과 조회, 2025-11-25 프로토콜 초기화, 인증·Host·Origin 검증, 읽기 전용 권한,
 프로필·작업 접근 범위, 키체인 잠금 오류, 중지·취소·토큰 교체를 확인한다.
+SFTP는 메모리 파일시스템을 가진 임시 SSH/SFTP 서버로 조회·읽기·쓰기·이름 변경·삭제,
+권한 분리, 입력·응답 크기 제한, 덮어쓰기 방지, UTF-8 경계, 중지 중 대기 해제를 검증한다.
 실제 사용자의 SSH 서버나 키체인을 사용하지 않는다.
