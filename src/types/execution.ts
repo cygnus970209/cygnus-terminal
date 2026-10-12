@@ -38,6 +38,8 @@ export interface ExecutionSummary {
   exit_code: number | null;
   exit_signal: string | null;
   output_truncated: boolean;
+  interactive: boolean;
+  output_withheld: boolean;
   remote_outcome_unknown: boolean;
   error: string | null;
   persistence_error: string | null;
@@ -47,3 +49,8 @@ export interface ExecutionJob extends ExecutionSummary {
   stdout: string;
   stderr: string;
 }
+
+export type ExecutionTerminalEvent =
+  | { type: "Snapshot"; data: ExecutionJob }
+  | { type: "Output"; data: number[] }
+  | { type: "Status"; data: ExecutionSummary };

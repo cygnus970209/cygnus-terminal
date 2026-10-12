@@ -1,6 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from "react";
 import { invoke, keychainNotice } from "./services/secureInvoke";
-import { emit } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   Profile,
@@ -16,6 +16,8 @@ import Icon from "./components/common/Icon";
 import ResizablePanel from "./components/common/ResizablePanel";
 import SettingsDialog from "./components/common/SettingsDialog";
 import Terminal from "./components/terminal/Terminal";
+import McpTerminal from "./components/terminal/McpTerminal";
+import type { ExecutionSummary } from "./types/execution";
 import LogViewer from "./components/terminal/LogViewer";
 import MonitorPanel from "./components/terminal/MonitorPanel";
 import StatusBar, { DrawerTab } from "./components/common/StatusBar";
@@ -56,6 +58,40 @@ let tabCounter = 1;
 function App() {
   const [tabs, setTabs] = useState<(Tab & { sshConfig?: SshConfig })[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>("connections");
+  const mcpSlots = useRef(new Map<string, ExecutionSummary>());
+  useEffect(() => {
+    let disposed = false;
+    const open = (job: ExecutionSummary) => {
+      if (disposed) return;
+      if ([...mcpSlots.current.values()].some((value) => value.id === job.id)) return;
+      const reusable = [...mcpSlots.current.entries()].find(([, previous]) =>
+        previous.profile_id === job.profile_id && !["connecting", "running", "cancelling"].includes(previous.status));
+      const id = reusable?.[0] ?? `mcp-${job.id}`;
+      mcpSlots.current.set(id, job);
+      setTabs((previous) => {
+        if (previous.some((tab) => tab.id === id)) {
+          return previous.map((tab) => tab.id === id ? { ...tab, execution: job } : tab);
+        }
+        return [...previous, { id, type: "mcp", title: `MCP · ${job.profile_name}`, profileId: job.profile_id, execution: job }];
+      });
+      // New automation must never redirect keystrokes (especially a password)
+      // away from the terminal the human is currently using.
+      setActiveTabId((current) => !current || current === "connections" ? id : current);
+    };
+    // Subscribe before querying pending jobs so an event during app startup is never lost.
+    const subscription = listen<ExecutionSummary>("mcp-execution-created", (event) => open(event.payload));
+    void subscription.then(async () => {
+      const jobs = await invoke<ExecutionSummary[]>("execution_terminal_list");
+      jobs.forEach(open);
+    }).catch(console.error);
+    return () => {
+      disposed = true;
+      void subscription.then((unlisten) => unlisten()).catch(() => {});
+    };
+  }, []);
+  const handleMcpJobStatus = useCallback((id: string, job: ExecutionSummary) => {
+    if (mcpSlots.current.get(id)?.id === job.id) mcpSlots.current.set(id, job);
+  }, []);
   const [showConnectDialog, setShowConnectDialog] = useState(false);
   const [editProfile, setEditProfile] = useState<Profile | null>(null);
   const [sessionMap, setSessionMap] = useState<Record<string, string>>({});
@@ -261,12 +297,12 @@ function App() {
   );
   const displayTabs = tabs.map((tab) => ({
     ...tab,
-    title:
+    title: tab.type === "mcp" ? tab.title :
       knownProfiles.find(
         (profile) => profile.id === (tab.profileId ?? tab.sshConfig?.profileId),
       )?.name ?? tab.title,
   }));
-  const activeTitle = activeProfile?.name ?? activeTab?.title ?? "Connections";
+  const activeTitle = activeTab?.type === "mcp" ? activeTab.title : activeProfile?.name ?? activeTab?.title ?? "Connections";
   const activeStatus = activeTabId
     ? (sessionStatuses[activeTabId] ?? "connecting")
     : "ended";
@@ -448,6 +484,7 @@ function App() {
     const closedSessions = new Set<string>();
     for (const tab of tabs) {
       if (!closing.has(tab.id)) continue;
+      mcpSlots.current.delete(tab.id);
       const sessionId = sessionMap[tab.id];
       if (sessionId) {
         closedSessions.add(sessionId);
@@ -993,7 +1030,7 @@ function App() {
                 }}
               >
                 {tabs
-                  .filter((t) => t.type !== "sftp")
+                  .filter((t) => t.type !== "sftp" && t.type !== "mcp")
                   .map((tab) => (
                     <Terminal
                       key={tab.id}
@@ -1012,6 +1049,10 @@ function App() {
                       onShellIntegrationChange={handleShellIntegrationChange}
                     />
                   ))}
+                {tabs.filter((tab) => tab.type === "mcp" && tab.execution).map((tab) => (
+                  <McpTerminal key={tab.id} tabId={tab.id} job={tab.execution!}
+                    isActive={tab.id === activeTabId} onSessionStatus={handleSessionStatus} onJobStatus={handleMcpJobStatus} />
+                ))}
               </div>
             </div>
             {activeTabId && sshActive && (

@@ -414,7 +414,7 @@ fn error(response: &Value) {
 async fn sftp_permissions_default_off_and_are_enforced_beyond_tool_discovery() {
     let e = TestEnv::new(true).await;
     let old: McpConfig = serde_json::from_value(
-        json!({"port":0,"profile_ids":[e.fixture.profile_id],"allow_execution":true}),
+        json!({"port":0,"profile_ids":[e.fixture.profile_id],"allow_execution":true,"acknowledge_risks":true}),
     )
     .unwrap();
     assert!(!old.allow_sftp_read && !old.allow_sftp_write);

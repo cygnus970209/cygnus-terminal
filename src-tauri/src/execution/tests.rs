@@ -8,10 +8,75 @@ use tokio::task::{JoinHandle, JoinSet};
 #[derive(Default)]
 struct TestServer {
     waiting_for_stdin: bool,
+    allow_pty: bool,
+    has_pty: bool,
+    interactive: bool,
 }
 
 impl server::Handler for TestServer {
     type Error = russh::Error;
+
+    async fn pty_request(
+        &mut self,
+        channel: ChannelId,
+        _: &str,
+        _: u32,
+        _: u32,
+        _: u32,
+        _: u32,
+        _: &[(russh::Pty, u32)],
+        session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        self.has_pty = self.allow_pty;
+        if self.allow_pty {
+            session.channel_success(channel)?;
+        } else {
+            session.channel_failure(channel)?;
+        }
+        Ok(())
+    }
+
+    async fn data(
+        &mut self,
+        channel: ChannelId,
+        data: &[u8],
+        session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        if self.interactive {
+            // Deliberately echo human input, including secrets, on both output streams.
+            session.data(channel, data.to_vec())?;
+            session.extended_data(channel, 1, data.to_vec())?;
+            if data.starts_with(b"signal-private-") {
+                session.exit_signal_request(
+                    channel,
+                    Sig::Custom(String::from_utf8_lossy(data).into_owned()),
+                    false,
+                    "private failure text",
+                    "en",
+                )?;
+            } else {
+                session.exit_status_request(channel, 0)?;
+            }
+            session.eof(channel)?;
+            session.close(channel)?;
+        }
+        Ok(())
+    }
+
+    async fn window_change_request(
+        &mut self,
+        channel: ChannelId,
+        cols: u32,
+        rows: u32,
+        _: u32,
+        _: u32,
+        session: &mut Session,
+    ) -> Result<(), Self::Error> {
+        if self.interactive {
+            session.data(channel, format!("size:{cols}x{rows}\n").into_bytes())?;
+        }
+        Ok(())
+    }
 
     async fn channel_open_direct_tcpip(
         &mut self,
@@ -63,6 +128,15 @@ impl server::Handler for TestServer {
         }
         session.channel_success(channel)?;
         match command {
+            b"interactive" => {
+                assert!(
+                    self.has_pty,
+                    "interactive commands must have an accepted PTY"
+                );
+                self.interactive = true;
+                session.data(channel, b"Password: ".to_vec())?;
+                return Ok(());
+            }
             b"signal" => {
                 session.exit_signal_request(channel, Sig::TERM, false, "terminated", "en")?;
                 session.close(channel)?;
@@ -131,6 +205,10 @@ impl Drop for Fixture {
 
 impl Fixture {
     pub(crate) async fn new(trusted: bool) -> Self {
+        Self::with_pty(trusted, true).await
+    }
+
+    async fn with_pty(trusted: bool, allow_pty: bool) -> Self {
         let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
         let port = listener.local_addr().unwrap().port();
         let key =
@@ -161,7 +239,7 @@ impl Fixture {
                         let (stream, _) = accepted.unwrap();
                         let config = config.clone();
                         sessions.spawn(async move {
-                            if let Ok(session) = server::run_stream(config, stream, TestServer::default()).await {
+                            if let Ok(session) = server::run_stream(config, stream, TestServer { allow_pty, ..Default::default() }).await {
                                 let _ = session.await;
                             }
                         });
@@ -988,4 +1066,235 @@ async fn pagination_merges_disk_memory_and_running_jobs_without_gaps() {
     assert!(f.manager.list(1, u32::MAX).await.unwrap().is_empty());
     f.manager.cancel(&running).await.unwrap();
     f.finished(&running).await;
+}
+
+#[tokio::test]
+async fn interactive_jobs_require_a_monitor_and_wait_before_connecting() {
+    let f = Fixture::new(true).await;
+    assert!(f
+        .manager
+        .start_interactive(f.request("success"), &f.crypto, f.ssh.clone())
+        .await
+        .is_err());
+    let manager = f.manager.clone().with_terminal_notifier(|_| Ok(()));
+    let id = manager
+        .start_interactive(f.request("success"), &f.crypto, f.ssh.clone())
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_millis(150)).await;
+    let pending = manager.get(&id).await.unwrap();
+    assert_eq!(pending.summary.status, ExecutionStatus::Connecting);
+    assert!(!pending.summary.remote_outcome_unknown);
+    assert!(pending.stdout.is_empty());
+    assert_eq!(manager.active_terminals().await.len(), 1);
+    assert!(manager
+        .attach_terminal(&id, Arc::new(|_| Err("UI failed".into())))
+        .await
+        .is_err());
+    manager.cancel(&id).await.unwrap();
+    let cancelled = f.finished(&id).await;
+    assert_eq!(cancelled.summary.status, ExecutionStatus::Cancelled);
+    assert!(!cancelled.summary.remote_outcome_unknown);
+    assert!(manager.active_terminals().await.is_empty());
+
+    let mut request = f.request("success");
+    request.timeout_seconds = Some(1);
+    let id = manager
+        .start_interactive(request, &f.crypto, f.ssh.clone())
+        .await
+        .unwrap();
+    let timed_out = f.finished(&id).await;
+    assert_eq!(timed_out.summary.status, ExecutionStatus::TimedOut);
+    assert!(!timed_out.summary.remote_outcome_unknown);
+}
+
+#[tokio::test]
+async fn manual_input_and_echoed_secrets_stay_in_local_terminal_even_with_history_enabled() {
+    let f = Fixture::new(true).await;
+    f.manager
+        .set_history_settings(HistorySettings {
+            enabled: true,
+            retention_days: 7,
+        })
+        .await
+        .unwrap();
+    let manager = f.manager.clone().with_terminal_notifier(|_| Ok(()));
+    let id = manager
+        .start_interactive(f.request("interactive"), &f.crypto, f.ssh.clone())
+        .await
+        .unwrap();
+    let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let captured = events.clone();
+    manager
+        .attach_terminal(
+            &id,
+            Arc::new(move |event| {
+                captured.lock().unwrap().push(event);
+                Ok(())
+            }),
+        )
+        .await
+        .unwrap();
+    f.has_output(&id).await;
+    manager.terminal_resize(&id, 123, 42).await.unwrap();
+    tokio::time::timeout(Duration::from_secs(3), async {
+        while !manager
+            .get(&id)
+            .await
+            .unwrap()
+            .stdout
+            .contains("size:123x42")
+        {
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        }
+    })
+    .await
+    .unwrap();
+    assert!(manager.terminal_resize(&id, 0, 42).await.is_err());
+    assert!(manager
+        .terminal_input(&id, zeroize::Zeroizing::new(vec![b'x'; 65537]))
+        .await
+        .is_err());
+    assert!(!manager.get(&id).await.unwrap().summary.output_withheld);
+    manager
+        .terminal_input(
+            &id,
+            zeroize::Zeroizing::new(b"private-human-password\r".to_vec()),
+        )
+        .await
+        .unwrap();
+    let result = f.finished(&id).await;
+    assert_eq!(result.summary.status, ExecutionStatus::Succeeded);
+    assert!(result.summary.interactive && result.summary.output_withheld);
+    assert!(result.stdout.contains("Password:"));
+    assert!(!serde_json::to_string(&result)
+        .unwrap()
+        .contains("private-human-password"));
+    let disk = f.db.get_execution_job(&id).unwrap();
+    assert!(disk.summary.output_withheld);
+    assert!(!serde_json::to_string(&disk)
+        .unwrap()
+        .contains("private-human-password"));
+    let events = events.lock().unwrap();
+    assert!(matches!(events.first(), Some(TerminalEvent::Snapshot(_))));
+    let local: Vec<u8> = events
+        .iter()
+        .filter_map(|event| match event {
+            TerminalEvent::Output(bytes) => Some(bytes.as_slice()),
+            _ => None,
+        })
+        .flatten()
+        .copied()
+        .collect();
+    assert!(String::from_utf8_lossy(&local).contains("private-human-password"));
+    assert!(
+        matches!(events.last(), Some(TerminalEvent::Status(summary)) if summary.status == ExecutionStatus::Succeeded)
+    );
+}
+
+#[tokio::test]
+async fn refused_pty_and_lost_monitor_do_not_silently_execute_in_background() {
+    let f = Fixture::with_pty(true, false).await;
+    let manager = f.manager.clone().with_terminal_notifier(|_| Ok(()));
+    let id = manager
+        .start_interactive(f.request("success"), &f.crypto, f.ssh.clone())
+        .await
+        .unwrap();
+    manager
+        .attach_terminal(&id, Arc::new(|_| Ok(())))
+        .await
+        .unwrap();
+    let result = f.finished(&id).await;
+    assert_eq!(result.summary.status, ExecutionStatus::Failed);
+    assert!(result.summary.error.unwrap().contains("PTY"));
+    assert!(!result.summary.remote_outcome_unknown);
+    assert!(result.stdout.is_empty());
+
+    let f = Fixture::new(true).await;
+    let manager = f
+        .manager
+        .clone()
+        .with_terminal_notifier(|_| Err("window unavailable".into()));
+    assert!(manager
+        .start_interactive(f.request("success"), &f.crypto, f.ssh.clone())
+        .await
+        .is_err());
+    assert!(manager.active_terminals().await.is_empty());
+    let manager = f.manager.clone().with_terminal_notifier(|_| Ok(()));
+    let id = manager
+        .start_interactive(f.request("hang"), &f.crypto, f.ssh.clone())
+        .await
+        .unwrap();
+    manager
+        .attach_terminal(
+            &id,
+            Arc::new(|event| {
+                if matches!(event, TerminalEvent::Output(_)) {
+                    Err("monitor disconnected".into())
+                } else {
+                    Ok(())
+                }
+            }),
+        )
+        .await
+        .unwrap();
+    let result = f.finished(&id).await;
+    assert_eq!(result.summary.status, ExecutionStatus::Failed);
+    assert!(result
+        .summary
+        .error
+        .unwrap()
+        .contains("monitor disconnected"));
+    assert!(result.summary.remote_outcome_unknown);
+    assert!(result.stdout.is_empty());
+}
+
+#[tokio::test]
+async fn server_failure_metadata_cannot_echo_manual_input_into_mcp_results() {
+    let f = Fixture::new(true).await;
+    let manager = f.manager.clone().with_terminal_notifier(|_| Ok(()));
+    let id = manager
+        .start_interactive(f.request("interactive"), &f.crypto, f.ssh.clone())
+        .await
+        .unwrap();
+    manager
+        .attach_terminal(&id, Arc::new(|_| Ok(())))
+        .await
+        .unwrap();
+    f.has_output(&id).await;
+    manager
+        .terminal_input(
+            &id,
+            zeroize::Zeroizing::new(b"signal-private-password".to_vec()),
+        )
+        .await
+        .unwrap();
+    let result = tokio::time::timeout(Duration::from_secs(3), async {
+        loop {
+            let job = manager.get(&id).await.unwrap();
+            assert!(!serde_json::to_string(&job)
+                .unwrap()
+                .contains("signal-private-password"));
+            if job.summary.status.is_terminal() {
+                break job;
+            }
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    assert_eq!(result.summary.status, ExecutionStatus::Failed);
+    assert_eq!(
+        result.summary.exit_signal.as_deref(),
+        Some("withheld after local input")
+    );
+    assert!(result
+        .summary
+        .error
+        .unwrap()
+        .contains("details are withheld"));
+    assert!(matches!(
+        f.db.get_execution_job(&id),
+        Err(LookupError::NotFound)
+    ));
 }

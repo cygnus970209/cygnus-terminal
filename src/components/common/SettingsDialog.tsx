@@ -34,7 +34,10 @@ export default function SettingsDialog({ onClose }: SettingsDialogProps) {
   const active = TABS.find((t) => t.id === activeId) ?? TABS[0];
 
   return (
-    <div className="dialog-overlay" onClick={onClose}>
+    <div className="dialog-overlay" onMouseDown={(event) => {
+      // A drag ending outside the dialog can produce a click on the overlay.
+      if (event.button === 0 && event.target === event.currentTarget) onClose();
+    }}>
       <div className="settings-dialog" onClick={(e) => e.stopPropagation()}>
         <div className="settings-header">
           <h2 className="settings-title">Settings</h2>

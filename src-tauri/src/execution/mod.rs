@@ -1,5 +1,4 @@
-//! Profile-based, non-interactive SSH jobs shared by future UI and MCP adapters.
-//! No PTY, terminal tab, or frontend event channel is required.
+//! Profile-based SSH jobs. MCP jobs require an attached local PTY monitor.
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -7,13 +6,15 @@ use std::time::{Duration, Instant};
 use chrono::Utc;
 use russh::{ChannelMsg, Sig};
 use serde::{Deserialize, Serialize};
-use tokio::sync::{watch, Mutex};
+use tokio::sync::{mpsc, watch, Mutex};
 
 use crate::crypto::CryptoManager;
 use crate::db::Database;
 use crate::ssh::{target::ProfileTarget, SshManager};
 pub mod history;
+pub mod terminal;
 use history::{HistorySettings, LookupError, ResultCache};
+use terminal::{TerminalControl, TerminalEvent, TerminalSink};
 
 const MAX_ACTIVE_JOBS: usize = 16;
 const DEFAULT_OUTPUT_LIMIT: usize = 1024 * 1024;
@@ -91,6 +92,11 @@ pub struct ExecutionSummary {
     pub exit_code: Option<u32>,
     pub exit_signal: Option<String>,
     pub output_truncated: bool,
+    #[serde(default)]
+    pub interactive: bool,
+    /// After human input, subsequent output is delivered only to the local terminal.
+    #[serde(default)]
+    pub output_withheld: bool,
     /// True once exec may have reached the server, until an exit result is received.
     /// Cancellation/timeout is not proof that the remote process has stopped.
     pub remote_outcome_unknown: bool,
@@ -111,6 +117,7 @@ struct JobState {
     summary: ExecutionSummary,
     stdout: Vec<u8>,
     stderr: Vec<u8>,
+    terminal: Option<TerminalSink>,
 }
 
 impl JobState {
@@ -130,7 +137,13 @@ impl JobState {
         }
     }
 
-    fn append(&mut self, data: &[u8], stderr: bool) {
+    fn append(&mut self, data: &[u8], stderr: bool) -> Result<(), String> {
+        if self.summary.interactive {
+            self.send_terminal(TerminalEvent::Output(data.to_vec()))?;
+        }
+        if self.summary.output_withheld {
+            return Ok(());
+        }
         let available = self
             .summary
             .output_limit_bytes
@@ -143,12 +156,15 @@ impl JobState {
             &mut self.stdout
         };
         output.extend_from_slice(&data[..count]);
+        Ok(())
     }
 }
 
 struct ActiveJob {
     state: Arc<Mutex<JobState>>,
     cancel: watch::Sender<bool>,
+    input: Option<mpsc::Sender<TerminalControl>>,
+    ready: watch::Sender<bool>,
 }
 
 #[derive(Clone)]
@@ -156,6 +172,7 @@ pub struct ExecutionManager {
     db: Arc<Database>,
     active: Arc<Mutex<HashMap<String, ActiveJob>>>,
     completed: Arc<Mutex<ResultCache>>,
+    terminal_notifier: Option<Arc<dyn Fn(ExecutionSummary) -> Result<(), String> + Send + Sync>>,
 }
 
 impl ExecutionManager {
@@ -167,6 +184,7 @@ impl ExecutionManager {
             db,
             active: Arc::new(Mutex::new(HashMap::new())),
             completed: Arc::new(Mutex::new(ResultCache::default())),
+            terminal_notifier: None,
         })
     }
 
@@ -175,6 +193,28 @@ impl ExecutionManager {
         req: StartExecutionRequest,
         crypto: &CryptoManager,
         ssh: SshManager,
+    ) -> Result<String, String> {
+        self.start_job(req, crypto, ssh, false).await
+    }
+
+    pub async fn start_interactive(
+        &self,
+        req: StartExecutionRequest,
+        crypto: &CryptoManager,
+        ssh: SshManager,
+    ) -> Result<String, String> {
+        if self.terminal_notifier.is_none() {
+            return Err("The Cygnus terminal monitor is unavailable".into());
+        }
+        self.start_job(req, crypto, ssh, true).await
+    }
+
+    async fn start_job(
+        &self,
+        req: StartExecutionRequest,
+        crypto: &CryptoManager,
+        ssh: SshManager,
+        interactive: bool,
     ) -> Result<String, String> {
         req.validate()?;
         // Resolve before creating a job: KEYCHAIN_CONSENT_REQUIRED can safely retry submission.
@@ -204,25 +244,51 @@ impl ExecutionManager {
                 exit_code: None,
                 exit_signal: None,
                 output_truncated: false,
+                interactive,
+                output_withheld: false,
                 remote_outcome_unknown: false,
                 error: None,
                 persistence_error: None,
             },
             stdout: Vec::new(),
             stderr: Vec::new(),
+            terminal: None,
         }));
         state.lock().await.persist(&self.db)?;
         let (cancel, receiver) = watch::channel(false);
+        let (ready, readiness) = watch::channel(false);
+        let (input, controls) = mpsc::channel(32);
         active.insert(
             id.clone(),
             ActiveJob {
                 state: state.clone(),
                 cancel,
+                input: interactive.then_some(input),
+                ready,
             },
         );
+        drop(active);
+        if interactive {
+            let summary = state.lock().await.summary.clone();
+            if let Err(error) = self.terminal_notifier.as_ref().expect("monitor checked")(summary) {
+                // No network activity has started. Retain an explicit failure for local history.
+                let mut active = self.active.lock().await;
+                let mut state = state.lock().await;
+                state.summary.status = ExecutionStatus::Failed;
+                state.summary.error = Some("Unable to open the local terminal monitor".into());
+                state.summary.finished_at = Some(Utc::now().to_rfc3339());
+                if !state.persist(&self.db).unwrap_or(false) {
+                    self.completed.lock().await.insert(state.snapshot());
+                }
+                active.remove(&id);
+                return Err(error);
+            }
+        }
         let manager = self.clone();
         tokio::spawn(async move {
-            manager.run(state, target, ssh, receiver).await;
+            manager
+                .run(state, target, ssh, receiver, readiness, controls)
+                .await;
         });
         Ok(id)
     }
@@ -288,6 +354,7 @@ impl ExecutionManager {
             if !state.summary.status.is_terminal() {
                 state.summary.status = ExecutionStatus::Cancelling;
                 job.cancel.send_replace(true);
+                let _ = state.send_terminal(TerminalEvent::Status(state.summary.clone()));
             }
             return Ok(());
         }
@@ -351,6 +418,8 @@ impl ExecutionManager {
         target: ProfileTarget,
         ssh: SshManager,
         mut cancel: watch::Receiver<bool>,
+        mut ready: watch::Receiver<bool>,
+        mut controls: mpsc::Receiver<TerminalControl>,
     ) {
         let started = Instant::now();
         let timeout = Duration::from_secs(state.lock().await.summary.timeout_seconds);
@@ -358,7 +427,15 @@ impl ExecutionManager {
         let mut channel = None;
         let mut connection = None;
         let cancellation = cancel.clone();
+        let interactive = state.lock().await.summary.interactive;
         let operation = async {
+            if interactive {
+                // Fail closed: never connect or execute until the actual tab attaches.
+                ready
+                    .wait_for(|attached| *attached)
+                    .await
+                    .map_err(|_| "Terminal monitor closed")?;
+            }
             connection = Some(
                 ssh.connect_transport(
                     None,
@@ -383,6 +460,18 @@ impl ExecutionManager {
                     .map_err(|e| format!("Channel open failed: {e}"))?,
             );
             let channel = channel.as_mut().expect("opened channel");
+            if interactive {
+                channel
+                    .request_pty(true, "xterm-256color", 80, 24, 0, 0, &[])
+                    .await
+                    .map_err(|e| format!("PTY request failed: {e}"))?;
+                match channel.wait().await {
+                    Some(ChannelMsg::Success) => {}
+                    _ => {
+                        return Err("Server rejected the interactive terminal (PTY) request".into())
+                    }
+                }
+            }
             let command = {
                 let mut state = state.lock().await;
                 if *cancellation.borrow() {
@@ -395,28 +484,50 @@ impl ExecutionManager {
                     state.summary.remote_outcome_unknown = false;
                     return Err(error);
                 }
+                if interactive {
+                    state.send_terminal(TerminalEvent::Status(state.summary.clone()))?;
+                }
                 state.summary.command.clone()
             };
             channel
                 .exec(true, command.as_bytes())
                 .await
                 .map_err(|e| format!("Exec request failed: {e}"))?;
-            // No interactive stdin in this API. Commands like `cat` must receive EOF.
-            channel
-                .eof()
-                .await
-                .map_err(|e| format!("Stdin close failed: {e}"))?;
-            while let Some(msg) = channel.wait().await {
+            if !interactive {
+                // Preserve EOF semantics for non-interactive local API callers.
+                channel
+                    .eof()
+                    .await
+                    .map_err(|e| format!("Stdin close failed: {e}"))?;
+            }
+            loop {
+                let msg = tokio::select! {
+                    control = controls.recv(), if interactive => {
+                        match control {
+                            Some(TerminalControl::Input(data)) => channel.data(&data[..]).await
+                                .map_err(|e| format!("Terminal input failed: {e}"))?,
+                            Some(TerminalControl::Resize(cols, rows)) => channel.window_change(cols, rows, 0, 0).await
+                                .map_err(|e| format!("Terminal resize failed: {e}"))?,
+                            None => return Err("Terminal monitor closed".into()),
+                        }
+                        continue;
+                    },
+                    msg = channel.wait() => match msg { Some(msg) => msg, None => break },
+                };
                 let mut state = state.lock().await;
                 match msg {
-                    ChannelMsg::Data { data } => state.append(&data, false),
-                    ChannelMsg::ExtendedData { data, ext: 1 } => state.append(&data, true),
+                    ChannelMsg::Data { data } => state.append(&data, false)?,
+                    ChannelMsg::ExtendedData { data, ext: 1 } => state.append(&data, true)?,
                     ChannelMsg::ExitStatus { exit_status } => {
                         state.summary.exit_code = Some(exit_status);
                         state.summary.remote_outcome_unknown = false;
                     }
                     ChannelMsg::ExitSignal { signal_name, .. } => {
-                        state.summary.exit_signal = Some(format!("{signal_name:?}"));
+                        state.summary.exit_signal = Some(if state.summary.output_withheld {
+                            "withheld after local input".into()
+                        } else {
+                            format!("{signal_name:?}")
+                        });
                         state.summary.remote_outcome_unknown = false;
                     }
                     ChannelMsg::Failure => {
@@ -467,6 +578,18 @@ impl ExecutionManager {
         let mut state = state.lock().await;
         state.summary.status = outcome.0;
         state.summary.error = outcome.1;
+        if state.summary.output_withheld {
+            // Server-provided signal names / transport errors may also echo input.
+            if state.summary.exit_signal.is_some() {
+                state.summary.exit_signal = Some("withheld after local input".into());
+            }
+            if state.summary.error.is_some() && outcome.0 == ExecutionStatus::Failed {
+                state.summary.error = Some(
+                    "Interactive command failed after local input; remote details are withheld"
+                        .into(),
+                );
+            }
+        }
         state.summary.finished_at = Some(Utc::now().to_rfc3339());
         state.summary.duration_ms = Some(started.elapsed().as_millis() as u64);
         match state.persist(&self.db) {
@@ -481,6 +604,7 @@ impl ExecutionManager {
                 state.summary.persistence_error = Some(error);
             }
         }
+        let _ = state.send_terminal(TerminalEvent::Status(state.summary.clone()));
     }
 }
 

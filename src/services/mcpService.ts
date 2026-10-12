@@ -6,6 +6,7 @@ export interface McpConfig {
   allow_execution: boolean;
   allow_sftp_read: boolean;
   allow_sftp_write: boolean;
+  acknowledge_risks: boolean;
 }
 
 export interface McpStatus {

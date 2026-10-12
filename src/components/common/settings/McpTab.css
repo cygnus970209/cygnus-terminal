@@ -9,6 +9,12 @@
 .mcp-heading h3 { margin: 0; font-size: 14px; }
 .mcp-heading span { color: var(--text-secondary); }
 .mcp-settings p { margin: 0; color: var(--text-muted); line-height: 1.5; }
+.mcp-security-note { padding: 12px; border: 1px solid var(--border); border-left: 2px solid var(--warn); border-radius: 6px; background: var(--bg-tertiary); }
+.mcp-security-note h4 { margin: 0 0 8px; color: var(--warn); font-size: 12px; font-weight: 600; }
+.mcp-security-note ul { display: flex; flex-direction: column; gap: 8px; margin: 0; padding-left: 16px; color: var(--text-secondary); line-height: 1.5; }
+.mcp-security-note code { font-family: var(--font-mono); }
+.mcp-consent { display: flex; align-items: flex-start; gap: 8px; margin-top: 12px; line-height: 1.5; cursor: pointer; }
+.mcp-consent small { margin-top: 4px; }
 .mcp-settings fieldset { margin: 0; padding: 12px; border: 1px solid var(--border); border-radius: 6px; min-width: 0; }
 .mcp-settings legend { padding: 0 4px; }
 .mcp-profiles { max-height: 160px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }

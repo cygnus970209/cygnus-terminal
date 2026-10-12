@@ -9,12 +9,18 @@ use rmcp::ServiceExt;
 use serde_json::{json, Value};
 
 pub(super) fn manager(f: &Fixture) -> McpManager {
-    McpManager::new(
-        f.db.clone(),
-        f.crypto.clone(),
-        f.manager.clone(),
-        f.ssh.clone(),
-    )
+    let monitor = f.manager.clone();
+    let execution = f.manager.clone().with_terminal_notifier(move |job| {
+        let monitor = monitor.clone();
+        tokio::spawn(async move {
+            monitor
+                .attach_terminal(&job.id, Arc::new(|_| Ok(())))
+                .await
+                .unwrap();
+        });
+        Ok(())
+    });
+    McpManager::new(f.db.clone(), f.crypto.clone(), execution, f.ssh.clone())
 }
 
 pub(super) fn config(f: &Fixture, execution: bool) -> McpConfig {
@@ -24,6 +30,7 @@ pub(super) fn config(f: &Fixture, execution: bool) -> McpConfig {
         allow_execution: execution,
         allow_sftp_read: false,
         allow_sftp_write: false,
+        acknowledge_risks: true,
     }
 }
 
@@ -61,6 +68,46 @@ pub(super) async fn call(status: &McpStatus, name: &str, arguments: Value) -> Va
         json!({"name":name,"arguments":arguments}),
     )
     .await
+}
+
+#[tokio::test]
+async fn every_activation_requires_explicit_risk_acknowledgement() {
+    let f = Fixture::new(true).await;
+    let m = manager(&f);
+    // Metadata-only and command-enabled access both return data to the client.
+    for execution in [false, true] {
+        for acknowledgement in [None, Some(false)] {
+            let mut request = json!({
+                "port": 0, "profile_ids": [f.profile_id], "allow_execution": execution
+            });
+            if let Some(value) = acknowledgement {
+                request["acknowledge_risks"] = json!(value);
+            }
+            let request: McpConfig = serde_json::from_value(request).unwrap();
+            let error = m
+                .start(request)
+                .await
+                .err()
+                .expect("consent must be required");
+            assert!(error.contains("security and privacy notice"));
+            let status = m.status().await;
+            assert!(!status.running);
+            assert!(status.endpoint.is_none() && status.token.is_none() && status.config.is_none());
+        }
+        let status = m.start(config(&f, execution)).await.unwrap();
+        assert!(status.running);
+        assert!(status.config.as_ref().unwrap().acknowledge_risks);
+        let result = call(&status, "cygnus_list_servers", json!({})).await;
+        assert_eq!(
+            result["result"]["structuredContent"]["servers"][0]["id"],
+            f.profile_id
+        );
+        m.stop().await;
+        assert!(m.status().await.config.is_none());
+    }
+    let mut request = config(&f, true);
+    request.acknowledge_risks = false;
+    assert!(m.start(request).await.is_err());
 }
 
 #[tokio::test]
@@ -295,7 +342,7 @@ async fn locked_credentials_return_an_actionable_error_without_starting_a_job() 
     let m = McpManager::new(
         f.db.clone(),
         CryptoManager::new(),
-        f.manager.clone(),
+        f.manager.clone().with_terminal_notifier(|_| Ok(())),
         f.ssh.clone(),
     );
     let status = m.start(config(&f, true)).await.unwrap();
@@ -325,6 +372,7 @@ async fn invalid_config_arguments_and_duplicate_start_do_not_expand_access() {
             allow_execution: true,
             allow_sftp_read: false,
             allow_sftp_write: false,
+            acknowledge_risks: true,
         })
         .await
         .is_err());
@@ -335,6 +383,7 @@ async fn invalid_config_arguments_and_duplicate_start_do_not_expand_access() {
             allow_execution: true,
             allow_sftp_read: false,
             allow_sftp_write: false,
+            acknowledge_risks: true,
         })
         .await
         .is_err());

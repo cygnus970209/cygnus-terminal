@@ -17,6 +17,7 @@ export default function McpTab() {
   const [allowExecution, setAllowExecution] = useState(false);
   const [allowSftpRead, setAllowSftpRead] = useState(false);
   const [allowSftpWrite, setAllowSftpWrite] = useState(false);
+  const [acknowledgedRisks, setAcknowledgedRisks] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -29,6 +30,7 @@ export default function McpTab() {
         if (disposed) return;
         setServer(status);
         setProfiles(saved.filter((p) => p.protocol === "ssh"));
+        setAcknowledgedRisks(status.config?.acknowledge_risks === true);
         if (status.config) {
           setSelected(status.config.profile_ids);
           setPort(String(status.config.port));
@@ -60,7 +62,21 @@ export default function McpTab() {
         <h3>Cygnus MCP</h3>
         <span>{server ? (server.running ? "Running" : "Stopped") : "Loading…"}</span>
       </div>
-      <p>Connect an AI client to selected SSH servers while Cygnus is open. Access stays on this computer and resets when the app closes.</p>
+      <p>Connect an AI client to selected SSH servers while Cygnus is open. The MCP endpoint is available only on this computer; shared access resets when the app closes.</p>
+      <section className="mcp-security-note" aria-labelledby="mcp-security-heading">
+        <h4 id="mcp-security-heading">Security &amp; privacy</h4>
+        <ul>
+          <li>Cygnus uses saved SSH passwords locally to authenticate with your servers. MCP does not expose those saved credentials.</li>
+          <li>Command output and file contents may be sent to your AI provider or saved by the client. Secrets in files such as <code>.env</code> and logs are not automatically masked.</li>
+          <li>Command execution grants the SSH account's permissions, including file access even when SFTP permissions are off.</li>
+        </ul>
+        <label className="mcp-consent" htmlFor="mcp-acknowledge-risks">
+          <input id="mcp-acknowledge-risks" type="checkbox" checked={acknowledgedRisks} disabled={busy || configured || !server} onChange={(event) => setAcknowledgedRisks(event.target.checked)} />
+          <span>I understand these risks and agree to share permitted server data with my AI client.
+            <small>{configured ? "Stop MCP to revoke access." : "Required each time you start MCP."}</small>
+          </span>
+        </label>
+      </section>
       {error && <div className="mcp-error" role="alert">{error}</div>}
       {notice && <div role="status">{notice}</div>}
       {!server && error && <button className="settings-btn" onClick={() => { setError(""); setReload((value) => value + 1); }}>Retry</button>}
@@ -85,7 +101,7 @@ export default function McpTab() {
         </fieldset>
         <label className="mcp-permission">
           <input type="checkbox" checked={allowExecution} disabled={disabled} onChange={(e) => setAllowExecution(e.target.checked)} />
-          <span>Allow remote command execution<small>The connected AI client can run any command permitted by these SSH accounts, including commands that change or delete files.</small></span>
+          <span>Allow remote command execution<small>The connected AI client can run any command permitted by these SSH accounts, including commands that change or delete files. Commands open a dedicated MCP terminal; completed tabs are reused per server. Type passwords directly there. After manual input, subsequent output stays local.</small></span>
         </label>
         <label className="mcp-permission">
           <input type="checkbox" checked={allowSftpRead} disabled={disabled} onChange={(e) => {
@@ -101,11 +117,11 @@ export default function McpTab() {
         <div className="settings-actions">
           {configured ? (
             <button className="settings-btn" disabled={busy} onClick={() => void act(async () => {
-              await stopMcp(); setServer(await getMcpStatus()); setNotice("MCP stopped. Cancellation was requested for its active SSH jobs and SFTP requests.");
+              await stopMcp(); setServer(await getMcpStatus()); setAcknowledgedRisks(false); setNotice("MCP stopped. Cancellation was requested for its active SSH jobs and SFTP requests.");
             })}>Stop MCP</button>
           ) : (
-            <button className="settings-btn" disabled={busy || !selected.length || !validPort} onClick={() => void act(async () => {
-              setServer(await startMcp({ port: Number(port), profile_ids: selected, allow_execution: allowExecution, allow_sftp_read: allowSftpRead, allow_sftp_write: allowSftpWrite }));
+            <button className="settings-btn" disabled={busy || !selected.length || !validPort || !acknowledgedRisks} onClick={() => void act(async () => {
+              setServer(await startMcp({ port: Number(port), profile_ids: selected, allow_execution: allowExecution, allow_sftp_read: allowSftpRead, allow_sftp_write: allowSftpWrite, acknowledge_risks: acknowledgedRisks }));
             })}>Start MCP</button>
           )}
           {(allowExecution || allowSftpRead) && <button className="settings-btn" disabled={busy} onClick={() => void act(async () => {

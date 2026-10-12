@@ -152,8 +152,14 @@ pub fn run() {
                     .map_err(std::io::Error::other)?,
             );
             let ssh_manager = SshManager::new(Arc::clone(&database));
+            let terminal_app = app.handle().clone();
             let execution = execution::ExecutionManager::new(Arc::clone(&database))
-                .map_err(std::io::Error::other)?;
+                .map_err(std::io::Error::other)?
+                .with_terminal_notifier(move |job| {
+                    terminal_app
+                        .emit_to("main", "mcp-execution-created", job)
+                        .map_err(|_| "Unable to open the local terminal monitor".into())
+                });
             app.manage(mcp::McpManager::new(
                 Arc::clone(&database),
                 crypto.clone(),
@@ -194,6 +200,10 @@ pub fn run() {
             commands::execution_get,
             commands::execution_list,
             commands::execution_cancel,
+            commands::execution_terminal_list,
+            commands::execution_terminal_attach,
+            commands::execution_terminal_input,
+            commands::execution_terminal_resize,
             commands::execution_history_settings,
             commands::execution_history_update,
             commands::execution_history_clear,

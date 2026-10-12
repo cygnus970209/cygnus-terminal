@@ -43,6 +43,9 @@ pub struct McpConfig {
     pub allow_sftp_read: bool,
     #[serde(default)]
     pub allow_sftp_write: bool,
+    /// Explicit acknowledgement of the security/privacy notice for this activation.
+    #[serde(default)]
+    pub acknowledge_risks: bool,
 }
 
 #[derive(Clone, Default, Serialize)]
@@ -159,6 +162,9 @@ impl McpManager {
         let mut running = self.running.lock().await;
         if running.is_some() {
             return Err("MCP is already running. Stop it before changing access.".into());
+        }
+        if !config.acknowledge_risks {
+            return Err("Review and accept the security and privacy notice in Cygnus Settings > MCP before starting.".into());
         }
         if config.allow_sftp_write && !config.allow_sftp_read {
             return Err("SFTP file changes require SFTP read access".into());

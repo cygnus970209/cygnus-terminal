@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.16] - 2026-10-12
+
+### Added
+- Open dedicated interactive MCP terminals for command execution, reusing completed tabs per server while keeping concurrent commands in separate tabs. Preserve prior output and the user's current input focus.
+- Allow local keyboard input and cancellation from MCP terminals. Wait for the local monitor before connecting and require the SSH server to accept a PTY.
+
+### Changed
+- Require explicit acknowledgement of the MCP security and privacy notice for every activation, enforced in both Settings and the backend.
+- Keep manual terminal input and subsequent output out of MCP results and execution history, including secrets echoed by the server in output or failure metadata.
+
+### Fixed
+- Keep Settings open when a text selection or scrollbar drag ends outside the dialog.
+- Prevent delayed input errors or clipboard reads from affecting the next command when an MCP tab is reused.
+
 ## [0.1.15] - 2026-10-12
 
 ### Added
