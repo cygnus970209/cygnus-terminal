@@ -179,6 +179,13 @@ const MIGRATIONS: &[Migration] = &[
         -- Preserve an existing user's history preference on upgrade.
         INSERT INTO execution_history_settings VALUES(1, EXISTS(SELECT 1 FROM execution_jobs), 7);",
     },
+    Migration {
+        version: 10,
+        sql: "ALTER TABLE profiles ADD COLUMN target_os TEXT NOT NULL DEFAULT 'auto'
+                CHECK(target_os IN ('auto', 'linux', 'windows', 'other'));
+            ALTER TABLE profiles ADD COLUMN remote_shell TEXT NOT NULL DEFAULT 'auto'
+                CHECK(remote_shell IN ('auto', 'posix', 'powershell', 'pwsh', 'cmd'));",
+    },
 ];
 
 impl Database {
@@ -226,6 +233,60 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn server_environment_upgrade_keeps_profile_identity_and_related_records() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        for migration in MIGRATIONS.iter().filter(|m| m.version <= 9) {
+            conn.execute_batch(migration.sql).unwrap();
+        }
+        conn.execute_batch("CREATE TABLE schema_version(version INTEGER PRIMARY KEY); INSERT INTO schema_version VALUES(9);
+            INSERT INTO profiles(id,name,host,port,username,auth_type,password,jump_host,environment) VALUES(42,'existing','host.test',22,'user','password','encrypted-password','encrypted-jump','production');
+            INSERT INTO command_history(profile_id,command) VALUES(42,'Get-Service');
+            INSERT INTO path_bookmarks(profile_id,path) VALUES(42,'C:\\inetpub');
+            INSERT INTO vault_items(id,label,kind,encrypted_value) VALUES(7,'test','password','encrypted-vault');
+            INSERT INTO vault_server_map(vault_item_id,server_id) VALUES(7,42);").unwrap();
+        let db = Database {
+            conn: std::sync::Mutex::new(conn),
+        };
+        db.run_migrations().unwrap();
+        db.run_migrations().unwrap();
+        let summary = db.list_profile_summaries().unwrap().remove(0);
+        assert_eq!(summary.id, 42);
+        assert_eq!(summary.environment, "production");
+        assert_eq!(
+            (summary.target_os.as_str(), summary.remote_shell.as_str()),
+            ("auto", "auto")
+        );
+        let conn = db.conn();
+        let secrets: (String, String) = conn
+            .query_row(
+                "SELECT password, jump_host FROM profiles WHERE id=42",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            secrets,
+            ("encrypted-password".into(), "encrypted-jump".into())
+        );
+        for query in [
+            "SELECT count(*) FROM command_history WHERE profile_id=42",
+            "SELECT count(*) FROM path_bookmarks WHERE profile_id=42",
+            "SELECT count(*) FROM vault_server_map WHERE server_id=42",
+        ] {
+            assert_eq!(
+                conn.query_row(query, [], |r| r.get::<_, u32>(0)).unwrap(),
+                1
+            );
+        }
+        assert!(conn
+            .execute("UPDATE profiles SET target_os='invalid' WHERE id=42", [])
+            .is_err());
+        assert!(conn
+            .execute("UPDATE profiles SET remote_shell='invalid' WHERE id=42", [])
+            .is_err());
+    }
+
     #[test]
     fn existing_execution_history_enables_bounded_retention_on_upgrade() {
         let conn = rusqlite::Connection::open_in_memory().unwrap();

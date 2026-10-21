@@ -377,6 +377,12 @@
 .connection-advanced > .dialog-jump-host {
   margin: 0 12px 12px;
 }
+.connection-environment-help {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.5;
+}
 .connection-dialog .dialog-jump-host {
   background: var(--bg-tertiary);
   border-color: var(--border);

@@ -18,6 +18,8 @@ fn candidate(name: &str) -> Candidate {
         profile: ExportProfile {
             protocol: "ssh".into(),
             baud_rate: None,
+            target_os: "auto".into(),
+            remote_shell: "auto".into(),
             name: name.into(),
             host: String::new(),
             port: 22,

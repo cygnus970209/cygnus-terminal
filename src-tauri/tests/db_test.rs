@@ -58,6 +58,8 @@ fn make_password_profile() -> CreateProfileRequest {
     CreateProfileRequest {
         protocol: None,
         baud_rate: None,
+        target_os: None,
+        remote_shell: None,
         name: "Test Server".to_string(),
         host: "192.168.1.100".to_string(),
         port: 22,
@@ -76,6 +78,8 @@ fn make_key_profile() -> CreateProfileRequest {
     CreateProfileRequest {
         protocol: None,
         baud_rate: None,
+        target_os: None,
+        remote_shell: None,
         name: "AWS EC2".to_string(),
         host: "ec2.example.com".to_string(),
         port: 2222,
@@ -148,6 +152,8 @@ fn update_profile_partial() {
             cygnus_terminal_lib::db::profile::UpdateProfileRequest {
                 protocol: None,
                 baud_rate: None,
+                target_os: None,
+                remote_shell: None,
                 name: Some("Renamed Server".to_string()),
                 host: None,
                 port: Some(2222),
@@ -184,6 +190,8 @@ fn update_profile_password() {
             cygnus_terminal_lib::db::profile::UpdateProfileRequest {
                 protocol: None,
                 baud_rate: None,
+                target_os: None,
+                remote_shell: None,
                 name: None,
                 host: None,
                 port: None,
@@ -414,6 +422,8 @@ fn make_jump_host_profile() -> CreateProfileRequest {
     CreateProfileRequest {
         protocol: None,
         baud_rate: None,
+        target_os: None,
+        remote_shell: None,
         name: "Behind Bastion".to_string(),
         host: "10.0.0.5".to_string(),
         port: 22,
@@ -480,6 +490,8 @@ fn update_with_empty_jump_host_clears_it() {
             cygnus_terminal_lib::db::profile::UpdateProfileRequest {
                 protocol: None,
                 baud_rate: None,
+                target_os: None,
+                remote_shell: None,
                 name: None,
                 host: None,
                 port: None,

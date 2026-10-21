@@ -17,6 +17,10 @@ pub struct ExportProfile {
     pub protocol: String,
     #[serde(default)]
     pub baud_rate: Option<u32>,
+    #[serde(default = "default_auto")]
+    pub target_os: String,
+    #[serde(default = "default_auto")]
+    pub remote_shell: String,
     pub name: String,
     pub host: String,
     pub port: u16,
@@ -46,7 +50,7 @@ impl Database {
 
         // Profiles (비밀번호 제외)
         let mut stmt = conn
-            .prepare("SELECT name, host, port, username, auth_type, key_path, group_name, protocol, baud_rate FROM profiles ORDER BY sort_order, name")
+            .prepare("SELECT name, host, port, username, auth_type, key_path, group_name, protocol, baud_rate, target_os, remote_shell FROM profiles ORDER BY sort_order, name")
             .map_err(|e| format!("Failed to query profiles: {e}"))?;
         let profiles: Vec<ExportProfile> = stmt
             .query_map([], |row| {
@@ -60,6 +64,8 @@ impl Database {
                     group_name: row.get(6)?,
                     protocol: row.get(7)?,
                     baud_rate: row.get(8)?,
+                    target_os: row.get(9)?,
+                    remote_shell: row.get(10)?,
                 })
             })
             .map_err(|e| format!("Export query failed: {e}"))?
@@ -109,7 +115,7 @@ impl Database {
             .map_err(|e| format!("Export query failed: {e}"))?;
 
         Ok(ExportData {
-            version: 2,
+            version: 3,
             profiles,
             command_bookmarks,
             path_bookmarks,
@@ -117,7 +123,7 @@ impl Database {
     }
 
     pub fn import_data(&self, data: ExportData, _crypto: &CryptoManager) -> Result<u32, String> {
-        if data.version > 2 {
+        if data.version > 3 {
             return Err("Unsupported backup version".into());
         }
         for profile in &data.profiles {
@@ -127,6 +133,7 @@ impl Database {
                 profile.port,
                 profile.baud_rate,
             )?;
+            super::profile::validate_server_environment(&profile.target_os, &profile.remote_shell)?;
         }
         let mut guard = self.conn();
         let conn = guard
@@ -149,8 +156,8 @@ impl Database {
             }
 
             conn.execute(
-                "INSERT INTO profiles (name, host, port, username, auth_type, key_path, group_name, protocol, baud_rate)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                "INSERT INTO profiles (name, host, port, username, auth_type, key_path, group_name, protocol, baud_rate, target_os, remote_shell)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
                 rusqlite::params![
                     profile.name,
                     profile.host,
@@ -161,6 +168,8 @@ impl Database {
                     profile.group_name,
                     profile.protocol,
                     if profile.protocol == "serial" { Some(profile.baud_rate.unwrap_or(115200)) } else { None },
+                    profile.target_os,
+                    profile.remote_shell,
                 ],
             )
             .map_err(|e| format!("Failed to import profile: {e}"))?;
@@ -212,6 +221,10 @@ fn default_protocol() -> String {
     "ssh".into()
 }
 
+fn default_auto() -> String {
+    "auto".into()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -231,7 +244,7 @@ mod tests {
             db.create_profile(req, &crypto).unwrap();
         }
         let backup = db.export_data(&crypto).unwrap();
-        assert_eq!(backup.version, 2);
+        assert_eq!(backup.version, 3);
         let json = serde_json::to_string(&backup).unwrap();
         let target = Database::new_in_memory().unwrap();
         assert_eq!(
@@ -249,6 +262,9 @@ mod tests {
         let profiles = target.list_profiles(&crypto).unwrap();
         assert!(profiles
             .iter()
+            .all(|p| p.target_os == "auto" && p.remote_shell == "auto"));
+        assert!(profiles
+            .iter()
             .any(|p| p.protocol == "ssh" && p.name == "old"));
         assert!(profiles
             .iter()
@@ -256,5 +272,70 @@ mod tests {
         assert!(profiles
             .iter()
             .any(|p| p.protocol == "serial" && p.baud_rate == Some(115200)));
+    }
+
+    #[test]
+    fn environment_backup_roundtrip_omits_secrets_and_preserves_existing_profiles() {
+        let crypto = CryptoManager::new_random();
+        let db = Database::new_in_memory().unwrap();
+        let req = serde_json::from_value(serde_json::json!({"name":"IIS", "host":"iis.test", "port":22, "username":"admin", "auth_type":"password", "password":"private-server-secret", "jump_host":"private-jump-secret", "target_os":"windows", "remote_shell":"powershell"})).unwrap();
+        let original = db.create_profile(req, &crypto).unwrap();
+        let json = serde_json::to_string(&db.export_data(&crypto).unwrap()).unwrap();
+        assert!(!json.contains("private-"));
+        let target = Database::new_in_memory().unwrap();
+        target
+            .import_data(serde_json::from_str(&json).unwrap(), &crypto)
+            .unwrap();
+        let imported = target.list_profile_summaries().unwrap().remove(0);
+        assert_eq!(
+            (imported.target_os.as_str(), imported.remote_shell.as_str()),
+            ("windows", "powershell")
+        );
+        assert!(target
+            .get_profile(imported.id, &crypto)
+            .unwrap()
+            .password
+            .is_none());
+        let update = serde_json::from_value(serde_json::json!({"remote_shell":"cmd"})).unwrap();
+        db.update_profile(original.id, update, &crypto).unwrap();
+        assert_eq!(
+            db.import_data(serde_json::from_str(&json).unwrap(), &crypto)
+                .unwrap(),
+            0
+        );
+        let existing = db.get_profile(original.id, &crypto).unwrap();
+        assert_eq!(existing.remote_shell, "cmd");
+        assert_eq!(existing.password.as_deref(), Some("private-server-secret"));
+    }
+
+    #[test]
+    fn version_two_backups_default_to_unspecified_environment() {
+        let crypto = CryptoManager::new_random();
+        let db = Database::new_in_memory().unwrap();
+        let backup = serde_json::json!({"version":2,"profiles":[{"protocol":"ssh","name":"legacy","host":"old.test","port":22,"username":"u","auth_type":"password","group_name":""}],"command_bookmarks":[],"path_bookmarks":[]});
+        db.import_data(serde_json::from_value(backup).unwrap(), &crypto)
+            .unwrap();
+        let profile = db.list_profile_summaries().unwrap().remove(0);
+        assert_eq!(
+            (profile.target_os.as_str(), profile.remote_shell.as_str()),
+            ("auto", "auto")
+        );
+    }
+
+    #[test]
+    fn invalid_environment_aborts_the_entire_import() {
+        let crypto = CryptoManager::new_random();
+        let db = Database::new_in_memory().unwrap();
+        for field in ["target_os", "remote_shell"] {
+            let valid = serde_json::json!({"name":"valid", "host":"valid.test", "port":22, "username":"u", "auth_type":"password", "group_name":"", "target_os":"windows", "remote_shell":"cmd"});
+            let mut invalid = valid.clone();
+            invalid["host"] = "invalid.test".into();
+            invalid[field] = "invalid; Get-Content secret".into();
+            let backup = serde_json::json!({"version":3,"profiles":[valid,invalid],"command_bookmarks":[],"path_bookmarks":[]});
+            assert!(db
+                .import_data(serde_json::from_value(backup).unwrap(), &crypto)
+                .is_err());
+            assert!(db.list_profile_summaries().unwrap().is_empty());
+        }
     }
 }

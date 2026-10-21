@@ -2,7 +2,7 @@ import MigrationDialog from "./MigrationDialog";
 import Select from "../common/Select";
 import { useState, useEffect, useCallback, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Profile, profileEndpoint } from "../../types";
+import { Profile, profileEndpoint, profileEnvironmentLabel } from "../../types";
 import Icon from "../common/Icon";
 import "./ConnectionsView.css";
 
@@ -110,9 +110,10 @@ export default function ConnectionsView({
   };
   const q = searchQuery.trim().toLowerCase();
   const filtered = profiles.filter((p) =>
-    [p.name, p.host, p.username, p.group_name, p.protocol ?? "ssh"].some(
-      (value) => value.toLowerCase().includes(q),
-    ),
+    [
+      p.name, p.host, p.username, p.group_name,
+      p.protocol ?? "ssh", profileEnvironmentLabel(p),
+    ].some((value) => value.toLowerCase().includes(q)),
   );
   const grouped = filtered.reduce<Record<string, Profile[]>>((acc, p) => {
     (acc[p.group_name || "Ungrouped"] ??= []).push(p);
@@ -222,7 +223,7 @@ export default function ConnectionsView({
             <input
               className="cv-search"
               aria-label="Search connections"
-              placeholder="Search name, address, protocol or group…"
+              placeholder="Search name, address, OS, shell or group…"
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
             />
@@ -333,6 +334,13 @@ export default function ConnectionsView({
                           ? `Port ${profile.port}`
                           : `${profile.username} · ${profile.auth_type === "key" ? "SSH key" : "Password"}`}
                     </small>
+                    {profileEnvironmentLabel(profile) && (
+                      <small
+                        title={`Saved server environment: ${profileEnvironmentLabel(profile)}`}
+                      >
+                        {profileEnvironmentLabel(profile)}
+                      </small>
+                    )}
                   </td>
                   <td>
                     <span className="ssh-connection-state">

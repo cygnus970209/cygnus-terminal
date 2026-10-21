@@ -1,13 +1,20 @@
 import { useEffect, useReducer, useState } from "react";
 import { invoke } from "../../services/secureInvoke";
 import { open } from "@tauri-apps/plugin-dialog";
-import { Profile, SshConfig, JumpHostConfig } from "../../types";
+import {
+  Profile,
+  SshConfig,
+  JumpHostConfig,
+  SERVER_OS_LABELS,
+  REMOTE_SHELL_LABELS,
+} from "../../types";
 import { DEFAULT_SSH_PORT } from "../../constants";
 import "./ConnectDialog.css";
 import Icon from "../common/Icon";
 import ProtocolPicker from "./ProtocolPicker";
 import GroupPicker from "./GroupPicker";
-import type { ConnectionProtocol } from "../../types";
+import Select from "../common/Select";
+import type { ConnectionProtocol, TargetOs, RemoteShell } from "../../types";
 
 interface ConnectDialogProps {
   onConnect: (config: SshConfig) => void;
@@ -35,6 +42,8 @@ interface FormState {
   jumpPassword: string;
   jumpKeyPath: string;
   agentForward: boolean;
+  targetOs: TargetOs;
+  remoteShell: RemoteShell;
 }
 
 const initialFormState: FormState = {
@@ -55,6 +64,8 @@ const initialFormState: FormState = {
   jumpPassword: "",
   jumpKeyPath: "",
   agentForward: false,
+  targetOs: "auto",
+  remoteShell: "auto",
 };
 
 type FormAction =
@@ -96,6 +107,8 @@ function formReducer(state: FormState, action: FormAction): FormState {
         password: "",
         saveProfile: true,
         agentForward: p.agent_forward || false,
+        targetOs: p.target_os ?? "auto",
+        remoteShell: p.remote_shell ?? "auto",
         ...jump,
       };
     }
@@ -181,6 +194,8 @@ export default function ConnectDialog({
             // 빈 문자열 = jump host 제거 (null 은 "변경 없음"으로 역직렬화되어 해제가 안 됨)
             jump_host: jumpHostJson ?? "",
             agent_forward: form.agentForward,
+            target_os: form.targetOs,
+            remote_shell: form.remoteShell,
           },
         });
         onSaved?.();
@@ -198,6 +213,8 @@ export default function ConnectDialog({
             group_name: form.groupName.trim(),
             jump_host: jumpHostJson,
             agent_forward: form.agentForward,
+            target_os: form.targetOs,
+            remote_shell: form.remoteShell,
           },
         });
         onSaved?.();
@@ -412,8 +429,58 @@ export default function ConnectDialog({
             )}
             <details className="connection-advanced">
               <summary>
-                Advanced SSH options <span>Jump host · Agent forwarding</span>
+                Advanced SSH options
+                <span>Server environment · Jump host · Agent forwarding</span>
               </summary>
+              {form.saveProfile && (
+                <div className="dialog-row">
+                  <div className="dialog-row-pair">
+                    <div className="dialog-row" style={{ flex: 1 }}>
+                      <label htmlFor="connection-target-os">Server OS</label>
+                      <Select
+                        id="connection-target-os"
+                        aria-label="Server OS"
+                        aria-describedby="connection-environment-help"
+                        value={form.targetOs}
+                        onValueChange={(value) =>
+                          setField("targetOs", value as TargetOs)
+                        }
+                      >
+                        {Object.entries(SERVER_OS_LABELS).map(([value, label]) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                    <div className="dialog-row" style={{ flex: 1 }}>
+                      <label htmlFor="connection-remote-shell">Server shell</label>
+                      <Select
+                        id="connection-remote-shell"
+                        aria-label="Server shell"
+                        aria-describedby="connection-environment-help"
+                        value={form.remoteShell}
+                        onValueChange={(value) =>
+                          setField("remoteShell", value as RemoteShell)
+                        }
+                      >
+                        {Object.entries(REMOTE_SHELL_LABELS).map(([value, label]) => (
+                          <option key={value} value={value}>
+                            {label}
+                          </option>
+                        ))}
+                      </Select>
+                    </div>
+                  </div>
+                  <p
+                    id="connection-environment-help"
+                    className="connection-environment-help"
+                  >
+                    Record the server environment. Connections still use the
+                    server’s default shell.
+                  </p>
+                </div>
+              )}
               <div className="dialog-row">
                 <label className="dialog-checkbox">
                   <input

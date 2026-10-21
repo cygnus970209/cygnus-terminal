@@ -254,6 +254,8 @@ impl Fixture {
                 CreateProfileRequest {
                     protocol: Some("ssh".into()),
                     baud_rate: None,
+                    target_os: None,
+                    remote_shell: None,
                     name: "Execution fixture".into(),
                     host: "127.0.0.1".into(),
                     port,

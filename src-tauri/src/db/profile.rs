@@ -7,6 +7,9 @@ use crate::db::Database;
 pub struct Profile {
     pub protocol: String,
     pub baud_rate: Option<u32>,
+    /// User-supplied environment metadata, not a detected capability or launch command.
+    pub target_os: String,
+    pub remote_shell: String,
     pub id: i64,
     pub name: String,
     pub host: String,
@@ -28,6 +31,8 @@ pub struct Profile {
 pub struct CreateProfileRequest {
     pub protocol: Option<String>,
     pub baud_rate: Option<u32>,
+    pub target_os: Option<String>,
+    pub remote_shell: Option<String>,
     pub name: String,
     pub host: String,
     pub port: u16,
@@ -45,6 +50,8 @@ pub struct CreateProfileRequest {
 pub struct UpdateProfileRequest {
     pub protocol: Option<String>,
     pub baud_rate: Option<u32>,
+    pub target_os: Option<String>,
+    pub remote_shell: Option<String>,
     pub name: Option<String>,
     pub host: Option<String>,
     pub port: Option<u16>,
@@ -71,6 +78,9 @@ impl Database {
             None
         };
         validate_transport(protocol, &req.host, req.port, baud_rate)?;
+        let target_os = req.target_os.as_deref().unwrap_or("auto");
+        let remote_shell = req.remote_shell.as_deref().unwrap_or("auto");
+        validate_server_environment(target_os, remote_shell)?;
         let encrypted_password = match &req.password {
             Some(pw) if !pw.is_empty() => Some(crypto.encrypt(pw)?),
             _ => None,
@@ -92,8 +102,8 @@ impl Database {
 
         let conn = self.conn();
         conn.execute(
-            "INSERT INTO profiles (name, host, port, username, auth_type, password, key_path, group_name, jump_host, agent_forward, environment, protocol, baud_rate)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+            "INSERT INTO profiles (name, host, port, username, auth_type, password, key_path, group_name, jump_host, agent_forward, environment, protocol, baud_rate, target_os, remote_shell)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
             rusqlite::params![
                 req.name,
                 req.host,
@@ -108,6 +118,8 @@ impl Database {
                 environment,
                 protocol,
                 baud_rate,
+                target_os,
+                remote_shell,
             ],
         ).map_err(|e| format!("Failed to create profile: {e}"))?;
 
@@ -119,7 +131,7 @@ impl Database {
     pub fn get_profile(&self, id: i64, crypto: &CryptoManager) -> Result<Profile, String> {
         let conn = self.conn();
         conn.query_row(
-            "SELECT id, name, host, port, username, auth_type, password, key_path, group_name, sort_order, jump_host, agent_forward, environment, created_at, updated_at, protocol, baud_rate
+            "SELECT id, name, host, port, username, auth_type, password, key_path, group_name, sort_order, jump_host, agent_forward, environment, created_at, updated_at, protocol, baud_rate, target_os, remote_shell
              FROM profiles WHERE id = ?1",
             [id],
             |row| {
@@ -141,6 +153,8 @@ impl Database {
                     updated_at: row.get(14)?,
                     protocol: row.get(15)?,
                     baud_rate: row.get(16)?,
+                    target_os: row.get(17)?,
+                    remote_shell: row.get(18)?,
                 })
             },
         )
@@ -164,7 +178,7 @@ impl Database {
         let conn = self.conn();
         let mut stmt = conn
             .prepare(
-                "SELECT id, name, host, port, username, auth_type, password, key_path, group_name, sort_order, jump_host, agent_forward, environment, created_at, updated_at, protocol, baud_rate
+                "SELECT id, name, host, port, username, auth_type, password, key_path, group_name, sort_order, jump_host, agent_forward, environment, created_at, updated_at, protocol, baud_rate, target_os, remote_shell
                  FROM profiles ORDER BY sort_order, name",
             )
             .map_err(|e| format!("Failed to prepare query: {e}"))?;
@@ -189,6 +203,8 @@ impl Database {
                     updated_at: row.get(14)?,
                     protocol: row.get(15)?,
                     baud_rate: row.get(16)?,
+                    target_os: row.get(17)?,
+                    remote_shell: row.get(18)?,
                 })
             })
             .map_err(|e| format!("Failed to query profiles: {e}"))?;
@@ -199,6 +215,8 @@ impl Database {
             profiles.push(Profile {
                 protocol: row.protocol,
                 baud_rate: row.baud_rate,
+                target_os: row.target_os,
+                remote_shell: row.remote_shell,
                 id: row.id,
                 name: row.name,
                 host: row.host,
@@ -241,10 +259,25 @@ impl Database {
             req.port.unwrap_or(existing.port),
             req.baud_rate.or(existing.baud_rate),
         )?;
+        validate_server_environment(
+            req.target_os.as_deref().unwrap_or(&existing.target_os),
+            req.remote_shell
+                .as_deref()
+                .unwrap_or(&existing.remote_shell),
+        )?;
 
         let conn = self.conn();
         let mut sets = Vec::new();
         let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+
+        if let Some(target_os) = req.target_os {
+            sets.push("target_os = ?");
+            params.push(Box::new(target_os));
+        }
+        if let Some(remote_shell) = req.remote_shell {
+            sets.push("remote_shell = ?");
+            params.push(Box::new(remote_shell));
+        }
 
         if existing.protocol == "serial" {
             if let Some(baud_rate) = req.baud_rate {
@@ -400,6 +433,8 @@ impl Database {
 struct ProfileRow {
     protocol: String,
     baud_rate: Option<u32>,
+    target_os: String,
+    remote_shell: String,
     id: i64,
     name: String,
     host: String,
@@ -439,6 +474,8 @@ impl ProfileRow {
         Ok(Profile {
             protocol: self.protocol,
             baud_rate: self.baud_rate,
+            target_os: self.target_os,
+            remote_shell: self.remote_shell,
             id: self.id,
             name: self.name,
             host: self.host,
@@ -527,6 +564,142 @@ mod tests {
     use crate::db::Database;
 
     #[test]
+    fn server_environment_survives_restart_and_preserves_secrets_and_history() {
+        let directory =
+            std::env::temp_dir().join(format!("cygnus-environment-{}", uuid::Uuid::new_v4()));
+        let crypto = CryptoManager::new_random();
+        let db = Database::new(directory.clone()).unwrap();
+        let mut req = create_req(Some(jump_json("jump-secret")));
+        req.password = Some("server-secret".into());
+        req.target_os = Some("windows".into());
+        req.remote_shell = Some("powershell".into());
+        let saved = db.create_profile(req, &crypto).unwrap();
+        db.add_command_history(saved.id, "Get-Service").unwrap();
+        let encrypted_before: (String, String) = db
+            .conn()
+            .query_row(
+                "SELECT password, jump_host FROM profiles WHERE id = ?1",
+                [saved.id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_ne!(encrypted_before.0, "server-secret");
+        drop(db);
+
+        let db = Database::new(directory.clone()).unwrap();
+        let loaded = db.get_profile(saved.id, &crypto).unwrap();
+        assert_eq!(
+            (loaded.target_os.as_str(), loaded.remote_shell.as_str()),
+            ("windows", "powershell")
+        );
+        let summary = db.list_profile_summaries().unwrap().remove(0);
+        assert_eq!(
+            (summary.target_os.as_str(), summary.remote_shell.as_str()),
+            ("windows", "powershell")
+        );
+        assert!(summary.password.is_none());
+        assert!(summary.jump_host.is_none());
+        assert!(!serde_json::to_string(&db.list_profiles(&crypto).unwrap())
+            .unwrap()
+            .contains("secret"));
+
+        // Missing and null fields preserve values, just like existing optional updates.
+        let rename =
+            serde_json::from_value(serde_json::json!({"name":"renamed", "remote_shell":null}))
+                .unwrap();
+        let renamed = db.update_profile(saved.id, rename, &crypto).unwrap();
+        assert_eq!(
+            (renamed.target_os.as_str(), renamed.remote_shell.as_str()),
+            ("windows", "powershell")
+        );
+        let change = serde_json::from_value(serde_json::json!({"remote_shell":"pwsh"})).unwrap();
+        assert_eq!(
+            db.update_profile(saved.id, change, &crypto)
+                .unwrap()
+                .remote_shell,
+            "pwsh"
+        );
+        let clear =
+            serde_json::from_value(serde_json::json!({"target_os":"auto", "remote_shell":"auto"}))
+                .unwrap();
+        let cleared = db.update_profile(saved.id, clear, &crypto).unwrap();
+        assert_eq!(cleared.id, saved.id);
+        assert_eq!(
+            (cleared.target_os.as_str(), cleared.remote_shell.as_str()),
+            ("auto", "auto")
+        );
+        assert_eq!(cleared.password.as_deref(), Some("server-secret"));
+        assert_eq!(jump_password(&cleared).as_deref(), Some("jump-secret"));
+        assert_eq!(
+            db.search_command_history(saved.id, None, 10).unwrap()[0].command,
+            "Get-Service"
+        );
+        let encrypted_after: (String, String) = db
+            .conn()
+            .query_row(
+                "SELECT password, jump_host FROM profiles WHERE id = ?1",
+                [saved.id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(encrypted_before, encrypted_after);
+        drop(db);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn invalid_server_environment_rejects_entire_create_or_update() {
+        let db = Database::new_in_memory().unwrap();
+        let crypto = CryptoManager::new_random();
+        let saved = db.create_profile(create_req(None), &crypto).unwrap();
+        assert_eq!(
+            (saved.target_os.as_str(), saved.remote_shell.as_str()),
+            ("auto", "auto")
+        );
+        for (field, value) in [
+            ("target_os", "Windows"),
+            ("target_os", ""),
+            ("remote_shell", "bash; whoami"),
+            ("remote_shell", ""),
+        ] {
+            let mut input = serde_json::json!({"name":"rejected", "host":"host.test", "port":22, "username":"u", "auth_type":"password"});
+            input[field] = value.into();
+            assert!(db
+                .create_profile(serde_json::from_value(input.clone()).unwrap(), &crypto)
+                .is_err());
+            assert!(db
+                .update_profile(saved.id, serde_json::from_value(input).unwrap(), &crypto)
+                .is_err());
+        }
+        let unchanged = db.get_profile(saved.id, &crypto).unwrap();
+        assert_eq!(unchanged.name, saved.name);
+        assert_eq!(unchanged.host, saved.host);
+        assert_eq!(unchanged.target_os, "auto");
+        assert_eq!(db.list_profile_summaries().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn server_os_and_shell_are_independent_metadata() {
+        let db = Database::new_in_memory().unwrap();
+        let crypto = CryptoManager::new_random();
+        for (os, shell) in [
+            ("linux", "pwsh"),
+            ("windows", "posix"),
+            ("windows", "cmd"),
+            ("other", "auto"),
+        ] {
+            let mut req = create_req(None);
+            req.target_os = Some(os.into());
+            req.remote_shell = Some(shell.into());
+            let saved = db.create_profile(req, &crypto).unwrap();
+            assert_eq!(
+                (saved.target_os.as_str(), saved.remote_shell.as_str()),
+                (os, shell)
+            );
+        }
+    }
+
+    #[test]
     fn transport_profiles_survive_restart_update_and_delete() {
         let directory =
             std::env::temp_dir().join(format!("cygnus-profile-test-{}", uuid::Uuid::new_v4()));
@@ -589,6 +762,8 @@ mod tests {
         CreateProfileRequest {
             protocol: None,
             baud_rate: None,
+            target_os: None,
+            remote_shell: None,
             name: "srv".into(),
             host: "10.0.0.1".into(),
             port: 22,
@@ -607,6 +782,8 @@ mod tests {
         UpdateProfileRequest {
             protocol: None,
             baud_rate: None,
+            target_os: None,
+            remote_shell: None,
             name: None,
             host: None,
             port: None,
@@ -734,6 +911,24 @@ pub(super) fn validate_transport(
         }
     } else if port == 0 {
         return Err("Port must be between 1 and 65535".into());
+    }
+    Ok(())
+}
+
+/// Metadata only: never interpolate these fields into remote commands or infer permissions.
+/// Keep OS and shell independent (for example, PowerShell can also run on Linux).
+pub(super) fn validate_server_environment(
+    target_os: &str,
+    remote_shell: &str,
+) -> Result<(), String> {
+    if !matches!(target_os, "auto" | "linux" | "windows" | "other") {
+        return Err("Unsupported server OS".into());
+    }
+    if !matches!(
+        remote_shell,
+        "auto" | "posix" | "powershell" | "pwsh" | "cmd"
+    ) {
+        return Err("Unsupported remote shell".into());
     }
     Ok(())
 }
