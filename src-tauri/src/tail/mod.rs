@@ -71,6 +71,12 @@ impl TailManager {
         lines: u32,
         event_channel: Channel<TailEvent>,
     ) -> Result<(), String> {
+        ssh_manager
+            .require_capability(
+                session_id,
+                crate::ssh::environment::ServerCapability::FileLogs,
+            )
+            .await?;
         let cmd = build_tail_cmd(lines, path);
         self.start_with_cmd(tail_id, path, cmd, session_id, ssh_manager, event_channel)
             .await
@@ -86,13 +92,15 @@ impl TailManager {
         ssh_manager: &SshManager,
         event_channel: Channel<TailEvent>,
     ) -> Result<(), String> {
+        ssh_manager
+            .require_capability(
+                session_id,
+                crate::ssh::environment::ServerCapability::Journal,
+            )
+            .await?;
         let cmd = build_journal_cmd(args)?;
         // label 은 args 자체 — UI 의 tab 이름에 사용됨.
-        let label = if args.is_empty() {
-            "journalctl"
-        } else {
-            args
-        };
+        let label = if args.is_empty() { "journalctl" } else { args };
         self.start_with_cmd(tail_id, label, cmd, session_id, ssh_manager, event_channel)
             .await
     }
@@ -107,34 +115,42 @@ impl TailManager {
         ssh_manager: &SshManager,
         event_channel: Channel<TailEvent>,
     ) -> Result<(), String> {
-        let ssh = ssh_manager.clone_inner();
         let tail_id_owned = tail_id.to_string();
         let label_owned = label.to_string();
 
-        let sessions = ssh.lock().await;
-        let session = sessions
-            .get(session_id)
-            .ok_or("SSH session not found")?;
+        let (connection, cancellation) = ssh_manager.command_connection(session_id).await?;
 
-        let mut channel = session
-            .handle
-            .channel_open_session()
-            .await
-            .map_err(|e| format!("Channel open failed: {e}"))?;
+        let channel = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            connection.channel_open_session(),
+        )
+        .await
+        .map_err(|_| "Log channel open timed out")?
+        .map_err(|e| format!("Channel open failed: {e}"))?;
 
-        channel
-            .exec(true, cmd.as_str())
-            .await
-            .map_err(|e| format!("Exec failed: {e}"))?;
-
-        drop(sessions);
+        let mut owned = crate::ssh::environment::CommandChannel(Some(channel));
+        tokio::select! {
+            biased;
+            _ = cancellation.cancelled() => return Err("SSH session closed".into()),
+            result = tokio::time::timeout(std::time::Duration::from_secs(5), owned.0.as_ref().unwrap().exec(true, cmd.as_str())) => {
+                result.map_err(|_| "Log command request timed out")?.map_err(|e| format!("Exec failed: {e}"))?;
+            }
+        }
 
         let tid = tail_id_owned.clone();
         let lbl = label_owned.clone();
 
         let handle = tokio::spawn(async move {
             loop {
-                match channel.wait().await {
+                let msg = tokio::select! {
+                    biased;
+                    _ = cancellation.cancelled() => {
+                        let _ = event_channel.send(TailEvent::Closed(tid.clone()));
+                        break;
+                    }
+                    msg = owned.0.as_mut().unwrap().wait() => msg,
+                };
+                match msg {
                     Some(ChannelMsg::Data { data }) => {
                         let content = String::from_utf8_lossy(&data).into_owned();
                         let _ = event_channel.send(TailEvent::Line(TailLine {
@@ -226,7 +242,10 @@ mod tests {
 
     #[test]
     fn journal_cmd_simple_flags_pass_through() {
-        assert_eq!(build_journal_cmd("-fu nginx").unwrap(), "journalctl -fu nginx");
+        assert_eq!(
+            build_journal_cmd("-fu nginx").unwrap(),
+            "journalctl -fu nginx"
+        );
     }
 
     #[test]

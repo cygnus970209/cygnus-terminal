@@ -77,6 +77,7 @@ export default function LogViewerPopoutApp({
   return (
     <div className="app log-popout-app">
       <LogViewer
+        key={session.id}
         sessionId={session.id}
         onClose={closeWindow}
         fullHeight

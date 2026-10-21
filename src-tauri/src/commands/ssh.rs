@@ -17,9 +17,12 @@ pub async fn create_ssh_session(
     key_path: Option<String>,
     jump_host: Option<JumpHostConfig>,
     agent_forward: Option<bool>,
+    target_os: Option<String>,
+    remote_shell: Option<String>,
     on_event: Channel<PtyEvent>,
     ssh_manager: State<'_, SshManager>,
 ) -> Result<String, String> {
+    let hints = crate::ssh::environment::EnvironmentHints::new(target_os, remote_shell)?;
     let session_id = Uuid::new_v4().to_string();
     ssh_manager
         .connect(
@@ -34,9 +37,18 @@ pub async fn create_ssh_session(
             jump_host,
             agent_forward.unwrap_or(false),
             on_event,
+            hints,
         )
         .await?;
     Ok(session_id)
+}
+
+#[tauri::command]
+pub async fn ssh_server_environment(
+    session_id: String,
+    ssh_manager: State<'_, SshManager>,
+) -> Result<crate::ssh::environment::ServerEnvironment, String> {
+    ssh_manager.server_environment(&session_id).await
 }
 
 /// 프론트엔드가 host key 확인 다이얼로그에서 수락/거절한 결과를 반영.
@@ -47,7 +59,9 @@ pub async fn ssh_host_key_respond(
     accept: bool,
     ssh_manager: State<'_, SshManager>,
 ) -> Result<(), String> {
-    ssh_manager.resolve_host_key_prompt(&prompt_id, accept).await
+    ssh_manager
+        .resolve_host_key_prompt(&prompt_id, accept)
+        .await
 }
 
 #[tauri::command]

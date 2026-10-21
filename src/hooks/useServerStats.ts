@@ -1,16 +1,34 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 
+export interface WindowsDisk {
+  name: string;
+  total_bytes: number;
+  free_bytes: number;
+}
+
+export interface WindowsProcess {
+  pid: number;
+  name: string;
+  memory_bytes: number;
+}
+
 export interface ServerStats {
-  cpu_usage: number;
-  mem_total: number;
-  mem_used: number;
-  mem_usage: number;
-  disk_total: number;
-  disk_used: number;
-  disk_usage: number;
-  load_avg: string;
-  uptime: string;
+  platform: "linux" | "windows";
+  cpu_usage: number | null;
+  mem_total: number | null;
+  mem_used: number | null;
+  mem_usage: number | null;
+  disk_total: number | null;
+  disk_used: number | null;
+  disk_usage: number | null;
+  load_avg: string | null;
+  uptime: string | null;
+  windows: {
+    powershell_version: string;
+    disks: WindowsDisk[] | null;
+    processes: WindowsProcess[] | null;
+  } | null;
 }
 
 /**
@@ -21,61 +39,48 @@ export function useServerStats(
   sessionId: string | null | undefined,
   enabled: boolean,
 ): { stats: ServerStats | null; error: string | null } {
-  const [monitorId, setMonitorId] = useState<string | null>(null);
-  const [stats, setStats] = useState<ServerStats | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [state, setState] = useState<{
+    sessionId: string;
+    stats: ServerStats | null;
+    error: string | null;
+  } | null>(null);
 
-  // 세션/enabled 변할 때 monitor 시작
   useEffect(() => {
-    if (!sessionId || !enabled) {
-      setMonitorId(null);
-      setStats(null);
-      setError(null);
-      return;
-    }
+    setState(null);
+    if (!sessionId || !enabled) return;
     let cancelled = false;
-    (async () => {
+    let monitorId: string | null = null;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const stop = (id: string) => invoke("monitor_stop", { monitorId: id }).catch(() => {});
+    const poll = async (id: string) => {
       try {
-        const id = await invoke<string>("monitor_start", { sessionId });
-        if (!cancelled) setMonitorId(id);
+        const stats = await invoke<ServerStats | null>("monitor_get_stats", { monitorId: id });
+        if (!cancelled) setState({ sessionId, stats, error: null });
       } catch (err) {
-        if (!cancelled) setError(String(err));
+        if (!cancelled) setState({ sessionId, stats: null, error: String(err) });
       }
-    })();
+      if (!cancelled) timer = setTimeout(() => { void poll(id); }, 5000);
+    };
+    invoke<string>("monitor_start", { sessionId }).then(
+      (id) => {
+        if (cancelled) {
+          void stop(id);
+          return;
+        }
+        monitorId = id;
+        void poll(id);
+      },
+      (err) => {
+        if (!cancelled) setState({ sessionId, stats: null, error: String(err) });
+      },
+    );
     return () => {
       cancelled = true;
+      clearTimeout(timer);
+      if (monitorId) void stop(monitorId);
     };
   }, [sessionId, enabled]);
 
-  // 주기 폴링
-  useEffect(() => {
-    if (!monitorId) return;
-    let cancelled = false;
-    const poll = async () => {
-      try {
-        const s = await invoke<ServerStats>("monitor_get_stats", { monitorId });
-        if (!cancelled) {
-          setStats(s);
-          setError(null);
-        }
-      } catch (err) {
-        if (!cancelled) setError(String(err));
-      }
-    };
-    poll();
-    const iv = setInterval(poll, 5000);
-    return () => {
-      cancelled = true;
-      clearInterval(iv);
-    };
-  }, [monitorId]);
-
-  // cleanup
-  useEffect(() => {
-    return () => {
-      if (monitorId) invoke("monitor_stop", { monitorId }).catch(() => {});
-    };
-  }, [monitorId]);
-
-  return { stats, error };
+  const current = enabled && state?.sessionId === sessionId ? state : null;
+  return { stats: current?.stats ?? null, error: current?.error ?? null };
 }

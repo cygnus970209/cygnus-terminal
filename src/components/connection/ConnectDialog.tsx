@@ -264,6 +264,8 @@ export default function ConnectDialog({
         ? JSON.parse(saved.jump_host)
         : buildJumpHostConfig(),
       agentForward: form.agentForward,
+      targetOs: form.targetOs,
+      remoteShell: form.remoteShell,
     });
   };
 
@@ -476,8 +478,9 @@ export default function ConnectDialog({
                     id="connection-environment-help"
                     className="connection-environment-help"
                   >
-                    Record the server environment. Connections still use the
-                    server’s default shell.
+                    Save environment hints. SSH tools also verify the remote
+                    environment after connecting. Connections use the server’s
+                    default shell.
                   </p>
                 </div>
               )}

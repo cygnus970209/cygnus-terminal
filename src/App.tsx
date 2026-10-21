@@ -22,6 +22,12 @@ import LogViewer from "./components/terminal/LogViewer";
 import MonitorPanel from "./components/terminal/MonitorPanel";
 import StatusBar, { DrawerTab } from "./components/common/StatusBar";
 import { useServerStats } from "./hooks/useServerStats";
+import { useServerEnvironment } from "./hooks/useServerEnvironment";
+import {
+  capabilityReason,
+  environmentDetails,
+  environmentLabel,
+} from "./types/serverEnvironment";
 import { useInvokeState } from "./hooks/useInvokeState";
 import { useTauriListener } from "./hooks/useTauriListener";
 import { useTransferChannel } from "./hooks/useTransferChannel";
@@ -166,6 +172,10 @@ function App() {
   );
   useTauriListener<string>("toggle-drawer", (e) => {
     const tab = e.payload as DrawerTab;
+    if (
+      (tab === "monitor" && !monitorAvailable) ||
+      (tab === "logs" && !logsAvailable)
+    ) return;
     setDrawerTab((cur) => (cur === tab ? null : tab));
   });
 
@@ -213,7 +223,16 @@ function App() {
       ? sessionMap[activeTabId]
       : null;
   const sshActive = !!currentSshSessionId;
-  const { stats: serverStats } = useServerStats(currentSshSessionId, sshActive);
+  const { environment, error: environmentError } = useServerEnvironment(currentSshSessionId);
+  const monitorAvailable = sshActive && !!environment?.capabilities.monitor;
+  const logsAvailable = sshActive && !!(environment?.capabilities.file_logs || environment?.capabilities.journal);
+  const unavailableReason = capabilityReason(environment, environmentError, sshActive);
+  const { stats: serverStats, error: statsError } = useServerStats(currentSshSessionId, monitorAvailable);
+  const visibleDrawer =
+    (drawerTab === "monitor" && !monitorAvailable) ||
+    (drawerTab === "logs" && !logsAvailable)
+      ? null
+      : drawerTab;
 
   // 전역 Transfer state. FileTree 의 다운로드/업로드가 TransferManager 큐를 타게 하고
   // 진행률·속도·ETA 를 하단 Dock 에서 공유한다. SFTP popout 윈도우는 별도 인스턴스라
@@ -597,6 +616,8 @@ function App() {
             ? JSON.parse(fullProfile.jump_host)
             : undefined,
           agentForward: fullProfile.agent_forward || false,
+          targetOs: fullProfile.target_os ?? "auto",
+          remoteShell: fullProfile.remote_shell ?? "auto",
         });
       } catch (err) {
         console.error("Failed to load profile:", err);
@@ -857,6 +878,18 @@ function App() {
                   title={activeStatus}
                 />
                 <h1 title={activeTitle}>{activeTitle}</h1>
+                {sshActive && (
+                  <span
+                    className="session-group"
+                    title={environment ? environmentDetails(environment) : unavailableReason}
+                  >
+                    {environment
+                      ? environmentLabel(environment)
+                      : environmentError
+                        ? "Unknown environment"
+                        : "Checking environment…"}
+                  </span>
+                )}
                 {activeProfile?.group_name && (
                   <span
                     className="session-group"
@@ -915,17 +948,15 @@ function App() {
                       <span>Server tools</span>
                     </button>
                     <button
-                      disabled={!sshActive}
-                      className={
-                        drawerTab === "monitor" && sshActive ? "is-active" : ""
-                      }
-                      aria-pressed={drawerTab === "monitor" && sshActive}
+                      disabled={!monitorAvailable}
+                      className={visibleDrawer === "monitor" ? "is-active" : ""}
+                      aria-pressed={visibleDrawer === "monitor"}
                       onClick={() =>
                         setDrawerTab((v) =>
                           v === "monitor" ? null : "monitor",
                         )
                       }
-                      title="Toggle monitor"
+                      title={monitorAvailable ? "Toggle monitor" : unavailableReason}
                     >
                       <Icon name="monitor" />
                       <span>Monitor</span>
@@ -1093,16 +1124,19 @@ function App() {
               : null
         }
         sshActive={sshActive}
+        monitorAvailable={monitorAvailable}
+        logsAvailable={logsAvailable}
+        unavailableReason={unavailableReason}
         stats={serverStats}
         transferJobs={transferJobs}
-        activeDrawer={drawerTab === "transfers" || sshActive ? drawerTab : null}
+        activeDrawer={visibleDrawer}
         onToggleDrawer={setDrawerTab}
         onOpenPalette={() => setShowPalette(true)}
       >
-        {drawerTab === "monitor" && (
-          <MonitorPanel stats={serverStats} error={null} />
+        {visibleDrawer === "monitor" && (
+          <MonitorPanel stats={serverStats} error={statsError} />
         )}
-        {drawerTab === "transfers" && (
+        {visibleDrawer === "transfers" && (
           <TransferDock
             jobs={transferJobs}
             onCancel={handleCancelTransfer}
@@ -1110,9 +1144,10 @@ function App() {
             headless
           />
         )}
-        {drawerTab === "logs" && sshActive && activeTabId && (
+        {visibleDrawer === "logs" && currentSshSessionId && (
           <LogViewer
-            sessionId={sessionMap[activeTabId]}
+            key={currentSshSessionId}
+            sessionId={currentSshSessionId}
             onClose={() => setDrawerTab(null)}
             onPopout={openLogPopout}
           />

@@ -361,7 +361,8 @@ pub async fn monitor_start(
     ssh_manager: State<'_, SshManager>,
     monitor_manager: State<'_, MonitorManager>,
 ) -> Result<String, String> {
-    let monitor_id = format!("mon-{}", session_id);
+    // A late stop from an old UI subscription must never stop a newer monitor.
+    let monitor_id = format!("mon-{}", uuid::Uuid::new_v4());
     monitor_manager
         .start(&monitor_id, &session_id, &ssh_manager)
         .await?;
@@ -381,7 +382,7 @@ pub async fn monitor_stop(
 pub async fn monitor_get_stats(
     monitor_id: String,
     monitor_manager: State<'_, MonitorManager>,
-) -> Result<ServerStats, String> {
+) -> Result<Option<ServerStats>, String> {
     monitor_manager.get_stats(&monitor_id).await
 }
 

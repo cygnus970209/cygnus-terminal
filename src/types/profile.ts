@@ -60,6 +60,8 @@ export interface SshConfig {
   profileId?: number;
   jumpHost?: JumpHostConfig;
   agentForward?: boolean;
+  targetOs?: TargetOs;
+  remoteShell?: RemoteShell;
 }
 
 export function profileEndpoint(profile: Profile): string {

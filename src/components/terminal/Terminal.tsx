@@ -417,6 +417,8 @@ export default function Terminal({
             keyPath: sshConfig.keyPath || null,
             jumpHost: sshConfig.jumpHost || null,
             agentForward: sshConfig.agentForward || false,
+            targetOs: sshConfig.targetOs ?? "auto",
+            remoteShell: sshConfig.remoteShell ?? "auto",
             onEvent,
           });
           if (!disposed) onTitleChange?.(tabId, `${sshConfig.username}@${sshConfig.host}`);

@@ -1,3 +1,5 @@
+pub mod environment;
+pub(crate) mod powershell;
 pub(crate) mod target;
 
 use russh::client;
@@ -12,7 +14,7 @@ use std::time::Duration;
 use tauri::ipc::Channel;
 use tauri::{AppHandle, Emitter};
 use tokio::io::{AsyncRead, AsyncWrite};
-use tokio::sync::{mpsc, oneshot, Mutex};
+use tokio::sync::{mpsc, oneshot, Mutex, OnceCell};
 use tokio_util::sync::{CancellationToken, DropGuard};
 
 use serde::Deserialize;
@@ -180,8 +182,17 @@ enum SshCommand {
 
 pub struct SshSession {
     cmd_tx: mpsc::Sender<SshCommand>,
-    pub(crate) handle: ManagedSshHandle,
+    pub(crate) handle: Arc<ManagedSshHandle>,
     _jump_handle: Option<ManagedSshHandle>,
+    cancellation: CancellationToken,
+    environment: Arc<OnceCell<environment::ServerEnvironment>>,
+    environment_hints: environment::EnvironmentHints,
+}
+
+impl Drop for SshSession {
+    fn drop(&mut self) {
+        self.cancellation.cancel();
+    }
 }
 
 /// Owns a connection independently of any terminal. Disconnect on every exit path,
@@ -468,6 +479,7 @@ impl SshManager {
         jump_host: Option<JumpHostConfig>,
         agent_forward: bool,
         channel: Channel<PtyEvent>,
+        environment_hints: environment::EnvironmentHints,
     ) -> Result<(), String> {
         let SshConnection {
             handle,
@@ -513,10 +525,13 @@ impl SshManager {
         eprintln!("[SSH] Shell opened, starting I/O loop");
 
         let (cmd_tx, mut cmd_rx) = mpsc::channel::<SshCommand>(256);
+        let cancellation = CancellationToken::new();
+        let io_cancellation = cancellation.clone();
 
         tokio::spawn(async move {
             loop {
                 tokio::select! {
+                    _ = io_cancellation.cancelled() => break,
                     cmd = cmd_rx.recv() => {
                         match cmd {
                             Some(SshCommand::Data(data)) => {
@@ -557,12 +572,16 @@ impl SshManager {
                     }
                 }
             }
+            io_cancellation.cancel();
         });
 
         let session = SshSession {
             cmd_tx,
-            handle,
+            handle: Arc::new(handle),
             _jump_handle,
+            cancellation,
+            environment: Arc::new(OnceCell::new()),
+            environment_hints,
         };
 
         self.sessions
@@ -608,6 +627,52 @@ impl SshManager {
 
     pub fn clone_inner(&self) -> Arc<Mutex<HashMap<String, SshSession>>> {
         Arc::clone(&self.sessions)
+    }
+
+    pub async fn server_environment(
+        &self,
+        session_id: &str,
+    ) -> Result<environment::ServerEnvironment, String> {
+        let (handle, cancellation, cache, hints) = {
+            let sessions = self.sessions.lock().await;
+            let session = sessions.get(session_id).ok_or("SSH session not found")?;
+            (
+                session.handle.clone(),
+                session.cancellation.clone(),
+                session.environment.clone(),
+                session.environment_hints.clone(),
+            )
+        };
+        if cancellation.is_cancelled() {
+            return Err("SSH session closed".into());
+        }
+        let result = cache
+            .get_or_init(|| environment::discover(handle, &cancellation, hints))
+            .await
+            .clone();
+        if cancellation.is_cancelled() {
+            return Err("SSH session closed".into());
+        }
+        Ok(result)
+    }
+
+    pub async fn require_capability(
+        &self,
+        session_id: &str,
+        capability: environment::ServerCapability,
+    ) -> Result<(), String> {
+        self.server_environment(session_id)
+            .await?
+            .require(capability)
+    }
+
+    pub(crate) async fn command_connection(
+        &self,
+        session_id: &str,
+    ) -> Result<(Arc<ManagedSshHandle>, CancellationToken), String> {
+        let sessions = self.sessions.lock().await;
+        let session = sessions.get(session_id).ok_or("SSH session not found")?;
+        Ok((session.handle.clone(), session.cancellation.clone()))
     }
 
     pub async fn open_sftp_channel(
@@ -658,13 +723,17 @@ impl SshManager {
     }
 
     pub async fn close_session(&self, session_id: &str) -> Result<(), String> {
-        let mut sessions = self.sessions.lock().await;
-        if let Some(session) = sessions.remove(session_id) {
-            let _ = session.cmd_tx.send(SshCommand::Close).await;
-            let _ = session
-                .handle
-                .disconnect(Disconnect::ByApplication, "Closed by user", "en")
-                .await;
+        let session = self.sessions.lock().await.remove(session_id);
+        if let Some(session) = session {
+            session.cancellation.cancel();
+            let _ = session.cmd_tx.try_send(SshCommand::Close);
+            let _ = tokio::time::timeout(
+                Duration::from_secs(2),
+                session
+                    .handle
+                    .disconnect(Disconnect::ByApplication, "Closed by user", "en"),
+            )
+            .await;
         }
         Ok(())
     }

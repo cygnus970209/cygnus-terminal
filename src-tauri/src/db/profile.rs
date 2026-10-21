@@ -917,7 +917,7 @@ pub(super) fn validate_transport(
 
 /// Metadata only: never interpolate these fields into remote commands or infer permissions.
 /// Keep OS and shell independent (for example, PowerShell can also run on Linux).
-pub(super) fn validate_server_environment(
+pub(crate) fn validate_server_environment(
     target_os: &str,
     remote_shell: &str,
 ) -> Result<(), String> {

@@ -1,3 +1,5 @@
+mod windows;
+
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -7,15 +9,17 @@ use crate::ssh::SshManager;
 
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct ServerStats {
-    pub cpu_usage: f64,
-    pub mem_total: u64,
-    pub mem_used: u64,
-    pub mem_usage: f64,
-    pub disk_total: u64,
-    pub disk_used: u64,
-    pub disk_usage: f64,
-    pub load_avg: String,
-    pub uptime: String,
+    pub platform: &'static str,
+    pub cpu_usage: Option<f64>,
+    pub mem_total: Option<u64>,
+    pub mem_used: Option<u64>,
+    pub mem_usage: Option<f64>,
+    pub disk_total: Option<u64>,
+    pub disk_used: Option<u64>,
+    pub disk_usage: Option<f64>,
+    pub load_avg: Option<String>,
+    pub uptime: Option<String>,
+    pub windows: Option<windows::WindowsDetails>,
 }
 
 #[derive(Default, Clone)]
@@ -25,7 +29,7 @@ struct CpuSnapshot {
 }
 
 pub struct MonitorManager {
-    stats: Arc<Mutex<HashMap<String, ServerStats>>>,
+    stats: Arc<Mutex<HashMap<String, Result<ServerStats, String>>>>,
     tasks: Arc<Mutex<HashMap<String, tokio::task::JoinHandle<()>>>>,
 }
 
@@ -49,27 +53,38 @@ impl MonitorManager {
         session_id: &str,
         ssh_manager: &SshManager,
     ) -> Result<(), String> {
+        let environment = ssh_manager.server_environment(session_id).await?;
+        environment.require(crate::ssh::environment::ServerCapability::Monitor)?;
         let monitor_id_owned = monitor_id.to_string();
         let session_id_owned = session_id.to_string();
         let stats = Arc::clone(&self.stats);
-        let ssh = ssh_manager.clone_inner();
+        let ssh = ssh_manager.clone();
 
         let task = tokio::spawn(async move {
             let mut prev_cpu = CpuSnapshot::default();
-            let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
-
             loop {
-                interval.tick().await;
-                match Self::collect_stats(&session_id_owned, &ssh, &prev_cpu).await {
+                let result = if environment.os == "windows" {
+                    match environment.powershell.as_ref() {
+                        Some(runtime) => windows::collect(&session_id_owned, &ssh, runtime)
+                            .await
+                            .map(|stats| (stats, CpuSnapshot::default())),
+                        None => Err("Windows monitoring runtime is unavailable".into()),
+                    }
+                } else {
+                    Self::collect_stats(&session_id_owned, &ssh, &prev_cpu).await
+                };
+                match result {
                     Ok((s, new_cpu)) => {
                         prev_cpu = new_cpu;
-                        stats.lock().await.insert(monitor_id_owned.clone(), s);
+                        stats.lock().await.insert(monitor_id_owned.clone(), Ok(s));
                     }
                     Err(e) => {
-                        eprintln!("[Monitor] Failed to collect stats: {}", e);
+                        stats.lock().await.insert(monitor_id_owned.clone(), Err(e));
                         break;
                     }
                 }
+                // Sequential sampling: slow Windows queries cannot create catch-up bursts.
+                tokio::time::sleep(std::time::Duration::from_secs(5)).await;
             }
         });
 
@@ -84,118 +99,140 @@ impl MonitorManager {
         self.stats.lock().await.remove(monitor_id);
     }
 
-    pub async fn get_stats(&self, monitor_id: &str) -> Result<ServerStats, String> {
-        self.stats
-            .lock()
-            .await
-            .get(monitor_id)
-            .cloned()
-            .ok_or_else(|| "Monitor not running".into())
+    pub async fn get_stats(&self, monitor_id: &str) -> Result<Option<ServerStats>, String> {
+        if let Some(result) = self.stats.lock().await.get(monitor_id).cloned() {
+            return result.map(Some);
+        }
+        if self.tasks.lock().await.contains_key(monitor_id) {
+            Ok(None)
+        } else {
+            Err("Monitor is no longer running".into())
+        }
     }
 
     async fn collect_stats(
         session_id: &str,
-        ssh: &Arc<Mutex<HashMap<String, crate::ssh::SshSession>>>,
+        ssh: &SshManager,
         prev_cpu: &CpuSnapshot,
     ) -> Result<(ServerStats, CpuSnapshot), String> {
-        let sessions = ssh.lock().await;
-        let session = sessions
-            .get(session_id)
-            .ok_or_else(|| "SSH session not found".to_string())?;
+        let (handle, cancel) = ssh.command_connection(session_id).await?;
+        let cmd = "LC_ALL=C; export LC_ALL; cat /proc/stat | head -1; echo '---'; free -b | grep Mem; echo '---'; df -B1 --total | grep total; echo '---'; cat /proc/loadavg; echo '---'; uptime -p 2>/dev/null || uptime";
+        let output = crate::ssh::environment::read_command(
+            handle,
+            &cancel,
+            cmd,
+            std::time::Duration::from_secs(5),
+            65536,
+        )
+        .await?;
+        Self::parse_stats(&output, prev_cpu)
+    }
 
-        let cmd = "cat /proc/stat | head -1; echo '---'; free -b | grep Mem; echo '---'; df -B1 --total | grep total; echo '---'; cat /proc/loadavg; echo '---'; uptime -p 2>/dev/null || uptime";
-
-        let mut channel = session
-            .handle
-            .channel_open_session()
-            .await
-            .map_err(|e| format!("Channel open failed: {e}"))?;
-
-        drop(sessions);
-        channel
-            .exec(true, cmd)
-            .await
-            .map_err(|e| format!("Exec failed: {e}"))?;
-
-        let mut output = String::new();
-        while let Some(msg) = channel.wait().await {
-            match msg {
-                russh::ChannelMsg::Data { data } => {
-                    output.push_str(&String::from_utf8_lossy(&data));
-                }
-                russh::ChannelMsg::Eof | russh::ChannelMsg::Close => break,
-                _ => {}
-            }
-        }
+    fn parse_stats(
+        output: &str,
+        prev_cpu: &CpuSnapshot,
+    ) -> Result<(ServerStats, CpuSnapshot), String> {
         let sections: Vec<&str> = output.split("---").collect();
-        let mut stats = ServerStats::default();
-        let mut current_cpu = CpuSnapshot::default();
-
-        // CPU: 이전 스냅샷과 비교하여 실시간 사용률 계산
-        if let Some(cpu_line) = sections.first() {
-            let parts: Vec<&str> = cpu_line.split_whitespace().collect();
-            if parts.len() >= 5 {
-                let user: f64 = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0.0);
-                let nice: f64 = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0.0);
-                let system: f64 = parts.get(3).and_then(|s| s.parse().ok()).unwrap_or(0.0);
-                let idle: f64 = parts.get(4).and_then(|s| s.parse().ok()).unwrap_or(0.0);
-                let iowait: f64 = parts.get(5).and_then(|s| s.parse().ok()).unwrap_or(0.0);
-                let irq: f64 = parts.get(6).and_then(|s| s.parse().ok()).unwrap_or(0.0);
-                let softirq: f64 = parts.get(7).and_then(|s| s.parse().ok()).unwrap_or(0.0);
-
-                let total = user + nice + system + idle + iowait + irq + softirq;
-                current_cpu = CpuSnapshot { total, idle };
-
-                // 이전 값이 있으면 델타 계산
-                if prev_cpu.total > 0.0 {
-                    let d_total = total - prev_cpu.total;
-                    let d_idle = idle - prev_cpu.idle;
-                    if d_total > 0.0 {
-                        stats.cpu_usage = ((d_total - d_idle) / d_total * 100.0 * 10.0).round() / 10.0;
-                    }
-                }
-            }
+        // Missing tools, permission errors and malformed output are not healthy zero values.
+        if sections.len() != 5 || sections[4].trim().is_empty() {
+            return Err("Incomplete Linux monitoring output".into());
         }
-
-        // Memory
-        if let Some(mem_line) = sections.get(1) {
-            let parts: Vec<&str> = mem_line.split_whitespace().collect();
-            if parts.len() >= 3 {
-                stats.mem_total = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
-                stats.mem_used = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
-                if stats.mem_total > 0 {
-                    stats.mem_usage =
-                        (stats.mem_used as f64 / stats.mem_total as f64 * 100.0 * 10.0).round() / 10.0;
-                }
-            }
+        let rows: Vec<Vec<&str>> = sections
+            .iter()
+            .take(4)
+            .map(|s| s.split_whitespace().collect())
+            .collect();
+        if rows[0].len() < 8
+            || rows[0][0] != "cpu"
+            || rows[1].len() < 3
+            || rows[1][0] != "Mem:"
+            || rows[2].len() < 4
+            || rows[2][0] != "total"
+            || rows[3].len() < 3
+        {
+            return Err("Invalid Linux monitoring output".into());
         }
-
-        // Disk
-        if let Some(disk_line) = sections.get(2) {
-            let parts: Vec<&str> = disk_line.split_whitespace().collect();
-            if parts.len() >= 4 {
-                stats.disk_total = parts.get(1).and_then(|s| s.parse().ok()).unwrap_or(0);
-                stats.disk_used = parts.get(2).and_then(|s| s.parse().ok()).unwrap_or(0);
-                if stats.disk_total > 0 {
-                    stats.disk_usage =
-                        (stats.disk_used as f64 / stats.disk_total as f64 * 100.0 * 10.0).round() / 10.0;
-                }
-            }
+        if rows[0][1..8].iter().any(|v| v.parse::<u64>().is_err())
+            || rows[1][1..3].iter().any(|v| v.parse::<u64>().is_err())
+            || rows[2][1..4].iter().any(|v| v.parse::<u64>().is_err())
+            || rows[3][..3]
+                .iter()
+                .any(|v| v.parse::<f64>().map_or(true, |n| !n.is_finite() || n < 0.0))
+        {
+            return Err("Invalid Linux monitoring values".into());
         }
-
-        // Load average
-        if let Some(load_line) = sections.get(3) {
-            let parts: Vec<&str> = load_line.split_whitespace().collect();
-            if parts.len() >= 3 {
-                stats.load_avg = format!("{} {} {}", parts[0], parts[1], parts[2]);
-            }
+        let cpu: Vec<f64> = rows[0][1..8]
+            .iter()
+            .map(|value| value.parse::<f64>().expect("validated CPU value"))
+            .collect();
+        let current_cpu = CpuSnapshot {
+            total: cpu.iter().sum(),
+            idle: cpu[3],
+        };
+        let d_total = current_cpu.total - prev_cpu.total;
+        let d_idle = current_cpu.idle - prev_cpu.idle;
+        let cpu_usage =
+            if prev_cpu.total > 0.0 && d_total > 0.0 && (0.0..=d_total).contains(&d_idle) {
+                Some(percent(d_total - d_idle, d_total))
+            } else {
+                None
+            };
+        let mem_total = rows[1][1].parse::<u64>().expect("validated memory total");
+        let mem_used = rows[1][2].parse::<u64>().expect("validated memory usage");
+        let disk_total = rows[2][1].parse::<u64>().expect("validated disk total");
+        let disk_used = rows[2][2].parse::<u64>().expect("validated disk usage");
+        if mem_total == 0 || disk_total == 0 || mem_used > mem_total || disk_used > disk_total {
+            return Err("Invalid Linux monitoring totals".into());
         }
-
-        // Uptime
-        if let Some(uptime_line) = sections.get(4) {
-            stats.uptime = uptime_line.trim().to_string();
-        }
-
+        let stats = ServerStats {
+            platform: "linux",
+            cpu_usage,
+            mem_total: Some(mem_total),
+            mem_used: Some(mem_used),
+            mem_usage: Some(percent(mem_used as f64, mem_total as f64)),
+            disk_total: Some(disk_total),
+            disk_used: Some(disk_used),
+            disk_usage: Some(percent(disk_used as f64, disk_total as f64)),
+            load_avg: Some(rows[3][..3].join(" ")),
+            uptime: Some(sections[4].trim().to_string()),
+            windows: None,
+        };
         Ok((stats, current_cpu))
+    }
+}
+
+fn percent(used: f64, total: f64) -> f64 {
+    (used / total * 1000.0).round() / 10.0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    const VALID: &str = "cpu 20 0 10 70 0 0 0 0\n---\nMem: 1000 400 600\n---\ntotal 2000 500 1500 25% -\n---\n0.10 0.20 0.30 1/100 50\n---\nup 1 hour\n";
+
+    #[test]
+    fn parses_linux_metrics_and_cpu_delta() {
+        let (_, snapshot) = MonitorManager::parse_stats(VALID, &CpuSnapshot::default()).unwrap();
+        let next = VALID.replace("cpu 20 0 10 70", "cpu 30 0 10 80");
+        let (stats, _) = MonitorManager::parse_stats(&next, &snapshot).unwrap();
+        assert_eq!(stats.cpu_usage, Some(50.0));
+        assert_eq!(stats.mem_usage, Some(40.0));
+        assert_eq!(stats.disk_usage, Some(25.0));
+        assert_eq!(stats.load_avg.as_deref(), Some("0.10 0.20 0.30"));
+    }
+
+    #[test]
+    fn failed_or_partial_metrics_do_not_become_healthy_zero_values() {
+        for output in [
+            String::new(),
+            "command not found".into(),
+            VALID.replace("Mem: 1000", "Mem: error"),
+            VALID.replace("total 2000", "total 0"),
+            VALID.replace("0.10", "NaN"),
+            VALID.replace("Mem: 1000 400", "Mem: 100 400"),
+            VALID.replace("up 1 hour", ""),
+        ] {
+            assert!(MonitorManager::parse_stats(&output, &CpuSnapshot::default()).is_err());
+        }
     }
 }

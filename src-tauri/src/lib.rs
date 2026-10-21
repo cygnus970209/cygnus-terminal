@@ -216,6 +216,7 @@ pub fn run() {
             commands::resize_ssh,
             commands::close_ssh,
             commands::ssh_host_key_respond,
+            commands::ssh_server_environment,
             commands::authorize_keychain_access,
             commands::create_profile,
             commands::list_profiles,

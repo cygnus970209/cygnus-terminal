@@ -9,6 +9,8 @@ import {
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { detectLogLevel, type LogLevel } from "../../utils/logLevel";
 import { useAlertRules, isValidPattern } from "../../hooks/useAlertRules";
+import { useServerEnvironment } from "../../hooks/useServerEnvironment";
+import { capabilityReason } from "../../types/serverEnvironment";
 import "./LogViewer.css";
 
 interface TailLine {
@@ -141,6 +143,11 @@ export default function LogViewer({
   fullHeight,
   onPopout,
 }: LogViewerProps) {
+  const { environment, error: environmentError } = useServerEnvironment(sessionId);
+  const tailAvailable = !!environment?.capabilities.file_logs;
+  const journalAvailable = !!environment?.capabilities.journal;
+  const unavailableReason = capabilityReason(environment, environmentError, !!sessionId);
+  const streamOwner = useRef({ active: false, ids: new Set<string>() });
   const [streams, setStreams] = useState<LogStream[]>([]);
   const [activeStreamId, setActiveStreamId] = useState<string | null>(null);
   const [newPath, setNewPath] = useState("");
@@ -300,7 +307,8 @@ export default function LogViewer({
   );
 
   const handleAddTail = useCallback(async () => {
-    if (!newPath.trim()) return;
+    if (!newPath.trim() || !tailAvailable) return;
+    const owner = streamOwner.current;
     try {
       const onEvent = new Channel<TailEvent>();
       const tailId = await invoke<string>("tail_start", {
@@ -310,6 +318,11 @@ export default function LogViewer({
         onEvent,
       });
 
+      if (!owner.active) {
+        await invoke("tail_stop", { tailId });
+        return;
+      }
+      owner.ids.add(tailId);
       setStreams((prev) => [
         ...prev,
         {
@@ -327,11 +340,12 @@ export default function LogViewer({
     } catch (err) {
       console.error("Failed to start tail:", err);
     }
-  }, [sessionId, newPath, attachStreamMessages]);
+  }, [sessionId, newPath, tailAvailable, attachStreamMessages]);
 
   const handleAddJournal = useCallback(async () => {
     const args = newJournalArgs.trim();
-    if (!args) return;
+    if (!args || !journalAvailable) return;
+    const owner = streamOwner.current;
     try {
       const onEvent = new Channel<TailEvent>();
       const tailId = await invoke<string>("journal_start", {
@@ -340,6 +354,11 @@ export default function LogViewer({
         onEvent,
       });
 
+      if (!owner.active) {
+        await invoke("tail_stop", { tailId });
+        return;
+      }
+      owner.ids.add(tailId);
       setStreams((prev) => [
         ...prev,
         {
@@ -357,12 +376,13 @@ export default function LogViewer({
     } catch (err) {
       console.error("Failed to start journal:", err);
     }
-  }, [sessionId, newJournalArgs, attachStreamMessages]);
+  }, [sessionId, newJournalArgs, journalAvailable, attachStreamMessages]);
 
   const handleStopTail = useCallback(
     async (tailId: string) => {
       try {
         await invoke("tail_stop", { tailId });
+        streamOwner.current.ids.delete(tailId);
       } catch (err) {
         console.error("Failed to stop tail:", err);
       }
@@ -377,12 +397,16 @@ export default function LogViewer({
     [activeStreamId],
   );
 
-  // 클린업
+  // Own pending and active streams until unmount, including late start responses.
   useEffect(() => {
+    const owner = { active: true, ids: new Set<string>() };
+    streamOwner.current = owner;
     return () => {
-      streams.forEach((s) => invoke("tail_stop", { tailId: s.tailId }));
+      owner.active = false;
+      owner.ids.forEach((tailId) => {
+        void invoke("tail_stop", { tailId }).catch(() => {});
+      });
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleAddAlertRule = () => {
@@ -456,12 +480,16 @@ export default function LogViewer({
         <button
           className={`lv-btn ${addMode === "tail" ? "lv-btn-on" : ""}`}
           onClick={() => setAddMode(addMode === "tail" ? "none" : "tail")}
+          disabled={!tailAvailable}
+          title={tailAvailable ? "Follow a remote log file" : unavailableReason}
         >
           + Tail
         </button>
         <button
           className={`lv-btn ${addMode === "journal" ? "lv-btn-on" : ""}`}
           onClick={() => setAddMode(addMode === "journal" ? "none" : "journal")}
+          disabled={!journalAvailable}
+          title={journalAvailable ? "Follow the system journal" : unavailableReason}
         >
           + Journal
         </button>

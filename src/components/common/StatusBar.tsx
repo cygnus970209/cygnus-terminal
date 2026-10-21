@@ -8,7 +8,10 @@ export type DrawerTab = "monitor" | "transfers" | "logs" | null;
 
 interface Props {
   sessionLabel?: string | null; // 현재 활성 SSH 탭 label (있으면 표시)
-  sshActive: boolean; // 현재 세션이 SSH 인지 (monitor 탭 활성 조건)
+  sshActive: boolean;
+  monitorAvailable: boolean;
+  logsAvailable: boolean;
+  unavailableReason: string;
   stats: ServerStats | null; // summary 에 쓸 값
   transferJobs: TransferJob[];
 
@@ -20,14 +23,17 @@ interface Props {
   children?: ReactNode;
 }
 
-function formatPct(n: number | undefined) {
-  if (n === undefined) return "--";
+function formatPct(n: number | null | undefined) {
+  if (n == null || !Number.isFinite(n)) return "--";
   return `${Math.round(n)}%`;
 }
 
 export default function StatusBar({
   sessionLabel,
   sshActive,
+  monitorAvailable,
+  logsAvailable,
+  unavailableReason,
   stats,
   transferJobs,
   activeDrawer,
@@ -98,8 +104,8 @@ export default function StatusBar({
           <button
             className={`sb-tab ${activeDrawer === "monitor" ? "active" : ""}`}
             onClick={() => handleTabClick("monitor")}
-            disabled={!sshActive}
-            title={sshActive ? "Monitor (Cmd+1)" : "Monitor — SSH session only"}
+            disabled={!monitorAvailable}
+            title={monitorAvailable ? "Monitor (Cmd+1)" : unavailableReason}
           >
             Monitor
           </button>
@@ -114,8 +120,8 @@ export default function StatusBar({
           <button
             className={`sb-tab ${activeDrawer === "logs" ? "active" : ""}`}
             onClick={() => handleTabClick("logs")}
-            disabled={!sshActive}
-            title={sshActive ? "Logs (Cmd+3)" : "Logs — SSH session only"}
+            disabled={!logsAvailable}
+            title={logsAvailable ? "Logs (Cmd+3)" : unavailableReason}
           >
             Logs
           </button>
