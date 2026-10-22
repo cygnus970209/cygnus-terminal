@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import { Channel, invoke } from "@tauri-apps/api/core";
-import Select from "../common/Select";
+import RdpConnectionForm from "./RdpConnectionForm";
+import RdpCertificateForm from "./RdpCertificateForm";
 import type { SessionStatus } from "../../types";
-import type { RdpCertificate, RdpConfig, RdpEvent } from "../../types/rdp";
+import type { RdpApproval, RdpCertificate, RdpConfig, RdpEvent } from "../../types/rdp";
 import { decodeRdpFrame, rdpScancode, RdpInputQueue } from "../../utils/rdp";
 import "./RdpSession.css";
 
@@ -18,7 +19,6 @@ export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleCh
   const [phase, setPhase] = useState<Phase>("idle");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [certificate, setCertificate] = useState<RdpCertificate | null>(null);
-  const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [hasFrame, setHasFrame] = useState(false);
   const [size, setSize] = useState({ width: 1280, height: 720 });
@@ -37,7 +37,6 @@ export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleCh
     inputs.current?.close();
     inputs.current = null;
     setSessionId(null);
-    setPassword("");
     setCertificate(null);
     setHasFrame(false);
     setError(message ?? null);
@@ -57,13 +56,13 @@ export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleCh
     };
   }, [onSessionStatus, tabId]);
 
-  async function connect(event: FormEvent) {
+  async function connect(event: FormEvent, name: string) {
     event.preventDefault();
     const attempt = ++generation.current;
     setPhase("connecting"); setError(null); setHasFrame(false); setCertificate(null);
     onSessionStatus(tabId, "connecting");
     const settings = { ...config, host: config.host.trim(), username: config.username.trim(), domain: config.domain.trim() };
-    onTitleChange(tabId, `RDP · ${settings.host}`);
+    onTitleChange(tabId, `RDP · ${name || settings.host}`);
     const events = new Channel<RdpEvent>();
     events.onmessage = (event) => {
       if (generation.current !== attempt) return;
@@ -84,15 +83,12 @@ export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleCh
       if (generation.current === attempt) disconnect("Could not start RDP. Check the server address and the bundled RDP engine.");
     }
   }
-  async function authenticate(event: FormEvent) {
-    event.preventDefault();
+  async function authenticate(approval: RdpApproval) {
     if (!certificate || !sessionId) return;
     const attempt = generation.current;
     setPhase("authenticating");
-    const secret = password;
-    setPassword("");
-    try { await invoke("rdp_authenticate", { sessionId, fingerprint: certificate.fingerprint, password: secret }); }
-    catch { if (generation.current === attempt) disconnect("Certificate approval could not be sent. Reconnect to try again."); }
+    try { await invoke("rdp_authenticate", { sessionId, approval }); }
+    catch { if (generation.current === attempt) disconnect("Certificate approval could not be completed. Reconnect to review the current saved certificate."); }
   }
 
   useEffect(() => {
@@ -177,7 +173,7 @@ export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleCh
   const busy = ["connecting", "certificate", "authenticating", "connected"].includes(phase);
   return <section className="rdp-session" style={{ display: isActive ? "flex" : "none" }} aria-label="RDP session">
     <div className="rdp-toolbar">
-      <span>Remote desktop <span className="rdp-note">Preview</span></span>
+      <span>Remote desktop <span className="rdp-note">Beta</span></span>
       {phase === "connected" && <span className="rdp-note">{size.width} × {size.height} · Ctrl+Alt+Shift releases input</span>}
       {phase === "connected" && <button onClick={() => {
         for (const down of [true, false]) for (const code of (down ? [0x1d, 0x38, 0x153] : [0x153, 0x38, 0x1d])) inputs.current?.push({ type: "key", code, down });
@@ -195,34 +191,17 @@ export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleCh
         onPointerUp={(event) => { if (event.button <= 2) inputs.current?.push({ type: "pointer", ...point(event.clientX, event.clientY), button: event.button, down: false }); }}
         onPointerMove={(event) => inputs.current?.push({ type: "pointer", ...point(event.clientX, event.clientY), button: null, down: false })}
         onPointerCancel={() => inputs.current?.release()} />
-    </div> : <div className="rdp-content">
+    </div> : null}
+    <div className="rdp-content" style={{ display: phase === "connected" ? "none" : undefined }}>
       {error && <p className="rdp-error" role="alert">{error}</p>}
-      {phase === "certificate" && certificate ? <form className="rdp-form" onSubmit={authenticate}>
-        <h2>Verify this RDP server</h2>
-        <p>{config.host}:{config.port}</p>
-        <p className="rdp-note">Compare this SHA-256 fingerprint with a trusted source. Trust applies to this connection only. This preview does not automatically verify the certificate issuer, hostname or validity dates.</p>
-        <code className="rdp-fingerprint">{certificate.fingerprint}</code>
-        <dl className="rdp-certificate"><dt>Subject</dt><dd>{certificate.subject}</dd><dt>Issuer</dt><dd>{certificate.issuer}</dd><dt>Valid from</dt><dd>{certificate.valid_from}</dd><dt>Valid until</dt><dd>{certificate.valid_until}</dd></dl>
-        <label>RDP password<input type="password" autoComplete="off" required maxLength={1024} value={password} onChange={(event) => setPassword(event.target.value)} /></label>
-        <p className="rdp-note">Sent only to this RDP server after approval. Not saved or shared with MCP.</p>
-        <button className="rdp-primary" type="submit" disabled={!sessionId}>Trust once & connect</button>
-      </form> : phase === "connecting" || phase === "authenticating" ? <p role="status">{phase === "connecting" ? "Connecting and reading the server certificate…" : "Authenticating with the RDP server…"}</p>
-        : <form className="rdp-form" onSubmit={connect}>
-          <h2>Connect to a remote desktop</h2>
-          {phase === "ended" && <p className="rdp-note" role="status">RDP connection ended.</p>}
-          <p className="rdp-note">Direct connection with NLA / NTLM. Enter the password after verifying the server certificate.</p>
-          <div className="rdp-fields">
-            <label>Server<input autoComplete="off" required maxLength={253} placeholder="server.example.com" value={config.host} onChange={(e) => setConfig({ ...config, host: e.target.value })} /></label>
-            <label>Port<input type="number" required min={1} max={65535} value={config.port || ""} onChange={(e) => setConfig({ ...config, port: Number(e.target.value) })} /></label>
-          </div>
-          <label>Username<input autoComplete="off" required maxLength={256} value={config.username} onChange={(e) => setConfig({ ...config, username: e.target.value })} /></label>
-          <label>Domain <span className="rdp-note">Optional</span><input autoComplete="off" maxLength={256} value={config.domain} onChange={(e) => setConfig({ ...config, domain: e.target.value })} /></label>
-          <label>Desktop size<Select aria-label="RDP desktop size" value={`${config.width}x${config.height}`} onValueChange={(value) => { const [width, height] = value.split("x").map(Number); setConfig({ ...config, width, height }); }}>
-            <option value="1280x720">1280 × 720</option><option value="1600x900">1600 × 900</option><option value="1920x1080">1920 × 1080</option>
-          </Select></label>
-          <p className="rdp-note">Basic US keyboard input. IME, clipboard, drive sharing and RD Gateway are not available yet.</p>
-          <button className="rdp-primary" type="submit">Connect</button>
-        </form>}
-    </div>}
+      {phase === "ended" && <p className="rdp-note rdp-ended" role="status">RDP connection ended.</p>}
+      {phase === "certificate" && certificate && <RdpCertificateForm certificate={certificate}
+        endpoint={`${config.host}:${config.port}`} sessionId={sessionId}
+        onApprove={(approval) => void authenticate(approval)} onForgotten={() => { if (currentId.current === sessionId) disconnect(); }} />}
+      {(phase === "connecting" || phase === "authenticating") && <p role="status">{phase === "connecting" ? "Connecting and reading the server certificate…" : "Authenticating with the RDP server…"}</p>}
+      <div style={{ display: busy ? "none" : "contents" }}>
+        <RdpConnectionForm config={config} onChange={setConfig} onConnect={(event, name) => void connect(event, name)} />
+      </div>
+    </div>
   </section>;
 }

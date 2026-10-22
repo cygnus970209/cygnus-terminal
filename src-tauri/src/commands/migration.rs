@@ -274,6 +274,7 @@ fn save_preview(
         .collect();
     db.import_data(
         ExportData {
+            rdp_profiles: Vec::new(),
             version: 2,
             profiles,
             command_bookmarks: vec![],

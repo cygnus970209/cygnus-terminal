@@ -23,3 +23,11 @@
 .rdp-screen canvas { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; touch-action: none; }
 .rdp-wait { position: absolute; color: var(--text-secondary); z-index: 1; pointer-events: none; }
 @media (max-width: 800px) { .rdp-content { padding: 16px; } }
+.rdp-form-fields { display: flex; flex-direction: column; gap: 12px; border: 0; padding: 0; margin: 0; min-width: 0; }
+.rdp-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.rdp-form label.rdp-check { flex-direction: row; align-items: flex-start; gap: 8px; line-height: 1.6; }
+.rdp-check input { width: 16px; height: 16px; flex: 0 0 16px; margin: 2px 0 0; accent-color: var(--accent); }
+.rdp-notice { display: flex; flex-direction: column; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 4px; }
+.rdp-warning { border-color: var(--warn); color: var(--warn); }
+.rdp-ended { max-width: 480px; margin: 0 auto 12px; }
+.rdp-form .rdp-error { margin: 0; }

@@ -99,7 +99,7 @@ export default function IisPanel({ sessionId }: { sessionId: string }) {
         {([ ["overview", "Sites & pools"], ["logs", "Site logs"], ["events", "Windows events"] ] as const).map(([key, title]) =>
           <button key={key} aria-pressed={view === key} aria-controls={group} onClick={() => setView(key)}>{title}</button>)}
       </nav>
-      <span className="iis-note">Read only · SSH</span>
+      <span className="iis-note" title="Windows compatibility testing is limited">Beta · Read only · SSH</span>
     </div>
     <div id={group}>
       {view !== "events" && <div className="iis-toolbar">

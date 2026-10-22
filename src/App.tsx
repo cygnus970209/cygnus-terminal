@@ -713,7 +713,7 @@ function App() {
     {
       id: "action:new-rdp",
       kind: "action",
-      title: "New RDP desktop (Preview)",
+      title: "New RDP desktop (Beta)",
       onSelect: createRdpTab,
     },
     {
@@ -985,7 +985,7 @@ function App() {
                       className={visibleDrawer === "iis" ? "is-active" : ""}
                       aria-pressed={visibleDrawer === "iis"}
                       onClick={() => setDrawerTab((v) => v === "iis" ? null : "iis")}
-                      title={iisAvailable ? "IIS & Windows events" : "A verified Windows PowerShell runtime is required"}
+                      title={iisAvailable ? "IIS & Windows events (Beta)" : "A verified Windows PowerShell runtime is required"}
                     >
                       <Icon name="server" />
                       <span>IIS</span>

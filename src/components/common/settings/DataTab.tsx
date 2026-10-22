@@ -37,6 +37,7 @@ export default function DataTab() {
       if (!path) return;
 
       const count = await invoke<number>("import_from_file", { path });
+      window.dispatchEvent(new Event("cygnus-profiles-changed"));
       showStatus(`Imported ${count} items!`);
     } catch (err) {
       showStatus(`Import failed: ${err}`, 3000);
@@ -47,9 +48,9 @@ export default function DataTab() {
     <div className="settings-section">
       <h3 className="settings-section-title">Data</h3>
       <p className="settings-desc">
-        Export or import profiles, command bookmarks, and path bookmarks.
+        Export or import profiles (including RDP connection settings), command bookmarks, and path bookmarks.
         <br />
-        Passwords are not included in exports for security.
+        Passwords and saved RDP certificate trust are not included. Verify RDP certificates again after importing on another device.
       </p>
       <div className="settings-actions">
         <button className="settings-btn" onClick={handleExport}>

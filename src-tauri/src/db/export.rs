@@ -7,6 +7,8 @@ use crate::db::Database;
 pub struct ExportData {
     pub version: u32,
     pub profiles: Vec<ExportProfile>,
+    #[serde(default)]
+    pub rdp_profiles: Vec<super::rdp::ProfileData>,
     pub command_bookmarks: Vec<ExportCommandBookmark>,
     pub path_bookmarks: Vec<ExportPathBookmark>,
 }
@@ -115,7 +117,14 @@ impl Database {
             .map_err(|e| format!("Export query failed: {e}"))?;
 
         Ok(ExportData {
-            version: 3,
+            version: 4,
+            rdp_profiles: super::rdp::list(&conn)?
+                .into_iter()
+                .map(|p| super::rdp::ProfileData {
+                    name: p.name,
+                    config: p.config,
+                })
+                .collect(),
             profiles,
             command_bookmarks,
             path_bookmarks,
@@ -123,7 +132,7 @@ impl Database {
     }
 
     pub fn import_data(&self, data: ExportData, _crypto: &CryptoManager) -> Result<u32, String> {
-        if data.version > 3 {
+        if data.version > 4 || (data.version < 4 && !data.rdp_profiles.is_empty()) {
             return Err("Unsupported backup version".into());
         }
         for profile in &data.profiles {
@@ -134,6 +143,12 @@ impl Database {
                 profile.baud_rate,
             )?;
             super::profile::validate_server_environment(&profile.target_os, &profile.remote_shell)?;
+        }
+        if data.rdp_profiles.len() > super::rdp::MAX_PROFILES {
+            return Err("Backup contains too many RDP connections".into());
+        }
+        for profile in &data.rdp_profiles {
+            profile.validate()?;
         }
         let mut guard = self.conn();
         let conn = guard
@@ -174,6 +189,17 @@ impl Database {
             )
             .map_err(|e| format!("Failed to import profile: {e}"))?;
             imported += 1;
+        }
+
+        // RDP metadata is imported without credentials or certificate trust.
+        for profile in &data.rdp_profiles {
+            let c = &profile.config;
+            let exists: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM rdp_profiles WHERE host=?1 AND port=?2 AND username=?3 AND domain=?4)", rusqlite::params![c.host,c.port,c.username,c.domain], |r| r.get(0))
+                .map_err(|_| "Could not inspect saved RDP connections")?;
+            if !exists {
+                super::rdp::insert(&conn, profile)?;
+                imported += 1;
+            }
         }
 
         // profile_name → id 매핑
@@ -244,7 +270,7 @@ mod tests {
             db.create_profile(req, &crypto).unwrap();
         }
         let backup = db.export_data(&crypto).unwrap();
-        assert_eq!(backup.version, 3);
+        assert_eq!(backup.version, 4);
         let json = serde_json::to_string(&backup).unwrap();
         let target = Database::new_in_memory().unwrap();
         assert_eq!(

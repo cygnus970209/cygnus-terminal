@@ -1,5 +1,9 @@
-use crate::rdp::RdpManager;
-use cygnus_rdp_protocol::{ConnectConfig, Event, Input};
+use crate::db::{
+    rdp::{ProfileData, RdpProfile},
+    Database,
+};
+use crate::rdp::{CertificateApproval, RdpManager, SessionEvent};
+use cygnus_rdp_protocol::{ConnectConfig, Input};
 use std::sync::Arc;
 use tauri::{
     ipc::{Channel, Response},
@@ -17,7 +21,7 @@ pub fn rdp_connect(
     window: WebviewWindow,
     manager: State<'_, RdpManager>,
     config: ConnectConfig,
-    events: Channel<Event>,
+    events: Channel<SessionEvent>,
 ) -> Result<String, String> {
     main_window(&window)?;
     manager.open(config, Arc::new(move |event| events.send(event).is_ok()))
@@ -27,11 +31,10 @@ pub fn rdp_authenticate(
     window: WebviewWindow,
     manager: State<'_, RdpManager>,
     session_id: String,
-    fingerprint: String,
-    password: String,
+    approval: CertificateApproval,
 ) -> Result<(), String> {
     main_window(&window)?;
-    manager.authenticate(&session_id, fingerprint, password)
+    manager.authenticate(&session_id, approval)
 }
 #[tauri::command]
 pub fn rdp_input(
@@ -61,4 +64,42 @@ pub fn rdp_close(
     main_window(&window)?;
     manager.close(&session_id);
     Ok(())
+}
+
+#[tauri::command]
+pub fn rdp_forget_certificate(
+    window: WebviewWindow,
+    manager: State<'_, RdpManager>,
+    session_id: String,
+    expected_fingerprint: String,
+) -> Result<(), String> {
+    main_window(&window)?;
+    manager.forget_certificate(&session_id, &expected_fingerprint)
+}
+#[tauri::command]
+pub fn rdp_list_profiles(
+    window: WebviewWindow,
+    db: State<'_, Arc<Database>>,
+) -> Result<Vec<RdpProfile>, String> {
+    main_window(&window)?;
+    db.list_rdp_profiles()
+}
+#[tauri::command]
+pub fn rdp_save_profile(
+    window: WebviewWindow,
+    db: State<'_, Arc<Database>>,
+    id: Option<i64>,
+    data: ProfileData,
+) -> Result<RdpProfile, String> {
+    main_window(&window)?;
+    db.save_rdp_profile(id, data)
+}
+#[tauri::command]
+pub fn rdp_delete_profile(
+    window: WebviewWindow,
+    db: State<'_, Arc<Database>>,
+    id: i64,
+) -> Result<(), String> {
+    main_window(&window)?;
+    db.delete_rdp_profile(id)
 }

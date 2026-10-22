@@ -7,6 +7,7 @@ pub mod migration;
 pub mod path_bookmark;
 mod private_files;
 pub mod profile;
+pub mod rdp;
 pub mod snippet;
 
 use rusqlite::Connection;

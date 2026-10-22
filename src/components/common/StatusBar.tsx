@@ -56,7 +56,7 @@ export default function StatusBar({
         ? `Transfers${activeCount > 0 ? ` (${activeCount})` : ""}`
         : activeDrawer === "logs"
           ? "Logs"
-          : activeDrawer === "iis" ? "IIS & Windows events" : "";
+          : activeDrawer === "iis" ? "IIS & Windows events (Beta)" : "";
 
   const handleTabClick = (tab: Exclude<DrawerTab, null>) => {
     onToggleDrawer(activeDrawer === tab ? null : tab);
@@ -109,7 +109,7 @@ export default function StatusBar({
             className={`sb-tab ${activeDrawer === "iis" ? "active" : ""}`}
             onClick={() => handleTabClick("iis")}
             disabled={!iisAvailable}
-            title={iisAvailable ? "IIS & Windows events" : "A verified Windows PowerShell runtime is required"}
+            title={iisAvailable ? "IIS & Windows events (Beta)" : "A verified Windows PowerShell runtime is required"}
           >IIS</button>}
           <button
             className={`sb-tab ${activeDrawer === "monitor" ? "active" : ""}`}

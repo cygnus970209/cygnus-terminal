@@ -147,7 +147,11 @@ cargo test --manifest-path src-tauri/Cargo.toml --locked
 bun run tauri build
 ```
 
-Open the RDP preview from the tab bar's `+ → RDP desktop (Preview)` menu. It supports direct NLA/NTLM connections, display rendering, and basic US keyboard and mouse input. Verify the certificate fingerprint before entering the password on every connection; passwords are neither saved nor exposed to MCP. IME, clipboard, RD Gateway, and saved RDP profiles are not supported yet. Real Windows server and Windows packaging validation is still pending.
+Open RDP Beta from the tab bar's `+ → RDP desktop (Beta)` menu. Save named connections with the server, username, domain, and desktop size in the RDP connection form; edit them or save a copy. Direct NLA/NTLM connections, display rendering, and basic US keyboard and mouse input are supported. The IIS viewer is also labeled Beta while Windows server validation is pending.
+
+Verify the certificate's SHA-256 fingerprint before entering your password. Remembering it is optional. If a saved fingerprint changes, compare both fingerprints and explicitly acknowledge the change before continuing. Automatic issuer, hostname, and validity checks are not supported yet. Passwords are neither saved nor exposed to MCP. Backup v4 includes RDP settings but excludes certificate trust; v1–v3 backups remain importable.
+
+IME, clipboard, and RD Gateway are not supported yet. Real Windows server and Windows packaging validation is still pending.
 
 The RDP engine is a separate Cargo project bundled with the app to avoid conflicting SSH cryptography dependencies. `tauri dev/build` prepares it automatically; the app communicates with it over local pipes. Run `rdp:build` first when invoking Rust tests or `cargo check` directly.
 

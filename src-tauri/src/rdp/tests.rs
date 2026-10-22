@@ -1,13 +1,37 @@
 use super::*;
+fn pin() -> String {
+    ["AB"; 32].join(":")
+}
+fn approval(fingerprint: String, password: String) -> CertificateApproval {
+    CertificateApproval {
+        fingerprint,
+        password,
+        expected_saved_fingerprint: None,
+        remember: false,
+        accept_changed: false,
+    }
+}
 
 fn fixture(phase: u8) -> (RdpManager, Arc<Session>, mpsc::Receiver<Request>) {
-    let manager = RdpManager::new();
+    let manager = RdpManager::new(Arc::new(Database::new_in_memory().unwrap()));
     let (tx, rx) = mpsc::channel(16);
     let session = Arc::new(Session {
         cancel: CancellationToken::new(),
         tx,
         phase: AtomicU8::new(phase),
-        fingerprint: Mutex::new(Some("approved-fingerprint".into())),
+        endpoint: Endpoint::new(&ConnectConfig {
+            host: "test.local".into(),
+            port: 3389,
+            username: "user".into(),
+            domain: String::new(),
+            width: 1280,
+            height: 720,
+        })
+        .unwrap(),
+        certificate: Mutex::new(Some(PendingCertificate {
+            fingerprint: pin(),
+            saved: None,
+        })),
         frame: Mutex::new(None),
     });
     manager
@@ -23,20 +47,20 @@ fn fixture(phase: u8) -> (RdpManager, Arc<Session>, mpsc::Receiver<Request>) {
 fn approval_is_bound_to_certificate_and_can_only_be_used_once() {
     let (manager, session, mut rx) = fixture(1);
     assert!(manager
-        .authenticate("test", "other".into(), "test-secret".into())
+        .authenticate("test", approval("other".into(), "test-secret".into()))
         .is_err());
     assert_eq!(session.phase.load(Ordering::Acquire), 1);
     assert!(rx.try_recv().is_err());
     manager
-        .authenticate("test", "approved-fingerprint".into(), "test-secret".into())
+        .authenticate("test", approval(pin(), "test-secret".into()))
         .unwrap();
     assert!(
-        matches!(rx.try_recv().unwrap(), Request::Authenticate { fingerprint, password } if fingerprint == "approved-fingerprint" && password == "test-secret")
+        matches!(rx.try_recv().unwrap(), Request::Authenticate { fingerprint, password } if fingerprint == pin() && password == "test-secret")
     );
     assert!(manager
-        .authenticate("test", "approved-fingerprint".into(), "test-secret".into())
+        .authenticate("test", approval(pin(), "test-secret".into()))
         .is_err());
-    assert!(session.fingerprint.lock().unwrap().is_none());
+    assert!(session.certificate.lock().unwrap().is_none());
 }
 
 #[test]
@@ -44,14 +68,14 @@ fn authentication_requires_waiting_phase_and_bounded_password() {
     for phase in [0, 2, 3, 4] {
         let (manager, _, mut rx) = fixture(phase);
         assert!(manager
-            .authenticate("test", "approved-fingerprint".into(), "test-secret".into())
+            .authenticate("test", approval(pin(), "test-secret".into()))
             .is_err());
         assert!(rx.try_recv().is_err());
     }
     for password in [String::new(), "x".repeat(4097), "bad\0password".into()] {
         let (manager, session, _) = fixture(1);
         assert!(manager
-            .authenticate("test", "approved-fingerprint".into(), password)
+            .authenticate("test", approval(pin(), password))
             .is_err());
         assert_eq!(session.phase.load(Ordering::Acquire), 1);
     }
@@ -174,4 +198,91 @@ fn connection_and_frame_dimensions_are_bounded() {
     assert_eq!(frame_header(&frame), Some((1, 1, 9)));
     frame[4..8].copy_from_slice(&u32::MAX.to_le_bytes());
     assert!(frame_header(&frame).is_none());
+}
+
+#[test]
+fn changed_certificate_cannot_reach_engine_without_acknowledgement() {
+    let (manager, session, mut rx) = fixture(1);
+    let old = ["CD"; 32].join(":");
+    manager
+        .0
+        .database
+        .approve_rdp_certificate(&session.endpoint, &old, None, true, false)
+        .unwrap();
+    session.certificate.lock().unwrap().as_mut().unwrap().saved = Some(old.clone());
+    let mut request = approval(pin(), "test-secret".into());
+    request.expected_saved_fingerprint = Some(old.clone());
+    assert!(manager.authenticate("test", request).is_err());
+    assert!(rx.try_recv().is_err());
+    let mut request = approval(pin(), "test-secret".into());
+    request.expected_saved_fingerprint = Some(old.clone());
+    request.accept_changed = true;
+    manager.authenticate("test", request).unwrap();
+    assert!(matches!(
+        rx.try_recv().unwrap(),
+        Request::Authenticate { .. }
+    ));
+    assert_eq!(
+        manager
+            .0
+            .database
+            .rdp_certificate(&session.endpoint)
+            .unwrap(),
+        Some(old)
+    );
+}
+#[test]
+fn stale_or_forged_saved_fingerprint_never_sends_password() {
+    let (manager, session, mut rx) = fixture(1);
+    let mut forged = approval(pin(), "test-secret".into());
+    forged.expected_saved_fingerprint = Some(pin());
+    assert!(manager.authenticate("test", forged).is_err());
+    assert!(rx.try_recv().is_err());
+    manager
+        .0
+        .database
+        .approve_rdp_certificate(&session.endpoint, &["CD"; 32].join(":"), None, true, false)
+        .unwrap();
+    assert!(manager
+        .authenticate("test", approval(pin(), "test-secret".into()))
+        .is_err());
+    assert!(rx.try_recv().is_err());
+}
+#[test]
+fn forgetting_requires_the_displayed_saved_pin_and_closes_the_session() {
+    let (manager, session, mut rx) = fixture(1);
+    manager
+        .0
+        .database
+        .approve_rdp_certificate(&session.endpoint, &pin(), None, true, false)
+        .unwrap();
+    session.certificate.lock().unwrap().as_mut().unwrap().saved = Some(pin());
+    assert!(manager.forget_certificate("test", "wrong").is_err());
+    manager.forget_certificate("test", &pin()).unwrap();
+    assert!(session.cancel.is_cancelled());
+    assert!(manager.session("test").is_err());
+    assert!(manager
+        .0
+        .database
+        .rdp_certificate(&session.endpoint)
+        .unwrap()
+        .is_none());
+    assert!(rx.try_recv().is_err());
+}
+#[test]
+fn certificate_event_exposes_only_public_pin_metadata() {
+    let value = SessionEvent {
+        event: Event::Certificate {
+            fingerprint: pin(),
+            subject: "test".into(),
+            issuer: "test".into(),
+            valid_from: "test".into(),
+            valid_until: "test".into(),
+        },
+        saved_fingerprint: Some(pin()),
+    };
+    let json = serde_json::to_value(value).unwrap();
+    assert_eq!(json["type"], "certificate");
+    assert_eq!(json["saved_fingerprint"], pin());
+    assert!(json.get("password").is_none());
 }

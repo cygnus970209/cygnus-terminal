@@ -1,8 +1,13 @@
 //! The bundled helper isolates IronRDP's crypto dependencies from SSH. Private pipes only.
+use crate::db::{
+    rdp::{valid_fingerprint, Endpoint},
+    Database,
+};
 use cygnus_rdp_protocol::{
     frame_header, ConnectConfig, Event, Input, Request, MAX_CONTROL_BYTES, MAX_FRAME_BYTES,
     MAX_INPUT_BATCH,
 };
+use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
     path::PathBuf,
@@ -22,15 +27,46 @@ use tokio_util::sync::CancellationToken;
 use zeroize::{Zeroize, Zeroizing};
 
 type FrameReply = oneshot::Sender<Result<Vec<u8>, String>>;
-type Notify = Arc<dyn Fn(Event) -> bool + Send + Sync>;
+#[derive(Serialize)]
+pub struct SessionEvent {
+    #[serde(flatten)]
+    event: Event,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    saved_fingerprint: Option<String>,
+}
+impl From<Event> for SessionEvent {
+    fn from(event: Event) -> Self {
+        Self {
+            event,
+            saved_fingerprint: None,
+        }
+    }
+}
+// No Debug: passwords must not appear in diagnostics.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CertificateApproval {
+    pub fingerprint: String,
+    pub password: String,
+    pub expected_saved_fingerprint: Option<String>,
+    pub remember: bool,
+    pub accept_changed: bool,
+}
+struct PendingCertificate {
+    fingerprint: String,
+    saved: Option<String>,
+}
+type Notify = Arc<dyn Fn(SessionEvent) -> bool + Send + Sync>;
 struct Session {
     cancel: CancellationToken,
     tx: mpsc::Sender<Request>,
     phase: AtomicU8,
-    fingerprint: Mutex<Option<String>>,
+    endpoint: Endpoint,
+    certificate: Mutex<Option<PendingCertificate>>,
     frame: Mutex<Option<FrameReply>>,
 }
 struct Inner {
+    database: Arc<Database>,
     sessions: Mutex<HashMap<String, Arc<Session>>>,
     capacity: Arc<Semaphore>,
 }
@@ -43,20 +79,16 @@ impl Drop for Inner {
 }
 #[derive(Clone)]
 pub struct RdpManager(Arc<Inner>);
-impl Default for RdpManager {
-    fn default() -> Self {
-        Self::new()
-    }
-}
 impl RdpManager {
-    pub fn new() -> Self {
+    pub fn new(database: Arc<Database>) -> Self {
         Self(Arc::new(Inner {
+            database,
             sessions: Mutex::new(HashMap::new()),
             capacity: Arc::new(Semaphore::new(4)),
         }))
     }
     pub fn open(&self, config: ConnectConfig, notify: Notify) -> Result<String, String> {
-        config.validate()?;
+        let endpoint = Endpoint::new(&config)?;
         let slot = self
             .0
             .capacity
@@ -68,7 +100,8 @@ impl RdpManager {
             cancel: CancellationToken::new(),
             tx,
             phase: AtomicU8::new(0),
-            fingerprint: Mutex::new(None),
+            endpoint,
+            certificate: Mutex::new(None),
             frame: Mutex::new(None),
         });
         let id = uuid::Uuid::new_v4().to_string();
@@ -80,7 +113,7 @@ impl RdpManager {
         let manager = self.clone();
         let task_id = id.clone();
         tauri::async_runtime::spawn(async move {
-            let outcome = run(config, &session, rx, &notify, slot).await;
+            let outcome = run(config, &session, rx, &notify, slot, &manager.0.database).await;
             session.phase.store(4, Ordering::Release);
             if let Some(reply) = session.frame.lock().unwrap().take() {
                 let _ = reply.send(Err("RDP session ended".into()));
@@ -88,7 +121,7 @@ impl RdpManager {
             manager.0.sessions.lock().unwrap().remove(&task_id);
             if !session.cancel.is_cancelled() {
                 if let Err(message) = outcome {
-                    notify(Event::Error { message });
+                    notify(Event::Error { message }.into());
                 }
             }
         });
@@ -103,32 +136,46 @@ impl RdpManager {
             .cloned()
             .ok_or_else(|| "RDP session is closed".into())
     }
-    pub fn authenticate(
-        &self,
-        id: &str,
-        fingerprint: String,
-        mut password: String,
-    ) -> Result<(), String> {
+    pub fn authenticate(&self, id: &str, mut approval: CertificateApproval) -> Result<(), String> {
         let result = (|| {
-            if password.is_empty() || password.len() > 4096 || password.contains('\0') {
+            if approval.password.is_empty()
+                || approval.password.len() > 4096
+                || approval.password.contains('\0')
+            {
                 return Err("Enter a valid RDP password".into());
             }
             let session = self.session(id)?;
-            let mut expected = session.fingerprint.lock().unwrap();
-            if expected.as_deref() != Some(fingerprint.as_str())
-                || session
-                    .phase
-                    .compare_exchange(1, 2, Ordering::AcqRel, Ordering::Acquire)
-                    .is_err()
+            let mut pending = session.certificate.lock().unwrap();
+            let certificate = pending
+                .as_ref()
+                .ok_or("Certificate approval is no longer valid")?;
+            if session.cancel.is_cancelled()
+                || session.phase.load(Ordering::Acquire) != 1
+                || certificate.fingerprint != approval.fingerprint
+                || certificate.saved != approval.expected_saved_fingerprint
             {
                 return Err("Certificate approval is no longer valid".into());
             }
-            expected.take();
+            self.0.database.approve_rdp_certificate(
+                &session.endpoint,
+                &certificate.fingerprint,
+                certificate.saved.as_deref(),
+                approval.remember,
+                approval.accept_changed,
+            )?;
+            if session
+                .phase
+                .compare_exchange(1, 2, Ordering::AcqRel, Ordering::Acquire)
+                .is_err()
+            {
+                return Err("Certificate approval is no longer valid".into());
+            }
+            pending.take();
             session
                 .tx
                 .try_send(Request::Authenticate {
-                    fingerprint,
-                    password: std::mem::take(&mut password),
+                    fingerprint: approval.fingerprint.clone(),
+                    password: std::mem::take(&mut approval.password),
                 })
                 .map_err(|error| {
                     let mut request = error.into_inner();
@@ -139,8 +186,22 @@ impl RdpManager {
                     "RDP authentication request could not be sent".to_string()
                 })
         })();
-        password.zeroize();
+        approval.password.zeroize();
         result
+    }
+    pub fn forget_certificate(&self, id: &str, expected: &str) -> Result<(), String> {
+        let session = self.session(id)?;
+        let pending = session.certificate.lock().unwrap();
+        if session.phase.load(Ordering::Acquire) != 1
+            || pending.as_ref().and_then(|p| p.saved.as_deref()) != Some(expected)
+        {
+            return Err("Certificate approval is no longer valid".into());
+        }
+        self.0
+            .database
+            .forget_rdp_certificate(&session.endpoint, expected)?;
+        self.close(id);
+        Ok(())
     }
     pub fn input(&self, id: &str, events: Vec<Input>) -> Result<(), String> {
         if events.len() > MAX_INPUT_BATCH || events.iter().any(|e| !e.validate()) {
@@ -260,6 +321,7 @@ async fn run(
     mut requests: mpsc::Receiver<Request>,
     notify: &Notify,
     _slot: OwnedSemaphorePermit,
+    database: &Database,
 ) -> Result<(), String> {
     let mut command = Command::new(engine_path()?);
     command
@@ -302,10 +364,12 @@ async fn run(
                     } else {
                         let event: Event = serde_json::from_slice(&body).map_err(|_| "Invalid RDP engine event")?;
                         let ended = matches!(event, Event::Ended | Event::Error { .. });
+                        let mut saved_fingerprint = None;
                         match &event {
                             Event::Certificate { fingerprint, .. } => {
-                                if session.phase.load(Ordering::Acquire) != 0 || fingerprint.len() != 95 { break Err("Invalid RDP certificate response".into()); }
-                                *session.fingerprint.lock().unwrap() = Some(fingerprint.clone());
+                                if session.phase.load(Ordering::Acquire) != 0 || !valid_fingerprint(fingerprint) { break Err("Invalid RDP certificate response".into()); }
+                                saved_fingerprint = database.rdp_certificate(&session.endpoint)?;
+                                *session.certificate.lock().unwrap() = Some(PendingCertificate { fingerprint: fingerprint.clone(), saved: saved_fingerprint.clone() });
                                 session.phase.store(1, Ordering::Release);
                                 deadline.as_mut().reset(tokio::time::Instant::now() + Duration::from_secs(190));
                             }
@@ -316,7 +380,7 @@ async fn run(
                             }
                             _ => {}
                         }
-                        if !notify(event) || ended { break Ok(()); }
+                        if !notify(SessionEvent { event, saved_fingerprint }) || ended { break Ok(()); }
                     }
                 }
                 request = requests.recv() => {

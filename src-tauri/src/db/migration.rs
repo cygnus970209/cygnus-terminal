@@ -186,6 +186,27 @@ const MIGRATIONS: &[Migration] = &[
             ALTER TABLE profiles ADD COLUMN remote_shell TEXT NOT NULL DEFAULT 'auto'
                 CHECK(remote_shell IN ('auto', 'posix', 'powershell', 'pwsh', 'cmd'));",
     },
+    Migration {
+        version: 11,
+        sql: "
+            CREATE TABLE rdp_profiles (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL CHECK(length(name) BETWEEN 1 AND 256),
+                host TEXT NOT NULL CHECK(length(host) BETWEEN 1 AND 253),
+                port INTEGER NOT NULL CHECK(port BETWEEN 1 AND 65535),
+                username TEXT NOT NULL CHECK(length(username) BETWEEN 1 AND 256),
+                domain TEXT NOT NULL DEFAULT '' CHECK(length(domain) <= 256),
+                width INTEGER NOT NULL CHECK(width BETWEEN 640 AND 1920),
+                height INTEGER NOT NULL CHECK(height BETWEEN 480 AND 1080)
+            );
+            CREATE TABLE rdp_certificates (
+                host TEXT NOT NULL,
+                port INTEGER NOT NULL CHECK(port BETWEEN 1 AND 65535),
+                fingerprint TEXT NOT NULL CHECK(length(fingerprint) = 95),
+                PRIMARY KEY(host, port)
+            );
+        ",
+    },
 ];
 
 impl Database {

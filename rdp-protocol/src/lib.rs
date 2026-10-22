@@ -8,7 +8,7 @@ pub const MAX_CONTROL_BYTES: usize = 16 * 1024;
 pub const MAX_INPUT_BATCH: usize = 64;
 pub const WIRE_VERSION: u32 = 1;
 
-#[derive(Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub struct ConnectConfig {
     pub host: String,

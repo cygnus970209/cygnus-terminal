@@ -8,6 +8,7 @@ export interface RdpConfig {
 }
 export interface RdpCertificate {
   type: "certificate";
+  saved_fingerprint?: string | null;
   fingerprint: string;
   subject: string;
   issuer: string;
@@ -24,3 +25,12 @@ export type RdpInput =
   | { type: "pointer"; x: number; y: number; button: number | null; down: boolean }
   | { type: "wheel"; x: number; y: number; delta: number }
   | { type: "release_all" };
+
+export interface RdpProfile { id: number; name: string; config: RdpConfig; }
+export interface RdpApproval {
+  fingerprint: string;
+  password: string;
+  expected_saved_fingerprint: string | null;
+  remember: boolean;
+  accept_changed: boolean;
+}

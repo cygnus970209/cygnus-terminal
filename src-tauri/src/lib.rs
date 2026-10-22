@@ -186,12 +186,12 @@ pub fn run() {
                 }
             });
             app.manage(execution);
+            app.manage(rdp::RdpManager::new(Arc::clone(&database)));
             app.manage(database);
             app.manage(crypto);
             app.manage(ssh_manager);
             app.manage(SftpManager::new());
             app.manage(MonitorManager::new());
-            app.manage(rdp::RdpManager::new());
             app.manage(ForwardManager::new());
             app.manage(TailManager::new());
             app.manage(SerialManager::new());
@@ -269,6 +269,10 @@ pub fn run() {
             commands::rdp_input,
             commands::rdp_frame,
             commands::rdp_close,
+            commands::rdp_forget_certificate,
+            commands::rdp_list_profiles,
+            commands::rdp_save_profile,
+            commands::rdp_delete_profile,
             commands::monitor_start,
             commands::monitor_stop,
             commands::monitor_get_stats,

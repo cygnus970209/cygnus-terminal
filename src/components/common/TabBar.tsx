@@ -203,7 +203,7 @@ export default function TabBar(props: TabBarProps) {
             {(
               [
                 ["SSH connection", props.onNewSshTab, "server"],
-                ["RDP desktop (Preview)", props.onNewRdpTab, "monitor"],
+                ["RDP desktop (Beta)", props.onNewRdpTab, "monitor"],
                 ["Local shell", props.onNewLocalTab, "terminal"],
                 ["Telnet connection", props.onNewTelnetTab, "server"],
                 ["Serial connection", props.onNewSerialTab, "terminal"],
