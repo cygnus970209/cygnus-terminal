@@ -25,6 +25,9 @@ dist-ssr
 
 # Tauri
 src-tauri/target
+rdp-engine/target
+rdp-protocol/target
+src-tauri/binaries
 
 # Environment
 .env

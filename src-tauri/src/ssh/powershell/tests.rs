@@ -11,11 +11,18 @@ fn frame(value: &serde_json::Value) -> String {
 #[test]
 fn fixed_commands_are_shell_safe_and_fit_cmd_line_limit() {
     for engine in [PowerShellEngine::PowerShell, PowerShellEngine::Pwsh] {
-        for query in [Query::Probe, Query::Snapshot] {
+        for query in [
+            Query::Probe,
+            Query::Snapshot,
+            Query::IisOverview,
+            Query::IisLog { site_id: u32::MAX },
+            Query::WindowsEvents,
+        ] {
             let command = command(engine, query);
             assert!(
                 command.len() < 8000,
-                "CMD limit must include room for its wrapper"
+                "CMD limit must include room for its wrapper: {} bytes",
+                command.len()
             );
             let encoded = command.split_whitespace().last().unwrap();
             assert!(encoded
@@ -33,6 +40,9 @@ fn fixed_commands_are_shell_safe_and_fit_cmd_line_limit() {
             assert!(!command.contains("ExecutionPolicy"));
             assert!(!script.contains("-ComputerName") && !script.contains("-Credential"));
             assert!(!script.contains("CommandLine") && !script.contains("ExecutablePath"));
+            for method in [".Start(", ".Stop(", ".Recycle(", ".CommitChanges("] {
+                assert!(!script.contains(method));
+            }
         }
     }
 }

@@ -217,7 +217,7 @@ pub(super) async fn discover(
         Some("Saved environment differs from the SSH command environment. OS-specific tools remain unavailable.".into())
     } else if env.os == "windows" {
         Some(if env.capabilities.monitor {
-            "Windows file and event log viewers are not supported yet."
+            "Windows logs are available in IIS tools. POSIX log streaming is unavailable."
         } else {
             "Windows monitoring requires a verified PowerShell 5.1 or 7+ runtime with Get-CimInstance. Reconnect after enabling it."
         }.into())

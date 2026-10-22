@@ -130,7 +130,7 @@ We plan Ansible-style workflows for running commands, applying configuration cha
 
 Tauri 2 connects a React, TypeScript, and xterm.js frontend to the Rust backend. Application data is stored locally in SQLite.
 
-Use Rust stable, Node.js 22.12+ or Bun, and the platform-specific Tauri build prerequisites.
+Use Rust stable, Node.js 22.12+, and the platform-specific Tauri build prerequisites. The examples below use Bun as the package manager.
 
 ```sh
 bun install --frozen-lockfile
@@ -139,11 +139,17 @@ bun run tauri dev
 # Validate
 bun run build
 bun run test
-cargo test --manifest-path src-tauri/Cargo.toml
+bun run rdp:build # Prepare the RDP engine before invoking Cargo directly
+bun run rdp:test
+cargo test --manifest-path src-tauri/Cargo.toml --locked
 
 # Build installers
 bun run tauri build
 ```
+
+Open the RDP preview from the tab bar's `+ → RDP desktop (Preview)` menu. It supports direct NLA/NTLM connections, display rendering, and basic US keyboard and mouse input. Verify the certificate fingerprint before entering the password on every connection; passwords are neither saved nor exposed to MCP. IME, clipboard, RD Gateway, and saved RDP profiles are not supported yet. Real Windows server and Windows packaging validation is still pending.
+
+The RDP engine is a separate Cargo project bundled with the app to avoid conflicting SSH cryptography dependencies. `tauri dev/build` prepares it automatically; the app communicates with it over local pipes. Run `rdp:build` first when invoking Rust tests or `cargo check` directly.
 
 Report bugs and suggest features through [Issues](https://github.com/cygnus970209/cygnus-terminal/issues).
 

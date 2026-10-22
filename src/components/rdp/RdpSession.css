@@ -1,0 +1,25 @@
+.rdp-session { flex-direction: column; width: 100%; height: 100%; min-width: 0; min-height: 0; background: var(--bg-primary); color: var(--text-primary); font-size: 12px; }
+.rdp-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border-subtle); flex-shrink: 0; }
+.rdp-toolbar > span:first-child { margin-right: auto; }
+.rdp-session button { background: var(--bg-secondary); border: 1px solid var(--border); border-radius: 4px; color: var(--text-primary); padding: 6px 12px; cursor: pointer; font: inherit; }
+.rdp-session button:hover:not(:disabled) { background: var(--bg-hover); }
+.rdp-session button:disabled { opacity: .5; cursor: default; }
+.rdp-session :focus-visible { outline: 1px solid var(--accent); outline-offset: 2px; }
+.rdp-session .rdp-primary { background: var(--accent); color: var(--bg-primary); border-color: var(--accent); font-weight: 600; }
+.rdp-content { flex: 1; overflow: auto; padding: 24px; }
+.rdp-form { display: flex; flex-direction: column; gap: 12px; max-width: 480px; margin: 0 auto; }
+.rdp-form h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.rdp-form p { margin: 0; overflow-wrap: anywhere; }
+.rdp-form label { display: flex; flex-direction: column; gap: 4px; color: var(--text-secondary); }
+.rdp-form input { min-width: 0; width: 100%; box-sizing: border-box; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border); border-radius: 4px; padding: 8px; font: inherit; }
+.rdp-fields { display: grid; grid-template-columns: minmax(0, 1fr) 88px; gap: 12px; }
+.rdp-note { color: var(--text-muted); font-size: 11px; line-height: 1.6; }
+.rdp-error { color: var(--error); max-width: 480px; margin: 0 auto 16px; }
+.rdp-fingerprint { padding: 12px; background: var(--bg-secondary); overflow-wrap: anywhere; user-select: text; font: 12px/1.6 var(--font-mono); }
+.rdp-certificate { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 8px; margin: 0; font-size: 11px; }
+.rdp-certificate dt { color: var(--text-muted); }
+.rdp-certificate dd { margin: 0; overflow-wrap: anywhere; user-select: text; }
+.rdp-screen { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; min-width: 0; overflow: hidden; position: relative; background: var(--bg-tertiary); }
+.rdp-screen canvas { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; touch-action: none; }
+.rdp-wait { position: absolute; color: var(--text-secondary); z-index: 1; pointer-events: none; }
+@media (max-width: 800px) { .rdp-content { padding: 16px; } }

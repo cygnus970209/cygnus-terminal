@@ -30,6 +30,9 @@ pub struct PowerShellRuntime {
 pub(crate) enum Query {
     Probe,
     Snapshot,
+    IisOverview,
+    IisLog { site_id: u32 },
+    WindowsEvents,
 }
 
 /// UTF-16LE is required for -EncodedCommand on both Windows PowerShell and pwsh.
@@ -43,9 +46,18 @@ pub(crate) fn command(engine: PowerShellEngine, query: Query) -> String {
     let script = match query {
         Query::Probe => include_str!("powershell/probe.ps1"),
         Query::Snapshot => include_str!("powershell/snapshot.ps1"),
+        Query::IisOverview => include_str!("powershell/iis-overview.ps1"),
+        Query::IisLog { .. } => include_str!("powershell/iis-log.ps1"),
+        Query::WindowsEvents => include_str!("powershell/windows-events.ps1"),
+    };
+    // Preserve line boundaries while keeping fixed scripts below CMD's argument limit.
+    let script = script.lines().map(str::trim).collect::<Vec<_>>().join("\n");
+    let parameters = match query {
+        Query::IisLog { site_id } => format!("$siteId={site_id};"),
+        _ => String::new(),
     };
     let wrapped = format!(
-        "$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';try{{$result=&{{\n{script}\n}};$json=ConvertTo-Json -InputObject $result -Depth 6 -Compress;[Console]::WriteLine('{FRAME}'+[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json)));exit 0}}catch{{exit 1}}"
+        "$ErrorActionPreference='Stop';$ProgressPreference='SilentlyContinue';try{{$result=&{{{parameters}\n{script}\n}};$json=ConvertTo-Json -InputObject $result -Depth 6 -Compress;[Console]::WriteLine('{FRAME}'+[Convert]::ToBase64String([Text.Encoding]::UTF8.GetBytes($json)));exit 0}}catch{{exit 1}}"
     );
     let bytes: Vec<u8> = wrapped.encode_utf16().flat_map(u16::to_le_bytes).collect();
     format!(
@@ -54,14 +66,19 @@ pub(crate) fn command(engine: PowerShellEngine, query: Query) -> String {
     )
 }
 
+#[cfg(test)]
 pub(crate) fn decode<T: DeserializeOwned>(output: &str) -> Result<T, String> {
+    decode_with_limit(output, OUTPUT_LIMIT)
+}
+
+fn decode_with_limit<T: DeserializeOwned>(output: &str, limit: usize) -> Result<T, String> {
     // Accept one frame only. Banners, duplicate frames and truncated JSON fail closed.
     let frame = output
         .trim()
         .trim_start_matches('\u{feff}')
         .strip_prefix(FRAME)
         .ok_or("Invalid PowerShell response frame")?;
-    if frame.len() > OUTPUT_LIMIT {
+    if frame.len() > limit {
         return Err("PowerShell response is too large".into());
     }
     let json = STANDARD
@@ -77,15 +94,12 @@ pub(crate) async fn run<T: DeserializeOwned>(
     query: Query,
     timeout: Duration,
 ) -> Result<T, String> {
-    let output = read_command(
-        handle,
-        cancel,
-        &command(engine, query),
-        timeout,
-        OUTPUT_LIMIT,
-    )
-    .await?;
-    decode(&output)
+    let limit = match query {
+        Query::IisOverview | Query::WindowsEvents => 262144,
+        _ => OUTPUT_LIMIT,
+    };
+    let output = read_command(handle, cancel, &command(engine, query), timeout, limit).await?;
+    decode_with_limit(&output, limit)
 }
 
 #[derive(Deserialize)]

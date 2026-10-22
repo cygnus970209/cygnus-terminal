@@ -10,7 +10,9 @@
     "tauri": "tauri",
     "test": "vitest run",
     "test:watch": "vitest",
-    "deadcode": "knip"
+    "deadcode": "knip",
+    "rdp:build": "node scripts/build-rdp.mjs",
+    "rdp:test": "cargo test --manifest-path rdp-engine/Cargo.toml --locked"
   },
   "dependencies": {
     "@crabnebula/tauri-plugin-drag": "^2.1.0",

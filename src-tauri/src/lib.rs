@@ -8,6 +8,8 @@ pub mod execution;
 pub mod mcp;
 pub mod forward;
 pub mod monitor;
+mod iis;
+mod rdp;
 mod pty;
 pub mod registry;
 pub mod serial;
@@ -53,6 +55,13 @@ pub fn run() {
         .plugin(tauri_plugin_drag::init())
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_notification::init())
+        .on_window_event(|window, event| {
+            if window.label() == "main" && matches!(event, tauri::WindowEvent::Destroyed) {
+                if let Some(manager) = window.try_state::<rdp::RdpManager>() {
+                    manager.close_all();
+                }
+            }
+        })
         .on_menu_event(|app, event| {
             match event.id().as_ref() {
                 "preferences" => {
@@ -182,6 +191,7 @@ pub fn run() {
             app.manage(ssh_manager);
             app.manage(SftpManager::new());
             app.manage(MonitorManager::new());
+            app.manage(rdp::RdpManager::new());
             app.manage(ForwardManager::new());
             app.manage(TailManager::new());
             app.manage(SerialManager::new());
@@ -251,6 +261,14 @@ pub fn run() {
             commands::sftp_copy_between,
             commands::sftp_upload_bytes,
             commands::sftp_close,
+            commands::iis_overview,
+            commands::iis_site_log,
+            commands::windows_events,
+            commands::rdp_connect,
+            commands::rdp_authenticate,
+            commands::rdp_input,
+            commands::rdp_frame,
+            commands::rdp_close,
             commands::monitor_start,
             commands::monitor_stop,
             commands::monitor_get_stats,

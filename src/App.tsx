@@ -20,6 +20,8 @@ import McpTerminal from "./components/terminal/McpTerminal";
 import type { ExecutionSummary } from "./types/execution";
 import LogViewer from "./components/terminal/LogViewer";
 import MonitorPanel from "./components/terminal/MonitorPanel";
+import IisPanel from "./components/terminal/IisPanel";
+import RdpSession from "./components/rdp/RdpSession";
 import StatusBar, { DrawerTab } from "./components/common/StatusBar";
 import { useServerStats } from "./hooks/useServerStats";
 import { useServerEnvironment } from "./hooks/useServerEnvironment";
@@ -174,7 +176,8 @@ function App() {
     const tab = e.payload as DrawerTab;
     if (
       (tab === "monitor" && !monitorAvailable) ||
-      (tab === "logs" && !logsAvailable)
+      (tab === "logs" && !logsAvailable) ||
+      (tab === "iis" && !iisAvailable)
     ) return;
     setDrawerTab((cur) => (cur === tab ? null : tab));
   });
@@ -226,11 +229,14 @@ function App() {
   const { environment, error: environmentError } = useServerEnvironment(currentSshSessionId);
   const monitorAvailable = sshActive && !!environment?.capabilities.monitor;
   const logsAvailable = sshActive && !!(environment?.capabilities.file_logs || environment?.capabilities.journal);
+  const showIis = environment?.os === "windows";
+  const iisAvailable = sshActive && showIis && !!environment?.powershell;
   const unavailableReason = capabilityReason(environment, environmentError, sshActive);
   const { stats: serverStats, error: statsError } = useServerStats(currentSshSessionId, monitorAvailable);
   const visibleDrawer =
     (drawerTab === "monitor" && !monitorAvailable) ||
-    (drawerTab === "logs" && !logsAvailable)
+    (drawerTab === "logs" && !logsAvailable) ||
+    (drawerTab === "iis" && !iisAvailable)
       ? null
       : drawerTab;
 
@@ -332,6 +338,12 @@ function App() {
     const id = `tab-${++tabCounter}`;
     const newTab: Tab = { id, title: "Local Shell", type: "local" };
     setTabs((prev) => [...prev, newTab]);
+    setActiveTabId(id);
+  }, []);
+
+  const createRdpTab = useCallback(() => {
+    const id = `tab-${++tabCounter}`;
+    setTabs((previous) => [...previous, { id, title: "Remote desktop", type: "rdp" }]);
     setActiveTabId(id);
   }, []);
 
@@ -699,6 +711,12 @@ function App() {
       onSelect: createLocalTab,
     },
     {
+      id: "action:new-rdp",
+      kind: "action",
+      title: "New RDP desktop (Preview)",
+      onSelect: createRdpTab,
+    },
+    {
       id: "action:connections",
       kind: "action",
       title: "Open Connections",
@@ -856,6 +874,7 @@ function App() {
             onTogglePin={togglePin}
             onMoveTab={reorderTab}
             onNewLocalTab={createLocalTab}
+            onNewRdpTab={createRdpTab}
             onNewSshTab={handleNewProfile}
             onNewSerialTab={() => {
               setEditProfile(null);
@@ -961,6 +980,16 @@ function App() {
                       <Icon name="monitor" />
                       <span>Monitor</span>
                     </button>
+                    {showIis && <button
+                      disabled={!iisAvailable}
+                      className={visibleDrawer === "iis" ? "is-active" : ""}
+                      aria-pressed={visibleDrawer === "iis"}
+                      onClick={() => setDrawerTab((v) => v === "iis" ? null : "iis")}
+                      title={iisAvailable ? "IIS & Windows events" : "A verified Windows PowerShell runtime is required"}
+                    >
+                      <Icon name="server" />
+                      <span>IIS</span>
+                    </button>}
                   </>
                 )}
                 <button
@@ -1061,7 +1090,7 @@ function App() {
                 }}
               >
                 {tabs
-                  .filter((t) => t.type !== "sftp" && t.type !== "mcp")
+                  .filter((t) => t.type !== "sftp" && t.type !== "mcp" && t.type !== "rdp")
                   .map((tab) => (
                     <Terminal
                       key={tab.id}
@@ -1083,6 +1112,10 @@ function App() {
                 {tabs.filter((tab) => tab.type === "mcp" && tab.execution).map((tab) => (
                   <McpTerminal key={tab.id} tabId={tab.id} job={tab.execution!}
                     isActive={tab.id === activeTabId} onSessionStatus={handleSessionStatus} onJobStatus={handleMcpJobStatus} />
+                ))}
+                {tabs.filter((tab) => tab.type === "rdp").map((tab) => (
+                  <RdpSession key={tab.id} tabId={tab.id} isActive={tab.id === activeTabId}
+                    onSessionStatus={handleSessionStatus} onTitleChange={handleTitleChange} />
                 ))}
               </div>
             </div>
@@ -1119,6 +1152,8 @@ function App() {
         sessionLabel={
           sshActive
             ? activeTitle
+            : activeTab?.type === "rdp"
+              ? `${activeTitle} · ${activeStatus}`
             : activeTab?.type === "local"
               ? `Local · ${activeStatus}`
               : null
@@ -1126,6 +1161,8 @@ function App() {
         sshActive={sshActive}
         monitorAvailable={monitorAvailable}
         logsAvailable={logsAvailable}
+        showIis={showIis}
+        iisAvailable={iisAvailable}
         unavailableReason={unavailableReason}
         stats={serverStats}
         transferJobs={transferJobs}
@@ -1135,6 +1172,9 @@ function App() {
       >
         {visibleDrawer === "monitor" && (
           <MonitorPanel stats={serverStats} error={statsError} />
+        )}
+        {visibleDrawer === "iis" && currentSshSessionId && (
+          <IisPanel key={currentSshSessionId} sessionId={currentSshSessionId} />
         )}
         {visibleDrawer === "transfers" && (
           <TransferDock

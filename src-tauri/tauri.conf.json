@@ -4,9 +4,9 @@
   "version": "0.1.16",
   "identifier": "io.github.cygnus970209.cygnus-terminal",
   "build": {
-    "beforeDevCommand": "npm run dev",
+    "beforeDevCommand": "node scripts/build-rdp.mjs && npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "node scripts/build-rdp.mjs --release && npm run build",
     "frontendDist": "../dist"
   },
   "app": {
@@ -38,7 +38,10 @@
       "wix": {
         "upgradeCode": "3932911e-9221-53e9-b993-8ea8b956da4f"
       }
-    }
+    },
+    "externalBin": [
+      "binaries/cygnus-rdp"
+    ]
   },
   "plugins": {
     "updater": {

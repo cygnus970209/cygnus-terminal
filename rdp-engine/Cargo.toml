@@ -1,0 +1,28 @@
+[package]
+name = "cygnus-rdp"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+cygnus-rdp-protocol = { path = "../rdp-protocol" }
+ironrdp = { version = "0.17", features = ["connector", "session", "graphics", "input"] }
+tokio = { version = "1", features = ["full"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
+x509-cert = "0.2"
+sha2 = "0.10"
+serde_json = "1"
+zeroize = "1"
+
+[profile.dev]
+debug = 0
+incremental = false
+
+[profile.release]
+strip = true
+
+[dev-dependencies]
+ironrdp-server = { version = "0.13", default-features = false }
+rcgen = "0.14"
+async-trait = "0.1"
+anyhow = "1"

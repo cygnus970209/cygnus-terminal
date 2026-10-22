@@ -18,6 +18,7 @@ interface TabBarProps {
   onNewSshTab: () => void;
   onNewTelnetTab: () => void;
   onNewSerialTab: () => void;
+  onNewRdpTab: () => void;
   onToggleSidebar: () => void;
   sidebarCollapsed: boolean;
 }
@@ -202,6 +203,7 @@ export default function TabBar(props: TabBarProps) {
             {(
               [
                 ["SSH connection", props.onNewSshTab, "server"],
+                ["RDP desktop (Preview)", props.onNewRdpTab, "monitor"],
                 ["Local shell", props.onNewLocalTab, "terminal"],
                 ["Telnet connection", props.onNewTelnetTab, "server"],
                 ["Serial connection", props.onNewSerialTab, "terminal"],

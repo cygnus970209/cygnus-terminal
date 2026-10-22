@@ -45,7 +45,9 @@ jobs:
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: './src-tauri -> target'
+          workspaces: |
+            ./src-tauri -> target
+            ./rdp-engine -> target
 
       - name: Install frontend deps
         run: bun install --frozen-lockfile

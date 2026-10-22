@@ -129,7 +129,7 @@ Ansible처럼 서버 그룹을 대상으로 명령·설정 변경·배포를 실
 
 React·TypeScript·xterm.js 화면과 Rust 백엔드를 Tauri 2로 연결합니다. 데이터는 로컬 SQLite에 저장합니다.
 
-Rust stable, Node.js 22.12+ 또는 Bun, 운영체제별 Tauri 빌드 도구가 필요합니다.
+Rust stable, Node.js 22.12+, 운영체제별 Tauri 빌드 도구가 필요합니다. 아래 예시는 패키지 관리에 Bun을 사용합니다.
 
 ```sh
 bun install --frozen-lockfile
@@ -138,11 +138,17 @@ bun run tauri dev
 # 검증
 bun run build
 bun run test
-cargo test --manifest-path src-tauri/Cargo.toml
+bun run rdp:build # Cargo를 직접 실행하기 전에 RDP 엔진 준비
+bun run rdp:test
+cargo test --manifest-path src-tauri/Cargo.toml --locked
 
 # 설치 파일 빌드
 bun run tauri build
 ```
+
+RDP 시제품은 탭의 `+ → RDP desktop (Preview)`에서 열 수 있습니다. NLA/NTLM 직접 연결, 화면 표시와 기본 US 키보드·마우스 입력을 지원합니다. 매 연결마다 인증서 지문을 확인한 뒤 비밀번호를 입력하며, 비밀번호를 저장하거나 MCP에 제공하지 않습니다. 한글 IME, 클립보드, RD Gateway와 프로필 저장은 아직 지원하지 않으며 실제 Windows 서버·Windows 패키징 검증이 남아 있습니다.
+
+RDP 엔진은 SSH와의 암호화 의존성 충돌을 피하기 위해 별도 Cargo 프로젝트로 빌드하고 앱에 포함합니다. `tauri dev/build`는 엔진을 자동으로 준비하며, 앱과 엔진은 로컬 파이프로 통신합니다. Rust 테스트나 `cargo check`만 직접 실행할 때는 먼저 `rdp:build`를 실행하세요.
 
 문제 제보와 기능 제안은 [Issues](https://github.com/cygnus970209/cygnus-terminal/issues)로 남겨주세요.
 

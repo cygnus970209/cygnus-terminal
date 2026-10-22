@@ -18,3 +18,9 @@ pub use execution::*;
 
 mod mcp;
 pub use mcp::*;
+
+mod iis;
+pub use iis::*;
+
+mod rdp;
+pub use rdp::*;

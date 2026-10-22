@@ -4,13 +4,15 @@ import { ServerStats } from "../../hooks/useServerStats";
 import { TransferJob } from "../../types/sftp";
 import "./StatusBar.css";
 
-export type DrawerTab = "monitor" | "transfers" | "logs" | null;
+export type DrawerTab = "monitor" | "transfers" | "logs" | "iis" | null;
 
 interface Props {
   sessionLabel?: string | null; // 현재 활성 SSH 탭 label (있으면 표시)
   sshActive: boolean;
   monitorAvailable: boolean;
   logsAvailable: boolean;
+  showIis?: boolean;
+  iisAvailable?: boolean;
   unavailableReason: string;
   stats: ServerStats | null; // summary 에 쓸 값
   transferJobs: TransferJob[];
@@ -33,6 +35,8 @@ export default function StatusBar({
   sshActive,
   monitorAvailable,
   logsAvailable,
+  showIis = false,
+  iisAvailable = false,
   unavailableReason,
   stats,
   transferJobs,
@@ -52,7 +56,7 @@ export default function StatusBar({
         ? `Transfers${activeCount > 0 ? ` (${activeCount})` : ""}`
         : activeDrawer === "logs"
           ? "Logs"
-          : "";
+          : activeDrawer === "iis" ? "IIS & Windows events" : "";
 
   const handleTabClick = (tab: Exclude<DrawerTab, null>) => {
     onToggleDrawer(activeDrawer === tab ? null : tab);
@@ -101,6 +105,12 @@ export default function StatusBar({
         </div>
 
         <div className="sb-tabs">
+          {showIis && <button
+            className={`sb-tab ${activeDrawer === "iis" ? "active" : ""}`}
+            onClick={() => handleTabClick("iis")}
+            disabled={!iisAvailable}
+            title={iisAvailable ? "IIS & Windows events" : "A verified Windows PowerShell runtime is required"}
+          >IIS</button>}
           <button
             className={`sb-tab ${activeDrawer === "monitor" ? "active" : ""}`}
             onClick={() => handleTabClick("monitor")}

@@ -26,7 +26,7 @@ export function environmentDetails(env: ServerEnvironment): string {
   return [
     `Saved: ${SERVER_OS_LABELS[env.configured.target_os]} / ${REMOTE_SHELL_LABELS[env.configured.remote_shell]}`,
     `Detected: ${env.detected_os ? SERVER_OS_LABELS[env.detected_os] : "Unknown"} / ${env.detected_shell ? REMOTE_SHELL_LABELS[env.detected_shell] : "Unknown"}`,
-    env.powershell ? `Monitoring runtime: PowerShell ${env.powershell.version}` : null,
+    env.powershell ? `PowerShell runtime: ${env.powershell.version}` : null,
     env.notice,
   ].filter(Boolean).join("\n");
 }

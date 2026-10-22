@@ -614,3 +614,121 @@ async fn conflicting_windows_hints_cannot_invoke_powershell_provider() {
         .iter()
         .any(|s| s.contains("-EncodedCommand")));
 }
+
+#[tokio::test]
+async fn iis_queries_use_verified_powershell_even_without_cim() {
+    use crate::ssh::powershell::{command, PowerShellEngine, Query};
+    for (shell, engine, version) in [
+        ("cmd", PowerShellEngine::PowerShell, "5.1"),
+        ("pwsh", PowerShellEngine::Pwsh, "7.5"),
+    ] {
+        let mut replies = windows_replies(shell, engine);
+        replies.insert(
+            command(engine, Query::Probe),
+            ps_frame(serde_json::json!({"schema":1,"version":version,"os":"Win32NT","cim":false})),
+        );
+        replies.insert(command(engine, Query::IisOverview), ps_frame(serde_json::json!({"schema":1,"status":"available","sites":[],"pools":null,"truncated":false})));
+        replies.insert(command(engine, Query::IisLog {site_id: 42}), ps_frame(serde_json::json!({"schema":1,"site_id":42,"status":"no_logs","file":null,"lines":[],"truncated":false})));
+        replies.insert(command(engine, Query::WindowsEvents), ps_frame(serde_json::json!({"schema":1,"logs":[{"name":"Application","events":[]},{"name":"System","events":null}]})));
+        let f = Fixture::new(replies).await;
+        assert!(
+            !f.ssh
+                .server_environment("test")
+                .await
+                .unwrap()
+                .capabilities
+                .monitor
+        );
+        assert!(crate::iis::overview(&f.ssh, "test")
+            .await
+            .unwrap()
+            .sites
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            crate::iis::site_log(&f.ssh, "test", 42)
+                .await
+                .unwrap()
+                .status,
+            crate::iis::LogStatus::NoLogs
+        );
+        assert!(crate::iis::events(&f.ssh, "test").await.unwrap().logs[1]
+            .events
+            .is_none());
+        assert!(!f
+            .commands
+            .lock()
+            .unwrap()
+            .contains(&command(engine, Query::Snapshot)));
+    }
+}
+
+#[tokio::test]
+async fn iis_rejects_unverified_hosts_conflicts_and_zero_id_before_query() {
+    use crate::ssh::powershell::PowerShellEngine;
+    let f = Fixture::new(HashMap::new()).await;
+    assert!(crate::iis::site_log(&f.ssh, "test", 0).await.is_err());
+    assert!(f.commands.lock().unwrap().is_empty());
+    assert!(crate::iis::overview(&f.ssh, "test").await.is_err());
+    assert!(!f
+        .commands
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|s| s.contains("-EncodedCommand")));
+    let f = Fixture::new(windows_replies("cmd", PowerShellEngine::PowerShell)).await;
+    f.attach(
+        "conflict",
+        EnvironmentHints::new(Some("linux".into()), None).unwrap(),
+    )
+    .await;
+    assert!(crate::iis::events(&f.ssh, "conflict").await.is_err());
+    assert!(!f
+        .commands
+        .lock()
+        .unwrap()
+        .iter()
+        .any(|s| s.contains("-EncodedCommand")));
+}
+
+#[tokio::test]
+async fn iis_rejects_remote_schema_errors_without_exposing_the_payload() {
+    use crate::ssh::powershell::{command, PowerShellEngine, Query};
+    let engine = PowerShellEngine::PowerShell;
+    let mut replies = windows_replies("cmd", engine);
+    replies.insert(command(engine, Query::IisOverview), ps_frame(serde_json::json!({"schema":1,"status":"available","sites":[],"pools":[],"truncated":false,"password":"PRIVATE"})));
+    let f = Fixture::new(replies).await;
+    let error = crate::iis::overview(&f.ssh, "test").await.unwrap_err();
+    assert!(!error.contains("PRIVATE"));
+}
+
+#[tokio::test]
+async fn closing_session_cancels_an_inflight_iis_query() {
+    use crate::ssh::powershell::{command, PowerShellEngine, Query};
+    let engine = PowerShellEngine::PowerShell;
+    let query = command(engine, Query::IisOverview);
+    let mut replies = windows_replies("cmd", engine);
+    replies.insert(
+        query.clone(),
+        Reply {
+            hang: true,
+            ..Default::default()
+        },
+    );
+    let f = Fixture::new(replies).await;
+    let ssh = f.ssh.clone();
+    let task = tokio::spawn(async move { crate::iis::overview(&ssh, "test").await });
+    tokio::time::timeout(Duration::from_secs(2), async {
+        while !f.commands.lock().unwrap().contains(&query) {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    f.ssh.close_session("test").await.unwrap();
+    assert!(tokio::time::timeout(Duration::from_secs(1), task)
+        .await
+        .unwrap()
+        .unwrap()
+        .is_err());
+}
