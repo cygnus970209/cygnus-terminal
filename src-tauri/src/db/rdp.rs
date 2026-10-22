@@ -53,7 +53,7 @@ pub struct RdpProfile {
 }
 
 pub(super) fn list(conn: &Connection) -> Result<Vec<RdpProfile>, String> {
-    let mut stmt = conn.prepare("SELECT id,name,host,port,username,domain,width,height FROM rdp_profiles ORDER BY name COLLATE NOCASE,id")
+    let mut stmt = conn.prepare("SELECT id,name,host,port,username,domain,width,height,desktop_scale_factor FROM rdp_profiles ORDER BY name COLLATE NOCASE,id")
         .map_err(|_| "Could not read saved RDP connections")?;
     let rows = stmt
         .query_map([], |row| {
@@ -67,6 +67,7 @@ pub(super) fn list(conn: &Connection) -> Result<Vec<RdpProfile>, String> {
                     domain: row.get(5)?,
                     width: row.get(6)?,
                     height: row.get(7)?,
+                    desktop_scale_factor: row.get(8)?,
                 },
             })
         })
@@ -83,7 +84,7 @@ pub(super) fn insert(conn: &Connection, data: &ProfileData) -> Result<i64, Strin
         return Err("Up to 200 RDP connections can be saved".into());
     }
     let c = &data.config;
-    conn.execute("INSERT INTO rdp_profiles(name,host,port,username,domain,width,height) VALUES(?1,?2,?3,?4,?5,?6,?7)", params![data.name.trim(), c.host, c.port, c.username, c.domain, c.width, c.height])
+    conn.execute("INSERT INTO rdp_profiles(name,host,port,username,domain,width,height,desktop_scale_factor) VALUES(?1,?2,?3,?4,?5,?6,?7,?8)", params![data.name.trim(), c.host, c.port, c.username, c.domain, c.width, c.height, c.desktop_scale_factor])
         .map_err(|_| "Could not save RDP connection")?;
     Ok(conn.last_insert_rowid())
 }
@@ -127,7 +128,7 @@ impl Database {
         let conn = self.conn();
         let id = if let Some(id) = id {
             let c = &data.config;
-            let changed = conn.execute("UPDATE rdp_profiles SET name=?1,host=?2,port=?3,username=?4,domain=?5,width=?6,height=?7 WHERE id=?8", params![data.name.trim(), c.host, c.port, c.username, c.domain, c.width, c.height, id])
+            let changed = conn.execute("UPDATE rdp_profiles SET name=?1,host=?2,port=?3,username=?4,domain=?5,width=?6,height=?7,desktop_scale_factor=?8 WHERE id=?9", params![data.name.trim(), c.host, c.port, c.username, c.domain, c.width, c.height, c.desktop_scale_factor, id])
                 .map_err(|_| "Could not save RDP connection")?;
             if changed != 1 {
                 return Err("Saved RDP connection no longer exists".into());

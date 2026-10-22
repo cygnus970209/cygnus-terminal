@@ -207,6 +207,11 @@ const MIGRATIONS: &[Migration] = &[
             );
         ",
     },
+    Migration {
+        version: 12,
+        sql: "ALTER TABLE rdp_profiles ADD COLUMN desktop_scale_factor INTEGER NOT NULL DEFAULT 0
+            CHECK(desktop_scale_factor = 0 OR desktop_scale_factor BETWEEN 100 AND 500);",
+    },
 ];
 
 impl Database {
@@ -254,6 +259,37 @@ impl Database {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn rdp_dpi_upgrade_preserves_existing_profile_and_certificate() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        for migration in MIGRATIONS.iter().filter(|m| m.version <= 11) {
+            conn.execute_batch(migration.sql).unwrap();
+        }
+        conn.execute_batch("CREATE TABLE schema_version(version INTEGER PRIMARY KEY); INSERT INTO schema_version VALUES(11);
+            INSERT INTO rdp_profiles VALUES(42,'desktop','host.test',3389,'user','DOMAIN',1280,720);").unwrap();
+        let pin = ["AB"; 32].join(":");
+        conn.execute(
+            "INSERT INTO rdp_certificates VALUES('host.test',3389,?1)",
+            [&pin],
+        )
+        .unwrap();
+        let db = Database {
+            conn: std::sync::Mutex::new(conn),
+        };
+        db.run_migrations().unwrap();
+        db.run_migrations().unwrap();
+        let profile = db.list_rdp_profiles().unwrap().remove(0);
+        assert_eq!(profile.id, 42);
+        assert_eq!(profile.config.desktop_scale_factor, 0);
+        assert_eq!(profile.config.domain, "DOMAIN");
+        let endpoint = super::super::rdp::Endpoint::new(&profile.config).unwrap();
+        assert_eq!(db.rdp_certificate(&endpoint).unwrap(), Some(pin));
+        assert!(db
+            .conn()
+            .execute("UPDATE rdp_profiles SET desktop_scale_factor=501", [])
+            .is_err());
+    }
+
     #[test]
     fn server_environment_upgrade_keeps_profile_identity_and_related_records() {
         let conn = rusqlite::Connection::open_in_memory().unwrap();

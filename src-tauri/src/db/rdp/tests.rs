@@ -10,6 +10,7 @@ fn data() -> ProfileData {
             domain: "COMPANY".into(),
             width: 1280,
             height: 720,
+            desktop_scale_factor: 0,
         },
     }
 }
@@ -23,11 +24,13 @@ fn saves_updates_and_deletes_only_rdp_metadata() {
     let mut updated = data();
     updated.name = "renamed".into();
     updated.config.port = 3390;
+    updated.config.desktop_scale_factor = 175;
     let updated = db.save_rdp_profile(Some(saved.id), updated).unwrap();
     assert_eq!(updated.id, saved.id);
     let all = db.list_rdp_profiles().unwrap();
     assert_eq!(all.len(), 1);
     assert_eq!(all[0].config.port, 3390);
+    assert_eq!(all[0].config.desktop_scale_factor, 175);
     let json = serde_json::to_string(&all).unwrap();
     assert!(!json.contains("password"));
     assert!(!json.contains("fingerprint"));
@@ -49,6 +52,46 @@ fn profile_schema_rejects_credentials_and_invalid_data() {
     bad.name = "\n".into();
     assert!(db.save_rdp_profile(None, bad).is_err());
     assert!(db.list_rdp_profiles().unwrap().is_empty());
+    for scale in [1, 99, 501, u32::MAX] {
+        let mut bad = data();
+        bad.config.desktop_scale_factor = scale;
+        assert!(db.save_rdp_profile(None, bad).is_err());
+    }
+}
+
+#[test]
+fn dpi_roundtrips_in_backup_and_old_v4_backups_default_to_server_scale() {
+    let db = Database::new_in_memory().unwrap();
+    let crypto = CryptoManager::new_random();
+    let mut profile = data();
+    profile.config.desktop_scale_factor = 200;
+    db.save_rdp_profile(None, profile).unwrap();
+    let mut json = serde_json::to_value(db.export_data(&crypto).unwrap()).unwrap();
+    let target = Database::new_in_memory().unwrap();
+    target
+        .import_data(serde_json::from_value(json.clone()).unwrap(), &crypto)
+        .unwrap();
+    assert_eq!(
+        target.list_rdp_profiles().unwrap()[0]
+            .config
+            .desktop_scale_factor,
+        200
+    );
+    json["rdp_profiles"][0]["config"]
+        .as_object_mut()
+        .unwrap()
+        .remove("desktop_scale_factor");
+    json["version"] = 4.into();
+    let legacy = Database::new_in_memory().unwrap();
+    legacy
+        .import_data(serde_json::from_value(json).unwrap(), &crypto)
+        .unwrap();
+    assert_eq!(
+        legacy.list_rdp_profiles().unwrap()[0]
+            .config
+            .desktop_scale_factor,
+        0
+    );
 }
 #[test]
 fn trust_is_opt_in_endpoint_scoped_and_changed_pin_requires_approval() {
@@ -112,7 +155,7 @@ fn backup_roundtrip_never_imports_trust_and_bad_rdp_data_aborts_everything() {
     db.approve_rdp_certificate(&endpoint, &pin("AB"), None, true, false)
         .unwrap();
     let backup = db.export_data(&crypto).unwrap();
-    assert_eq!(backup.version, 4);
+    assert_eq!(backup.version, 5);
     let json = serde_json::to_value(&backup).unwrap();
     assert!(!json.to_string().contains("fingerprint"));
     assert!(!json.to_string().contains("password"));

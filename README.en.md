@@ -147,11 +147,13 @@ cargo test --manifest-path src-tauri/Cargo.toml --locked
 bun run tauri build
 ```
 
-Open RDP Beta from the tab bar's `+ → RDP desktop (Beta)` menu. Save named connections with the server, username, domain, and desktop size in the RDP connection form; edit them or save a copy. Direct NLA/NTLM connections, display rendering, and basic US keyboard and mouse input are supported. The IIS viewer is also labeled Beta while Windows server validation is pending.
+Open RDP Beta from the tab bar's `+ → RDP desktop (Beta)` menu. Save named connections with the server, username, domain, desktop size, and Windows scale (DPI) in the RDP connection form; edit them or save a copy. Direct NLA/NTLM connections, display rendering, and basic US keyboard and mouse input are supported. The IIS viewer is also labeled Beta while Windows server validation is pending.
 
-Verify the certificate's SHA-256 fingerprint before entering your password. Remembering it is optional. If a saved fingerprint changes, compare both fingerprints and explicitly acknowledge the change before continuing. Automatic issuer, hostname, and validity checks are not supported yet. Passwords are neither saved nor exposed to MCP. Backup v4 includes RDP settings but excludes certificate trust; v1–v3 backups remain importable.
+Verify the certificate's SHA-256 fingerprint before entering your password. Remembering it is optional. If a saved fingerprint changes, compare both fingerprints and explicitly acknowledge the change before continuing. Automatic issuer, hostname, and validity checks are not supported yet. Passwords are neither saved nor exposed to MCP. Backup v5 includes RDP scale settings but excludes certificate trust; v1–v4 backups remain importable. Existing connections without a scale setting use the server default.
 
-IME, clipboard, and RD Gateway are not supported yet. Real Windows server and Windows packaging validation is still pending.
+After connecting, open `Text input / 한글`, compose with your local IME, and click `Send text` to type into the focused remote field. Composition keys and Enter are not forwarded. Text is not recorded; drafts are cleared after sending, closing, switching tabs, or leaving the app. Single-line text is limited to 256 UTF-16 units and control characters are rejected. Remote applications may handle Unicode input differently. Inline IME composition directly on the remote canvas is not supported yet.
+
+`Fit to window` follows the window size; `1:1 pixels` accounts for monitor DPI to map remote pixels to physical display pixels. Connection resolution is limited to 1920 × 1080. Windows scale is requested when connecting; the server may retain an existing session’s scale. Changing remote resolution while connected, clipboard sharing, RD Gateway, real Windows server validation, and Windows packaging validation are still pending.
 
 The RDP engine is a separate Cargo project bundled with the app to avoid conflicting SSH cryptography dependencies. `tauri dev/build` prepares it automatically; the app communicates with it over local pipes. Run `rdp:build` first when invoking Rust tests or `cargo check` directly.
 

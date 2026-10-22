@@ -19,8 +19,11 @@
 .rdp-certificate { display: grid; grid-template-columns: 72px minmax(0, 1fr); gap: 8px; margin: 0; font-size: 11px; }
 .rdp-certificate dt { color: var(--text-muted); }
 .rdp-certificate dd { margin: 0; overflow-wrap: anywhere; user-select: text; }
-.rdp-screen { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 0; min-width: 0; overflow: hidden; position: relative; background: var(--bg-tertiary); }
-.rdp-screen canvas { display: block; max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; touch-action: none; }
+.rdp-screen { flex: 1; display: flex; min-height: 0; min-width: 0; overflow: hidden; position: relative; background: var(--bg-tertiary); }
+.rdp-screen-pixels { overflow: auto; }
+.rdp-surface { flex: none; margin: auto; }
+.rdp-screen canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+.rdp-screen .rdp-wait { top: 16px; left: 16px; }
 .rdp-wait { position: absolute; color: var(--text-secondary); z-index: 1; pointer-events: none; }
 @media (max-width: 800px) { .rdp-content { padding: 16px; } }
 .rdp-form-fields { display: flex; flex-direction: column; gap: 12px; border: 0; padding: 0; margin: 0; min-width: 0; }
@@ -31,3 +34,8 @@
 .rdp-warning { border-color: var(--warn); color: var(--warn); }
 .rdp-ended { max-width: 480px; margin: 0 auto 12px; }
 .rdp-form .rdp-error { margin: 0; }
+.rdp-text-input { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: 1px solid var(--border-subtle); }
+.rdp-text-input label { display: flex; flex: 1; align-items: center; gap: 8px; min-width: 240px; }
+.rdp-text-input input { flex: 1; min-width: 0; padding: 6px 8px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--border); border-radius: 4px; font: inherit; }
+.rdp-text-input .rdp-note { flex-basis: 100%; }
+.rdp-text-input .rdp-error { margin: 0; max-width: none; }

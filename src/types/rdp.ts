@@ -5,6 +5,7 @@ export interface RdpConfig {
   domain: string;
   width: number;
   height: number;
+  desktop_scale_factor: number;
 }
 export interface RdpCertificate {
   type: "certificate";
@@ -21,6 +22,7 @@ export type RdpEvent =
   | { type: "connected"; width: number; height: number }
   | { type: "error"; message: string };
 export type RdpInput =
+  | { type: "text"; text: string }
   | { type: "key"; code: number; down: boolean }
   | { type: "pointer"; x: number; y: number; button: number | null; down: boolean }
   | { type: "wheel"; x: number; y: number; delta: number }

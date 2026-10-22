@@ -90,12 +90,18 @@ export default function RdpConnectionForm({ config, onChange, onConnect }: Props
         <option value="1280x720">1280 × 720</option><option value="1600x900">1600 × 900</option><option value="1920x1080">1920 × 1080</option>
         {!["1280x720", "1600x900", "1920x1080"].includes(`${config.width}x${config.height}`) && <option value={`${config.width}x${config.height}`}>{config.width} × {config.height}</option>}
       </Select></label>
+      <label>Windows scale (DPI)<Select aria-label="RDP Windows scale" value={String(config.desktop_scale_factor)} onValueChange={(value) => onChange({ ...config, desktop_scale_factor: Number(value) })}>
+        <option value="0">Server default</option>
+        {[100, 125, 150, 175, 200, 250, 300, 400, 500].map((scale) => <option key={scale} value={String(scale)}>{scale}%</option>)}
+        {config.desktop_scale_factor !== 0 && ![100, 125, 150, 175, 200, 250, 300, 400, 500].includes(config.desktop_scale_factor) && <option value={String(config.desktop_scale_factor)}>{config.desktop_scale_factor}%</option>}
+      </Select></label>
+      <p className="rdp-note">Desktop size and Windows scale apply on connection; the server may keep an existing session’s scale. Fit and 1:1 views can be changed while connected.</p>
       <div className="rdp-actions">
         <button type="button" disabled={!name.trim()} onClick={() => void save(false)}>{selected === null ? "Save connection" : "Save changes"}</button>
         {selected !== null && <><button type="button" disabled={!name.trim()} onClick={() => void save(true)}>Save as new</button><button type="button" onClick={() => setConfirmDelete(true)}>Delete saved connection</button></>}
       </div>
       {confirmDelete && <div className="rdp-notice"><p>Delete “{profiles.find((p) => p.id === selected)?.name}”? Open sessions and certificate trust will be kept.</p><div className="rdp-actions"><button type="button" onClick={() => void remove()}>Delete connection</button><button type="button" onClick={() => setConfirmDelete(false)}>Keep connection</button></div></div>}
-      <p className="rdp-note">Enter the password after verifying the server certificate. Basic US keyboard input; IME, clipboard, drive sharing and RD Gateway are not available yet.</p>
+      <p className="rdp-note">Enter the password after verifying the server certificate. Use Text input / 한글 for local IME composition, then Send text. Direct keys use the US layout. Clipboard sharing, drive sharing and RD Gateway are not available yet.</p>
       <button className="rdp-primary" type="submit">Connect</button>
     </fieldset>
   </form>;

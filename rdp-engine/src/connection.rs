@@ -54,7 +54,7 @@ pub fn config(params: &ConnectConfig) -> connector::Config {
         pointer_software_rendering: false,
         multitransport_flags: None,
         performance_flags: PerformanceFlags::default(),
-        desktop_scale_factor: 0,
+        desktop_scale_factor: params.desktop_scale_factor,
         hardware_id: None,
         license_cache: None,
         timezone_info: TimezoneInfo::default(),

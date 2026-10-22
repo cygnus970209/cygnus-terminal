@@ -117,7 +117,7 @@ impl Database {
             .map_err(|e| format!("Export query failed: {e}"))?;
 
         Ok(ExportData {
-            version: 4,
+            version: 5,
             rdp_profiles: super::rdp::list(&conn)?
                 .into_iter()
                 .map(|p| super::rdp::ProfileData {
@@ -132,7 +132,7 @@ impl Database {
     }
 
     pub fn import_data(&self, data: ExportData, _crypto: &CryptoManager) -> Result<u32, String> {
-        if data.version > 4 || (data.version < 4 && !data.rdp_profiles.is_empty()) {
+        if data.version > 5 || (data.version < 4 && !data.rdp_profiles.is_empty()) {
             return Err("Unsupported backup version".into());
         }
         for profile in &data.profiles {
@@ -270,7 +270,7 @@ mod tests {
             db.create_profile(req, &crypto).unwrap();
         }
         let backup = db.export_data(&crypto).unwrap();
-        assert_eq!(backup.version, 4);
+        assert_eq!(backup.version, 5);
         let json = serde_json::to_string(&backup).unwrap();
         let target = Database::new_in_memory().unwrap();
         assert_eq!(

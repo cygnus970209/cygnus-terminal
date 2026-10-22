@@ -1,8 +1,24 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { decodeRdpFrame, rdpScancode, RdpInputQueue } from "./rdp";
+import { decodeRdpFrame, rdpScancode, RdpInputQueue, validRdpText, rdpDisplaySize, rdpPoint } from "./rdp";
 import type { RdpInput } from "../types/rdp";
 
 afterEach(() => vi.useRealTimers());
+
+describe("RDP text and display scaling", () => {
+  it("accepts composed Unicode and bounds complete UTF-16 characters without control keys", () => {
+    for (const text of ["한글", "🙂".repeat(128), "e\u0301", "a".repeat(256)]) expect(validRdpText(text)).toBe(true);
+    for (const text of ["", "🙂".repeat(129), "a".repeat(257), "\ud800", "\udfff", "\n", "\t", "\0", "\x7f", "\x85", "\u2028", "\u2029"]) expect(validRdpText(text)).toBe(false);
+  });
+  it("fits without distortion and maps pointer coordinates at different DPI and scroll offsets", () => {
+    const fit = rdpDisplaySize(1920, 1080, 1000, 800, "fit", 2);
+    expect(fit.width).toBeCloseTo(1000); expect(fit.height).toBeCloseTo(562.5);
+    expect(rdpDisplaySize(1920, 1080, 1000, 400, "fit", 1).height).toBe(400);
+    expect(rdpDisplaySize(1920, 1080, 600, 400, "pixels", 2)).toEqual({ width: 960, height: 540 });
+    expect(rdpDisplaySize(1920, 1080, 600, 400, "pixels", 1.25)).toEqual({ width: 1536, height: 864 });
+    expect(rdpPoint(400, 300, { left: -80, top: 30, width: 960, height: 540 }, 1920, 1080)).toEqual({ x: 960, y: 540 });
+    expect(rdpPoint(9000, -50, { left: 0, top: 0, width: 960, height: 540 }, 1920, 1080)).toEqual({ x: 1919, y: 0 });
+  });
+});
 
 describe("RDP binary display", () => {
   it("validates the complete frame before exposing pixels", () => {

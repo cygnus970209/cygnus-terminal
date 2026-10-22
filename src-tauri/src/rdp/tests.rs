@@ -26,6 +26,7 @@ fn fixture(phase: u8) -> (RdpManager, Arc<Session>, mpsc::Receiver<Request>) {
             domain: String::new(),
             width: 1280,
             height: 720,
+            desktop_scale_factor: 0,
         })
         .unwrap(),
         certificate: Mutex::new(Some(PendingCertificate {
@@ -174,6 +175,7 @@ fn connection_and_frame_dimensions_are_bounded() {
         domain: String::new(),
         width: 1280,
         height: 720,
+        desktop_scale_factor: 0,
     };
     assert!(config.validate().is_ok());
     for host in ["", "server/path", "user@server", "server\n", " server"] {
@@ -198,6 +200,41 @@ fn connection_and_frame_dimensions_are_bounded() {
     assert_eq!(frame_header(&frame), Some((1, 1, 9)));
     frame[4..8].copy_from_slice(&u32::MAX.to_le_bytes());
     assert!(frame_header(&frame).is_none());
+}
+
+#[test]
+fn unicode_text_is_bounded_single_line_and_requires_a_connected_session() {
+    let (manager, session, mut rx) = fixture(1);
+    let text = || Input::Text {
+        text: "한글🙂e\u{301}".into(),
+    };
+    assert!(manager.input("test", vec![text()]).is_err());
+    session.phase.store(3, Ordering::Release);
+    for invalid in [
+        "".into(),
+        "a\nB".into(),
+        "\t".into(),
+        "\0".into(),
+        "\u{7f}".into(),
+        "\u{85}".into(),
+        "\u{2028}".into(),
+        "x".repeat(257),
+        "🙂".repeat(129),
+    ] {
+        assert!(manager
+            .input("test", vec![Input::Text { text: invalid }])
+            .is_err());
+    }
+    assert!(rx.try_recv().is_err());
+    manager.input("test", vec![text()]).unwrap();
+    assert!(
+        matches!(rx.try_recv().unwrap(), Request::Input { events } if matches!(&events[0], Input::Text { text } if text == "한글🙂e\u{301}"))
+    );
+    assert!(Input::Text {
+        text: "🙂".repeat(128)
+    }
+    .validate());
+    assert!(serde_json::from_str::<Input>(r#"{"type":"text","text":"\ud800"}"#).is_err());
 }
 
 #[test]

@@ -166,6 +166,7 @@ impl Fixture {
                 domain: String::new(),
                 width: 640,
                 height: 480,
+                desktop_scale_factor: 175,
             },
         })
         .await;
@@ -244,6 +245,59 @@ async fn real_nla_session_waits_for_approval_then_decodes_pixels_sends_input_and
     let inputs = f.inputs.lock().unwrap().clone();
     assert!(inputs.iter().any(|s| s.starts_with("key:")));
     assert!(inputs.iter().any(|s| s.starts_with("mouse:")));
+    let text = format!("한글🙂e\u{301}{}", "가".repeat(250)); // exactly 256 UTF-16 units
+    f.send(Request::Input {
+        events: vec![
+            Input::Key {
+                code: 0x1d,
+                down: true,
+            },
+            Input::Text { text: text.clone() },
+        ],
+    })
+    .await;
+    let mut expected = Vec::new();
+    for c in text.chars() {
+        let mut buf = [0; 2];
+        let units = c.encode_utf16(&mut buf);
+        for unit in units.iter() {
+            expected.push(format!("key:UnicodePressed({unit})"));
+        }
+        for unit in units.iter() {
+            expected.push(format!("key:UnicodeReleased({unit})"));
+        }
+    }
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            if f.inputs
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|s| s.contains("Unicode"))
+                .count()
+                >= expected.len()
+            {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .unwrap();
+    let received = f.inputs.lock().unwrap().clone();
+    assert_eq!(
+        received
+            .iter()
+            .filter(|s| s.contains("Unicode"))
+            .cloned()
+            .collect::<Vec<_>>(),
+        expected
+    );
+    let first_unicode = received.iter().position(|s| s.contains("Unicode")).unwrap();
+    assert!(
+        received[first_unicode - 1].contains("Released"),
+        "held Ctrl must be released before text"
+    );
     f.send(Request::Disconnect).await;
     assert!(matches!(f.event().await, Event::Ended));
     assert!(tokio::time::timeout(Duration::from_secs(2), f.child.wait())

@@ -193,9 +193,18 @@ async fn run(rx: &mut mpsc::Receiver<Request>) -> Result<()> {
                     for event in events {
                         let events = match event {
                             Input::ReleaseAll => input.release_all(),
+                            Input::Text { .. } => {
+                                let mut events = input.release_all();
+                                events.extend(input.apply(operations(event, image.width(), image.height())));
+                                events
+                            }
                             _ => input.apply(operations(event, image.width(), image.height())),
                         };
-                        outputs.extend(stage.process_fastpath_input(&mut image, &events).map_err(|_| "RDP input failed")?);
+                        // Fast-path carries at most 255 events. A text commit can expand
+                        // to multiple UTF-16 down/up pairs, plus held-key releases.
+                        for batch in events.chunks(128) {
+                            outputs.extend(stage.process_fastpath_input(&mut image, batch).map_err(|_| "RDP input failed")?);
+                        }
                     }
                     outputs
                 }
@@ -300,6 +309,15 @@ fn operations(event: Input, width: u16, height: u16) -> Vec<Operation> {
                 rotation_units: delta,
             }),
         ],
+        Input::Text { text } => text
+            .chars()
+            .flat_map(|c| {
+                [
+                    Operation::UnicodeKeyPressed(c),
+                    Operation::UnicodeKeyReleased(c),
+                ]
+            })
+            .collect(),
         Input::ReleaseAll => Vec::new(),
     }
 }

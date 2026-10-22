@@ -26,6 +26,25 @@ export function rdpScancode(code: string): number | undefined {
   return Object.prototype.hasOwnProperty.call(SCANCODES, code) ? SCANCODES[code] : undefined;
 }
 
+export function validRdpText(text: string): boolean {
+  return text.length > 0 && text.length <= 256
+    && !/[\u0000-\u001f\u007f-\u009f\u2028\u2029]/u.test(text)
+    && ![...text].some((c) => { const n = c.codePointAt(0)!; return n >= 0xd800 && n <= 0xdfff; });
+}
+
+export function rdpDisplaySize(width: number, height: number, availableWidth: number, availableHeight: number, mode: "fit" | "pixels", pixelRatio: number) {
+  const scale = mode === "pixels" ? 1 / (Number.isFinite(pixelRatio) && pixelRatio > 0 ? pixelRatio : 1)
+    : Math.min(Math.max(1, availableWidth) / width, Math.max(1, availableHeight) / height);
+  return { width: width * scale, height: height * scale };
+}
+
+export function rdpPoint(clientX: number, clientY: number, rect: { left: number; top: number; width: number; height: number }, width: number, height: number) {
+  return {
+    x: Math.max(0, Math.min(width - 1, Math.floor((clientX - rect.left) * width / Math.max(1, rect.width)))),
+    y: Math.max(0, Math.min(height - 1, Math.floor((clientY - rect.top) * height / Math.max(1, rect.height)))),
+  };
+}
+
 export function decodeRdpFrame(buffer: ArrayBuffer) {
   if (buffer.byteLength === 0) return null;
   if (buffer.byteLength < 16) throw new Error("Incomplete RDP frame");

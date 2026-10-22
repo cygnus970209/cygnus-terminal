@@ -2,9 +2,12 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type Keyboard
 import { Channel, invoke } from "@tauri-apps/api/core";
 import RdpConnectionForm from "./RdpConnectionForm";
 import RdpCertificateForm from "./RdpCertificateForm";
+import RdpTextInput from "./RdpTextInput";
+import Select from "../common/Select";
+import useRdpViewport from "./useRdpViewport";
 import type { SessionStatus } from "../../types";
 import type { RdpApproval, RdpCertificate, RdpConfig, RdpEvent } from "../../types/rdp";
-import { decodeRdpFrame, rdpScancode, RdpInputQueue } from "../../utils/rdp";
+import { decodeRdpFrame, rdpDisplaySize, rdpPoint, rdpScancode, RdpInputQueue } from "../../utils/rdp";
 import "./RdpSession.css";
 
 type Phase = "idle" | "connecting" | "certificate" | "authenticating" | "connected" | "ended" | "error";
@@ -15,13 +18,19 @@ interface Props {
   onTitleChange: (id: string, title: string) => void;
 }
 export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleChange }: Props) {
-  const [config, setConfig] = useState<RdpConfig>({ host: "", port: 3389, username: "", domain: "", width: 1280, height: 720 });
+  const [config, setConfig] = useState<RdpConfig>({ host: "", port: 3389, username: "", domain: "", width: 1280, height: 720, desktop_scale_factor: 0 });
   const [phase, setPhase] = useState<Phase>("idle");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [certificate, setCertificate] = useState<RdpCertificate | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [hasFrame, setHasFrame] = useState(false);
   const [size, setSize] = useState({ width: 1280, height: 720 });
+  const [viewMode, setViewMode] = useState<"fit" | "pixels">("fit");
+  const [textInput, setTextInput] = useState(false);
+  const screen = useRef<HTMLDivElement>(null);
+  const viewport = useRdpViewport(screen, phase === "connected" && isActive);
+  const displaySize = rdpDisplaySize(size.width, size.height, viewport.width, viewport.height, viewMode, viewport.pixelRatio);
+  const closeTextInput = useCallback(() => setTextInput(false), []);
   const canvas = useRef<HTMLCanvasElement>(null);
   const disconnectButton = useRef<HTMLButtonElement>(null);
   const generation = useRef(0);
@@ -39,6 +48,7 @@ export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleCh
     setSessionId(null);
     setCertificate(null);
     setHasFrame(false);
+    setTextInput(false);
     setError(message ?? null);
     setPhase(message ? "error" : "ended");
     onSessionStatus(tabId, message ? "error" : "ended");
@@ -102,7 +112,7 @@ export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleCh
   }, [phase, sessionId, disconnect]);
 
   useEffect(() => {
-    if (!isActive) inputs.current?.release();
+    if (!isActive) { inputs.current?.release(); setTextInput(false); }
   }, [isActive]);
 
   useEffect(() => {
@@ -140,11 +150,7 @@ export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleCh
 
   function point(clientX: number, clientY: number) {
     const surface = canvas.current!;
-    const rect = surface.getBoundingClientRect();
-    return {
-      x: Math.max(0, Math.min(surface.width - 1, Math.floor((clientX - rect.left) * surface.width / rect.width))),
-      y: Math.max(0, Math.min(surface.height - 1, Math.floor((clientY - rect.top) * surface.height / rect.height))),
-    };
+    return rdpPoint(clientX, clientY, surface.getBoundingClientRect(), surface.width, surface.height);
   }
   useEffect(() => {
     const surface = canvas.current;
@@ -175,14 +181,24 @@ export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleCh
     <div className="rdp-toolbar">
       <span>Remote desktop <span className="rdp-note">Beta</span></span>
       {phase === "connected" && <span className="rdp-note">{size.width} × {size.height} · Ctrl+Alt+Shift releases input</span>}
+      {phase === "connected" && <>
+        <Select aria-label="RDP display view" value={viewMode} onValueChange={(value) => setViewMode(value as "fit" | "pixels")}>
+          <option value="fit">Fit to window</option><option value="pixels">1:1 pixels</option>
+        </Select>
+        <button aria-pressed={textInput} onClick={() => setTextInput((open) => !open)}>Text input / 한글</button>
+      </>}
       {phase === "connected" && <button onClick={() => {
         for (const down of [true, false]) for (const code of (down ? [0x1d, 0x38, 0x153] : [0x153, 0x38, 0x1d])) inputs.current?.push({ type: "key", code, down });
         canvas.current?.focus();
       }}>Ctrl+Alt+Del</button>}
       {busy && <button ref={disconnectButton} onClick={() => disconnect()}>{phase === "connected" ? "Disconnect" : "Cancel connection"}</button>}
     </div>
-    {phase === "connected" ? <div className="rdp-screen">
+    {phase === "connected" && isActive && textInput && <RdpTextInput onClose={closeTextInput} onSend={(text) => {
+      inputs.current?.push({ type: "text", text });
+    }} />}
+    {phase === "connected" ? <div ref={screen} className={`rdp-screen rdp-screen-${viewMode}`}>
       {!hasFrame && <p className="rdp-wait" role="status">Waiting for the remote desktop…</p>}
+      <div className="rdp-surface" style={displaySize}>
       <canvas ref={canvas} width={size.width} height={size.height} tabIndex={0}
         aria-label="Remote desktop. Click to focus. Ctrl Alt Shift releases input."
         onKeyDown={(event) => key(event, true)} onKeyUp={(event) => key(event, false)}
@@ -191,6 +207,7 @@ export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleCh
         onPointerUp={(event) => { if (event.button <= 2) inputs.current?.push({ type: "pointer", ...point(event.clientX, event.clientY), button: event.button, down: false }); }}
         onPointerMove={(event) => inputs.current?.push({ type: "pointer", ...point(event.clientX, event.clientY), button: null, down: false })}
         onPointerCancel={() => inputs.current?.release()} />
+      </div>
     </div> : null}
     <div className="rdp-content" style={{ display: phase === "connected" ? "none" : undefined }}>
       {error && <p className="rdp-error" role="alert">{error}</p>}

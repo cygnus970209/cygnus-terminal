@@ -6,6 +6,7 @@ pub const MAX_HEIGHT: u16 = 1080;
 pub const MAX_FRAME_BYTES: usize = 16 + MAX_WIDTH as usize * MAX_HEIGHT as usize * 4;
 pub const MAX_CONTROL_BYTES: usize = 16 * 1024;
 pub const MAX_INPUT_BATCH: usize = 64;
+pub const MAX_TEXT_UNITS: usize = 256;
 pub const WIRE_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -17,6 +18,9 @@ pub struct ConnectConfig {
     pub domain: String,
     pub width: u16,
     pub height: u16,
+    /// Zero preserves the server default for existing profiles/backups.
+    #[serde(default)]
+    pub desktop_scale_factor: u32,
 }
 impl ConnectConfig {
     pub fn validate(&self) -> Result<(), &'static str> {
@@ -45,6 +49,9 @@ impl ConnectConfig {
         {
             return Err("RDP desktop size must be between 640×480 and 1920×1080");
         }
+        if self.desktop_scale_factor != 0 && !(100..=500).contains(&self.desktop_scale_factor) {
+            return Err("RDP Windows scale must be between 100% and 500%");
+        }
         Ok(())
     }
 }
@@ -70,6 +77,9 @@ pub enum Request {
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
 pub enum Input {
+    Text {
+        text: String,
+    },
     Key {
         code: u16,
         down: bool,
@@ -90,6 +100,13 @@ pub enum Input {
 impl Input {
     pub fn validate(&self) -> bool {
         match self {
+            Self::Text { text } => {
+                !text.is_empty()
+                    && text.encode_utf16().count() <= MAX_TEXT_UNITS
+                    && !text
+                        .chars()
+                        .any(|c| c.is_control() || matches!(c, '\u{2028}' | '\u{2029}'))
+            }
             Self::Key { code, .. } => {
                 (*code > 0 && *code <= 0x7f) || (*code > 0x100 && *code <= 0x17f)
             }
