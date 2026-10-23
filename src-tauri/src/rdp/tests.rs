@@ -17,7 +17,10 @@ fn fixture(phase: u8) -> (RdpManager, Arc<Session>, mpsc::Receiver<Request>) {
     let (tx, rx) = mpsc::channel(16);
     let session = Arc::new(Session {
         cancel: CancellationToken::new(),
+        finished: CancellationToken::new(),
         tx,
+        display_area: AtomicU32::new(0),
+        resizing: AtomicBool::new(false),
         phase: AtomicU8::new(phase),
         endpoint: Endpoint::new(&ConnectConfig {
             host: "test.local".into(),
@@ -42,6 +45,52 @@ fn fixture(phase: u8) -> (RdpManager, Arc<Session>, mpsc::Receiver<Request>) {
         .unwrap()
         .insert("test".into(), session.clone());
     (manager, session, rx)
+}
+
+#[tokio::test]
+async fn closing_keeps_ownership_until_cleanup_and_rejects_new_input() {
+    let (manager, session, mut rx) = fixture(3);
+    let cloned = manager.clone();
+    let closing = tokio::spawn(async move { cloned.close_and_wait("test").await });
+    session.cancel.cancelled().await;
+    assert!(!closing.is_finished());
+    assert!(manager.session("test").is_ok());
+    assert!(manager.input("test", vec![Input::ReleaseAll]).is_err());
+    assert!(manager.frame("test").await.is_err());
+    assert!(rx.try_recv().is_err());
+    // The worker signals this only after run() has waited for the child and released its slot.
+    manager.0.sessions.lock().unwrap().remove("test");
+    session.finished.cancel();
+    closing.await.unwrap().unwrap();
+    manager.close_and_wait("test").await.unwrap(); // idempotent after cleanup
+}
+
+#[tokio::test]
+async fn simultaneous_close_waiters_and_close_all_wait_for_the_same_cleanup() {
+    let (manager, session, _) = fixture(3);
+    manager.close_all();
+    assert!(session.cancel.is_cancelled());
+    assert!(manager.session("test").is_ok());
+    let (a, b) = (manager.clone(), manager.clone());
+    let a = tokio::spawn(async move { a.close_and_wait("test").await });
+    let b = tokio::spawn(async move { b.close_and_wait("test").await });
+    tokio::task::yield_now().await;
+    assert!(!a.is_finished() && !b.is_finished());
+    manager.0.sessions.lock().unwrap().remove("test");
+    session.finished.cancel();
+    a.await.unwrap().unwrap();
+    b.await.unwrap().unwrap();
+}
+
+#[tokio::test]
+async fn close_timeout_preserves_ownership_until_the_worker_finishes() {
+    let (manager, session, _) = fixture(3);
+    assert!(manager.close_and_wait("test").await.is_err());
+    assert!(session.cancel.is_cancelled());
+    assert!(!session.finished.is_cancelled());
+    assert!(manager.session("test").is_ok());
+    session.finished.cancel();
+    manager.close_and_wait("test").await.unwrap();
 }
 
 #[test]
@@ -297,7 +346,8 @@ fn forgetting_requires_the_displayed_saved_pin_and_closes_the_session() {
     assert!(manager.forget_certificate("test", "wrong").is_err());
     manager.forget_certificate("test", &pin()).unwrap();
     assert!(session.cancel.is_cancelled());
-    assert!(manager.session("test").is_err());
+    assert_eq!(session.phase.load(Ordering::Acquire), 4);
+    assert!(manager.session("test").is_ok()); // retained until the worker is reaped
     assert!(manager
         .0
         .database
@@ -322,4 +372,61 @@ fn certificate_event_exposes_only_public_pin_metadata() {
     assert_eq!(json["type"], "certificate");
     assert_eq!(json["saved_fingerprint"], pin());
     assert!(json.get("password").is_none());
+}
+
+#[test]
+fn resize_requires_connected_capability_and_only_one_pending_request() {
+    let size = DesktopSize {
+        width: 1280,
+        height: 720,
+    };
+    for phase in [0, 1, 2, 4] {
+        let (manager, session, mut rx) = fixture(phase);
+        session.display_area.store(1920 * 1080, Ordering::Release);
+        assert!(manager.resize("test", size).is_err());
+        assert!(rx.try_recv().is_err());
+    }
+    let (manager, session, mut rx) = fixture(3);
+    assert!(manager.resize("test", size).is_err());
+    session.display_area.store(640 * 480, Ordering::Release);
+    assert!(manager.resize("test", size).is_err());
+    session.display_area.store(1920 * 1080, Ordering::Release);
+    for (width, height) in [(641, 480), (0, 0), (1922, 1080), (1920, 1081)] {
+        assert!(manager
+            .resize("test", DesktopSize { width, height })
+            .is_err());
+    }
+    manager.resize("test", size).unwrap();
+    assert!(manager.resize("test", size).is_err());
+    assert!(matches!(
+        rx.try_recv().unwrap(),
+        Request::Resize {
+            size: DesktopSize {
+                width: 1280,
+                height: 720
+            }
+        }
+    ));
+    assert!(rx.try_recv().is_err());
+    session.resizing.store(false, Ordering::Release);
+    manager.close("test");
+    assert!(manager.resize("test", size).is_err());
+}
+
+#[test]
+fn failed_resize_enqueue_releases_pending_slot_without_closing_connection() {
+    let (manager, session, mut rx) = fixture(3);
+    session.display_area.store(1920 * 1080, Ordering::Release);
+    for _ in 0..16 {
+        session.tx.try_send(Request::Frame).ok().unwrap();
+    }
+    let size = DesktopSize {
+        width: 1280,
+        height: 720,
+    };
+    assert!(manager.resize("test", size).is_err());
+    assert!(!session.resizing.load(Ordering::Acquire));
+    assert!(!session.cancel.is_cancelled());
+    rx.try_recv().unwrap();
+    manager.resize("test", size).unwrap();
 }

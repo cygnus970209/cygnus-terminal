@@ -4,8 +4,8 @@ use crate::db::{
     Database,
 };
 use cygnus_rdp_protocol::{
-    frame_header, ConnectConfig, Event, Input, Request, MAX_CONTROL_BYTES, MAX_FRAME_BYTES,
-    MAX_INPUT_BATCH,
+    frame_header, ConnectConfig, DesktopSize, Event, Input, Request, MAX_CONTROL_BYTES,
+    MAX_FRAME_BYTES, MAX_INPUT_BATCH,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -13,7 +13,7 @@ use std::{
     path::PathBuf,
     process::Stdio,
     sync::{
-        atomic::{AtomicU8, Ordering},
+        atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering},
         Arc, Mutex,
     },
     time::Duration,
@@ -59,8 +59,11 @@ struct PendingCertificate {
 type Notify = Arc<dyn Fn(SessionEvent) -> bool + Send + Sync>;
 struct Session {
     cancel: CancellationToken,
+    finished: CancellationToken,
     tx: mpsc::Sender<Request>,
     phase: AtomicU8,
+    display_area: AtomicU32,
+    resizing: AtomicBool,
     endpoint: Endpoint,
     certificate: Mutex<Option<PendingCertificate>>,
     frame: Mutex<Option<FrameReply>>,
@@ -98,8 +101,11 @@ impl RdpManager {
         let (tx, rx) = mpsc::channel(16);
         let session = Arc::new(Session {
             cancel: CancellationToken::new(),
+            finished: CancellationToken::new(),
             tx,
             phase: AtomicU8::new(0),
+            display_area: AtomicU32::new(0),
+            resizing: AtomicBool::new(false),
             endpoint,
             certificate: Mutex::new(None),
             frame: Mutex::new(None),
@@ -119,6 +125,8 @@ impl RdpManager {
                 let _ = reply.send(Err("RDP session ended".into()));
             }
             manager.0.sessions.lock().unwrap().remove(&task_id);
+            // run() has reaped the helper and dropped its capacity permit.
+            session.finished.cancel();
             if !session.cancel.is_cancelled() {
                 if let Err(message) = outcome {
                     notify(Event::Error { message }.into());
@@ -208,7 +216,7 @@ impl RdpManager {
             return Err("Invalid RDP input".into());
         }
         let session = self.session(id)?;
-        if session.phase.load(Ordering::Acquire) != 3 {
+        if session.cancel.is_cancelled() || session.phase.load(Ordering::Acquire) != 3 {
             return Err("RDP is not connected".into());
         }
         session.tx.try_send(Request::Input { events }).map_err(|_| {
@@ -216,9 +224,27 @@ impl RdpManager {
             "RDP input queue is full; the session was closed to release pressed keys".into()
         })
     }
+    pub fn resize(&self, id: &str, size: DesktopSize) -> Result<(), String> {
+        size.validate()?;
+        let session = self.session(id)?;
+        if session.cancel.is_cancelled() || session.phase.load(Ordering::Acquire) != 3 {
+            return Err("RDP is not connected".into());
+        }
+        if size.area() > session.display_area.load(Ordering::Acquire) {
+            return Err("This resolution is not supported by the server".into());
+        }
+        if session.resizing.swap(true, Ordering::AcqRel) {
+            return Err("A resolution change is already pending".into());
+        }
+        if session.tx.try_send(Request::Resize { size }).is_err() {
+            session.resizing.store(false, Ordering::Release);
+            return Err("The resolution request could not be sent".into());
+        }
+        Ok(())
+    }
     pub async fn frame(&self, id: &str) -> Result<Vec<u8>, String> {
         let session = self.session(id)?;
-        if session.phase.load(Ordering::Acquire) != 3 {
+        if session.cancel.is_cancelled() || session.phase.load(Ordering::Acquire) != 3 {
             return Err("RDP is not connected".into());
         }
         let (tx, rx) = oneshot::channel();
@@ -242,12 +268,24 @@ impl RdpManager {
         }
     }
     pub fn close(&self, id: &str) {
-        if let Some(session) = self.0.sessions.lock().unwrap().remove(id) {
+        if let Some(session) = self.0.sessions.lock().unwrap().get(id) {
+            session.phase.store(4, Ordering::Release);
             session.cancel.cancel();
         }
     }
+    pub async fn close_and_wait(&self, id: &str) -> Result<(), String> {
+        let session = self.0.sessions.lock().unwrap().get(id).cloned();
+        let Some(session) = session else {
+            return Ok(());
+        };
+        self.close(id);
+        tokio::time::timeout(Duration::from_secs(5), session.finished.cancelled())
+            .await
+            .map_err(|_| "The RDP engine is still closing. Try again.".into())
+    }
     pub fn close_all(&self) {
-        for (_, session) in self.0.sessions.lock().unwrap().drain() {
+        for session in self.0.sessions.lock().unwrap().values() {
+            session.phase.store(4, Ordering::Release);
             session.cancel.cancel();
         }
     }
@@ -372,6 +410,14 @@ async fn run(
                                 *session.certificate.lock().unwrap() = Some(PendingCertificate { fingerprint: fingerprint.clone(), saved: saved_fingerprint.clone() });
                                 session.phase.store(1, Ordering::Release);
                                 deadline.as_mut().reset(tokio::time::Instant::now() + Duration::from_secs(190));
+                            }
+                            Event::DisplayControl { max_area } => {
+                                if session.phase.load(Ordering::Acquire) != 3 || *max_area > u32::from(cygnus_rdp_protocol::MAX_WIDTH) * u32::from(cygnus_rdp_protocol::MAX_HEIGHT) { break Err("Invalid RDP display capability".into()); }
+                                session.display_area.store(*max_area, Ordering::Release);
+                            }
+                            Event::ResizeResult { .. } => {
+                                let was_pending = session.resizing.swap(false, Ordering::AcqRel);
+                                if session.phase.load(Ordering::Acquire) != 3 || !was_pending { break Err("Unexpected RDP resize result".into()); }
                             }
                             Event::Authenticating => deadline.as_mut().reset(tokio::time::Instant::now() + Duration::from_secs(40)),
                             Event::Connected { width, height } => {

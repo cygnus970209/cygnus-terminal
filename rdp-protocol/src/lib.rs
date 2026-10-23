@@ -56,6 +56,27 @@ impl ConnectConfig {
     }
 }
 
+#[derive(Clone, Copy, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct DesktopSize {
+    pub width: u16,
+    pub height: u16,
+}
+impl DesktopSize {
+    pub fn validate(&self) -> Result<(), &'static str> {
+        if !(640..=MAX_WIDTH).contains(&self.width)
+            || !(480..=MAX_HEIGHT).contains(&self.height)
+            || self.width % 2 != 0
+        {
+            return Err("RDP resolution must be 640×480 to 1920×1080 with an even width");
+        }
+        Ok(())
+    }
+    pub fn area(&self) -> u32 {
+        u32::from(self.width) * u32::from(self.height)
+    }
+}
+
 // Intentionally no Debug: authentication/input must never appear in diagnostics.
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
@@ -69,6 +90,9 @@ pub enum Request {
     },
     Input {
         events: Vec<Input>,
+    },
+    Resize {
+        size: DesktopSize,
     },
     Frame,
     Disconnect,
@@ -136,6 +160,12 @@ pub enum Event {
     Connected {
         width: u16,
         height: u16,
+    },
+    DisplayControl {
+        max_area: u32,
+    },
+    ResizeResult {
+        applied: bool,
     },
     Ended,
     Error {

@@ -1,5 +1,6 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
 mod connection;
+mod display;
 mod tls;
 mod transport;
 
@@ -16,7 +17,13 @@ use ironrdp::{
     pdu::RDP_HINT,
     session::{image::DecodedImage, ActiveStageBuilder, ActiveStageOutput},
 };
-use std::time::Duration;
+use std::{
+    sync::{
+        atomic::{AtomicU32, Ordering},
+        Arc,
+    },
+    time::Duration,
+};
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
     net::TcpStream,
@@ -74,6 +81,7 @@ async fn run(rx: &mut mpsc::Receiver<Request>) -> Result<()> {
     };
     config.validate()?;
     event(Event::Connecting).await?;
+    let display_area = Arc::new(AtomicU32::new(0));
     let (mut connector, mut framed, public_key, certificate, fingerprint) =
         tokio::time::timeout(Duration::from_secs(20), async {
             let stream = TcpStream::connect((config.host.as_str(), config.port))
@@ -85,6 +93,10 @@ async fn run(rx: &mut mpsc::Receiver<Request>) -> Result<()> {
             let address = stream.local_addr().map_err(|_| "RDP socket setup failed")?;
             let mut framed = Framed::new(stream);
             let mut connector = ClientConnector::new(connection::config(&config), address);
+            connector.attach_static_channel(
+                ironrdp::dvc::DrdynvcClient::new()
+                    .with_dynamic_channel(display::DisplayControl(display_area.clone())),
+            );
             while !connector.should_perform_security_upgrade() {
                 framed.step(&mut connector).await?;
             }
@@ -145,6 +157,8 @@ async fn run(rx: &mut mpsc::Receiver<Request>) -> Result<()> {
         result.message_channel_id,
         result.compression_type,
     );
+    let display_channel = display::channel_id(&result.static_channels);
+    let mut channel_guard = display::ChannelGuard::default();
     let mut stage = ActiveStageBuilder {
         static_channels: result.static_channels,
         io_channel_id,
@@ -167,14 +181,47 @@ async fn run(rx: &mut mpsc::Receiver<Request>) -> Result<()> {
     let mut input = Database::new();
     let mut revision: u32 = 1;
     let mut sent_revision = 0;
+    let mut reported_area = 0;
+    let mut pending_resize: Option<cygnus_rdp_protocol::DesktopSize> = None;
+    let resize_deadline = tokio::time::sleep(Duration::from_secs(15));
+    tokio::pin!(resize_deadline);
     loop {
         let outputs = tokio::select! {
+            _ = &mut resize_deadline, if pending_resize.is_some() => {
+                pending_resize = None;
+                event(Event::ResizeResult { applied: false }).await?;
+                continue;
+            },
             request = rx.recv() => match request {
                 None | Some(Request::Disconnect) => {
                     if let Ok(outputs) = stage.graceful_shutdown() {
                         for out in outputs { if let ActiveStageOutput::ResponseFrame(bytes) = out { let _ = framed.write(&bytes).await; } }
                     }
                     return Ok(());
+                }
+                Some(Request::Resize { size }) => {
+                    size.validate()?;
+                    if pending_resize.is_some() { return Err("A resolution change is already pending"); }
+                    if size.area() > display_area.load(Ordering::Acquire) {
+                        event(Event::ResizeResult { applied: false }).await?;
+                        continue;
+                    }
+                    if size.width == image.width() && size.height == image.height() {
+                        event(Event::ResizeResult { applied: true }).await?;
+                        continue;
+                    }
+                    let bytes = display::resize(&mut stage, size.width, size.height, config.desktop_scale_factor)?;
+                    // Release held input before the server replaces its desktop.
+                    let releases = input.release_all();
+                    for batch in releases.chunks(128) {
+                        for output in stage.process_fastpath_input(&mut image, batch).map_err(|_| "RDP input release failed")? {
+                            if let ActiveStageOutput::ResponseFrame(bytes) = output { framed.write(&bytes).await?; }
+                        }
+                    }
+                    framed.write(&bytes).await?;
+                    pending_resize = Some(size);
+                    resize_deadline.as_mut().reset(tokio::time::Instant::now() + Duration::from_secs(15));
+                    continue;
                 }
                 Some(Request::Frame) => {
                     if revision == sent_revision { packet(1, &[]).await?; }
@@ -189,6 +236,7 @@ async fn run(rx: &mut mpsc::Receiver<Request>) -> Result<()> {
                 }
                 Some(Request::Input { events }) => {
                     if events.len() > MAX_INPUT_BATCH || events.iter().any(|e| !e.validate()) { return Err("Invalid RDP input"); }
+                    if pending_resize.is_some() { continue; }
                     let mut outputs = Vec::new();
                     for event in events {
                         let events = match event {
@@ -213,6 +261,10 @@ async fn run(rx: &mut mpsc::Receiver<Request>) -> Result<()> {
             bytes = framed.read(&RDP_HINT) => {
                 let bytes = bytes?;
                 let action = ironrdp::pdu::find_size(&bytes).map_err(|_| "Invalid RDP frame")?.ok_or("Incomplete RDP frame")?.action;
+                if action == ironrdp::pdu::Action::X224 {
+                    let ctx = ironrdp::pdu::mcs::decode_send_data_indication(&bytes).map_err(|_| "Invalid RDP channel frame")?;
+                    if display_channel == Some(ctx.channel_id) { channel_guard.check(ctx.user_data)?; }
+                }
                 stage.process(&mut image, action, &bytes).map_err(|_| "RDP display update failed")?
             }
         };
@@ -250,17 +302,32 @@ async fn run(rx: &mut mpsc::Receiver<Request>) -> Result<()> {
                         .map_err(|_| "RDP desktop reactivation timed out")??;
                     valid_size(size.width, size.height)?;
                     image = DecodedImage::new(PixelFormat::RgbA32, size.width, size.height);
-                    stage = ActiveStageBuilder {
-                        static_channels: Default::default(),
-                        io_channel_id,
-                        user_channel_id,
-                        message_channel_id,
-                        share_id,
-                        compression_type,
-                        enable_server_pointer: false,
-                        pointer_software_rendering: false,
-                    }
-                    .build();
+                    // Keep the SVC/DVC processors (and capability state) alive across
+                    // reactivation. Reset only the graphics decoder and share identifier.
+                    stage.set_share_id(share_id);
+                    stage.set_fastpath_processor(
+                        ironrdp::session::fast_path::ProcessorBuilder {
+                            io_channel_id,
+                            user_channel_id,
+                            share_id,
+                            enable_server_pointer: false,
+                            pointer_software_rendering: false,
+                            bulk_decompressor: compression_type
+                                .map(|kind| {
+                                    use ironrdp::pdu::rdp::client_info::CompressionType as Pdu;
+                                    use ironrdp_bulk::{BulkCompressor, CompressionType as Bulk};
+                                    BulkCompressor::new(match kind {
+                                        Pdu::K8 => Bulk::Rdp4,
+                                        Pdu::K64 => Bulk::Rdp5,
+                                        Pdu::Rdp6 => Bulk::Rdp6,
+                                        Pdu::Rdp61 => Bulk::Rdp61,
+                                    })
+                                    .map_err(|_| "RDP decompressor setup failed")
+                                })
+                                .transpose()?,
+                        }
+                        .build(),
+                    );
                     input = Database::new();
                     revision = revision.wrapping_add(1);
                     event(Event::Connected {
@@ -268,9 +335,24 @@ async fn run(rx: &mut mpsc::Receiver<Request>) -> Result<()> {
                         height: size.height,
                     })
                     .await?;
+                    if let Some(requested) = pending_resize.take() {
+                        event(Event::ResizeResult {
+                            applied: requested.width == size.width
+                                && requested.height == size.height,
+                        })
+                        .await?;
+                    }
                 }
                 // No auxiliary transport, clipboard, drive, audio or smart-card channel is registered.
                 _ => {}
+            }
+        }
+        let area = display_area.load(Ordering::Acquire);
+        if area != reported_area {
+            reported_area = area;
+            event(Event::DisplayControl { max_area: area }).await?;
+            if area == 0 && pending_resize.take().is_some() {
+                event(Event::ResizeResult { applied: false }).await?;
             }
         }
     }

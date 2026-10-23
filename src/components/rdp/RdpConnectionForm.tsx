@@ -95,7 +95,7 @@ export default function RdpConnectionForm({ config, onChange, onConnect }: Props
         {[100, 125, 150, 175, 200, 250, 300, 400, 500].map((scale) => <option key={scale} value={String(scale)}>{scale}%</option>)}
         {config.desktop_scale_factor !== 0 && ![100, 125, 150, 175, 200, 250, 300, 400, 500].includes(config.desktop_scale_factor) && <option value={String(config.desktop_scale_factor)}>{config.desktop_scale_factor}%</option>}
       </Select></label>
-      <p className="rdp-note">Desktop size and Windows scale apply on connection; the server may keep an existing session’s scale. Fit and 1:1 views can be changed while connected.</p>
+      <p className="rdp-note">Windows scale applies on connection; the server may keep an existing session’s scale. Remote resolution can be changed when the server supports it. Fit and 1:1 views are always available.</p>
       <div className="rdp-actions">
         <button type="button" disabled={!name.trim()} onClick={() => void save(false)}>{selected === null ? "Save connection" : "Save changes"}</button>
         {selected !== null && <><button type="button" disabled={!name.trim()} onClick={() => void save(true)}>Save as new</button><button type="button" onClick={() => setConfirmDelete(true)}>Delete saved connection</button></>}

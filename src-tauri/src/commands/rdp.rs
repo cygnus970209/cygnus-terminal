@@ -3,7 +3,7 @@ use crate::db::{
     Database,
 };
 use crate::rdp::{CertificateApproval, RdpManager, SessionEvent};
-use cygnus_rdp_protocol::{ConnectConfig, Input};
+use cygnus_rdp_protocol::{ConnectConfig, DesktopSize, Input};
 use std::sync::Arc;
 use tauri::{
     ipc::{Channel, Response},
@@ -47,6 +47,16 @@ pub fn rdp_input(
     manager.input(&session_id, events)
 }
 #[tauri::command]
+pub fn rdp_resize(
+    window: WebviewWindow,
+    manager: State<'_, RdpManager>,
+    session_id: String,
+    size: DesktopSize,
+) -> Result<(), String> {
+    main_window(&window)?;
+    manager.resize(&session_id, size)
+}
+#[tauri::command]
 pub async fn rdp_frame(
     window: WebviewWindow,
     manager: State<'_, RdpManager>,
@@ -56,14 +66,13 @@ pub async fn rdp_frame(
     manager.frame(&session_id).await.map(Response::new)
 }
 #[tauri::command]
-pub fn rdp_close(
+pub async fn rdp_close(
     window: WebviewWindow,
     manager: State<'_, RdpManager>,
     session_id: String,
 ) -> Result<(), String> {
     main_window(&window)?;
-    manager.close(&session_id);
-    Ok(())
+    manager.close_and_wait(&session_id).await
 }
 
 #[tauri::command]

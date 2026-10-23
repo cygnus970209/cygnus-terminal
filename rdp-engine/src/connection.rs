@@ -35,7 +35,12 @@ pub fn config(params: &ConnectConfig) -> connector::Config {
             width: params.width,
             height: params.height,
         },
-        bitmap: None,
+        // MS-RDPEDISP 1.5 advises against Display Control with RemoteFX.
+        bitmap: Some(ironrdp::connector::BitmapConfig {
+            lossy_compression: false,
+            color_depth: 32,
+            codecs: ironrdp::pdu::rdp::capability_sets::BitmapCodecs::default(),
+        }),
         client_build: 0,
         client_name: "Cygnus".into(),
         client_dir: "C:\\Windows\\System32\\mstscax.dll".into(),

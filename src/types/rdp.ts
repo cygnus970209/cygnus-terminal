@@ -20,6 +20,8 @@ export type RdpEvent =
   | { type: "connecting" | "authenticating" | "ended" }
   | RdpCertificate
   | { type: "connected"; width: number; height: number }
+  | { type: "display_control"; max_area: number }
+  | { type: "resize_result"; applied: boolean }
   | { type: "error"; message: string };
 export type RdpInput =
   | { type: "text"; text: string }

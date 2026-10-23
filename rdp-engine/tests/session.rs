@@ -7,7 +7,10 @@ use ironrdp_server::{
 use std::{
     num::{NonZeroU16, NonZeroUsize},
     process::Stdio,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex,
+    },
     time::Duration,
 };
 use tokio::{
@@ -22,20 +25,27 @@ use tokio_rustls::{
 use x509_cert::der::Decode;
 
 #[derive(Clone)]
-struct Display(Arc<Mutex<Vec<String>>>);
+struct Display {
+    inputs: Arc<Mutex<Vec<String>>>,
+    size: tokio::sync::watch::Sender<DesktopSize>,
+    ignore_resize: Arc<AtomicBool>,
+}
 impl RdpServerInputHandler for Display {
     fn keyboard(&mut self, event: KeyboardEvent) {
-        self.0.lock().unwrap().push(format!("key:{event:?}"));
+        self.inputs.lock().unwrap().push(format!("key:{event:?}"));
     }
     fn mouse(&mut self, event: MouseEvent) {
-        self.0.lock().unwrap().push(format!("mouse:{event:?}"));
+        self.inputs.lock().unwrap().push(format!("mouse:{event:?}"));
     }
 }
-struct Updates;
+struct Updates(tokio::sync::watch::Receiver<DesktopSize>);
 #[async_trait::async_trait]
 impl RdpServerDisplayUpdates for Updates {
     async fn next_update(&mut self) -> anyhow::Result<Option<DisplayUpdate>> {
-        tokio::time::sleep(Duration::from_millis(100)).await;
+        tokio::select! {
+            _ = self.0.changed() => return Ok(Some(DisplayUpdate::Resize(*self.0.borrow_and_update()))),
+            _ = tokio::time::sleep(Duration::from_millis(100)) => {}
+        }
         // Constant red bitmap in the top-left corner; the client must decode BGRA -> RGBA.
         Ok(Some(DisplayUpdate::Bitmap(BitmapUpdate {
             x: 0,
@@ -51,13 +61,22 @@ impl RdpServerDisplayUpdates for Updates {
 #[async_trait::async_trait]
 impl RdpServerDisplay for Display {
     async fn size(&mut self) -> DesktopSize {
-        DesktopSize {
-            width: 640,
-            height: 480,
-        }
+        *self.size.borrow()
     }
     async fn updates(&mut self) -> anyhow::Result<Box<dyn RdpServerDisplayUpdates>> {
-        Ok(Box::new(Updates))
+        Ok(Box::new(Updates(self.size.subscribe())))
+    }
+    fn request_layout(
+        &mut self,
+        layout: ironrdp::displaycontrol::pdu::DisplayControlMonitorLayout,
+    ) {
+        if !self.ignore_resize.load(Ordering::Acquire) {
+            let (width, height) = layout.monitors()[0].dimensions();
+            self.size.send_replace(DesktopSize {
+                width: width as u16,
+                height: height as u16,
+            });
+        }
     }
 }
 struct Fixture {
@@ -67,6 +86,7 @@ struct Fixture {
     server: JoinHandle<()>,
     inputs: Arc<Mutex<Vec<String>>>,
     port: u16,
+    ignore_resize: Arc<AtomicBool>,
 }
 impl Drop for Fixture {
     fn drop(&mut self) {
@@ -96,7 +116,16 @@ impl Fixture {
         let addr = socket.local_addr().unwrap();
         drop(socket);
         let inputs = Arc::new(Mutex::new(Vec::new()));
-        let display = Display(inputs.clone());
+        let ignore_resize = Arc::new(AtomicBool::new(false));
+        let (size, _) = tokio::sync::watch::channel(DesktopSize {
+            width: 640,
+            height: 480,
+        });
+        let display = Display {
+            inputs: inputs.clone(),
+            size,
+            ignore_resize: ignore_resize.clone(),
+        };
         let mut server = RdpServer::builder()
             .with_addr(addr)
             .with_hybrid(TlsAcceptor::from(Arc::new(tls)), public_key)
@@ -131,6 +160,7 @@ impl Fixture {
             server,
             inputs,
             port: addr.port(),
+            ignore_resize,
         }
     }
     async fn send(&mut self, request: Request) {
@@ -140,7 +170,7 @@ impl Fixture {
         self.stdin.flush().await.unwrap();
     }
     async fn read(&mut self) -> (u8, Vec<u8>) {
-        tokio::time::timeout(Duration::from_secs(10), async {
+        tokio::time::timeout(Duration::from_secs(20), async {
             let kind = self.stdout.read_u8().await.unwrap();
             let length = self.stdout.read_u32_le().await.unwrap() as usize;
             assert!(length <= MAX_FRAME_BYTES);
@@ -205,6 +235,12 @@ async fn real_nla_session_waits_for_approval_then_decodes_pixels_sends_input_and
         Event::Error { message } => panic!("{message}"),
         _ => panic!("expected connected"),
     }
+    assert!(matches!(
+        f.event().await,
+        Event::DisplayControl {
+            max_area: 2_073_600
+        }
+    ));
     tokio::time::sleep(Duration::from_millis(250)).await;
     f.send(Request::Frame).await;
     let (kind, bytes) = f.read().await;
@@ -213,8 +249,8 @@ async fn real_nla_session_waits_for_approval_then_decodes_pixels_sends_input_and
         frame_header(&bytes).map(|(w, h, _)| (w, h)),
         Some((640, 480))
     );
-    // RemoteFX uses lossy color conversion; allow a small red-channel error.
-    assert!((250..=255).contains(&bytes[16]));
+    // RemoteFX is not advertised when Display Control is enabled.
+    assert_eq!(bytes[16], 255);
     assert_eq!(&bytes[17..20], &[0, 0, 255]);
     f.send(Request::Input {
         events: vec![
@@ -350,4 +386,75 @@ async fn incorrect_password_is_a_failure_without_echoing_the_secret_inner() {
         _ => panic!("bad credentials must fail"),
     }
     assert!(f.inputs.lock().unwrap().is_empty());
+}
+
+#[tokio::test]
+async fn display_control_resizes_twice_and_ignored_request_keeps_connection_alive() {
+    tokio::task::LocalSet::new()
+        .run_until(async {
+            let mut f = Fixture::new().await;
+            let fingerprint = f.begin().await;
+            f.send(Request::Authenticate {
+                fingerprint,
+                password: "test-password".into(),
+            })
+            .await;
+            assert!(matches!(f.event().await, Event::Authenticating));
+            assert!(matches!(f.event().await, Event::Connected { .. }));
+            assert!(matches!(
+                f.event().await,
+                Event::DisplayControl {
+                    max_area: 2_073_600
+                }
+            ));
+            for (width, height) in [(1280, 720), (1920, 1080)] {
+                f.send(Request::Resize {
+                    size: cygnus_rdp_protocol::DesktopSize { width, height },
+                })
+                .await;
+                match f.event().await {
+                    Event::Connected {
+                        width: actual_width,
+                        height: actual_height,
+                    } => assert_eq!((actual_width, actual_height), (width, height)),
+                    Event::Error { message } => panic!("{message}"),
+                    _ => panic!("expected reactivation"),
+                }
+                assert!(matches!(
+                    f.event().await,
+                    Event::ResizeResult { applied: true }
+                ));
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                f.send(Request::Frame).await;
+                let (kind, frame) = f.read().await;
+                assert_eq!(kind, 1);
+                assert_eq!(
+                    frame_header(&frame).map(|(w, h, _)| (w, h)),
+                    Some((width, height))
+                );
+                assert_eq!(&frame[16..20], &[255, 0, 0, 255]);
+            }
+            f.ignore_resize.store(true, Ordering::Release);
+            f.send(Request::Resize {
+                size: cygnus_rdp_protocol::DesktopSize {
+                    width: 640,
+                    height: 480,
+                },
+            })
+            .await;
+            assert!(matches!(
+                f.event().await,
+                Event::ResizeResult { applied: false }
+            ));
+            f.send(Request::Frame).await;
+            let (kind, frame) = f.read().await;
+            assert_eq!(kind, 1);
+            assert_eq!(
+                frame_header(&frame).map(|(w, h, _)| (w, h)),
+                Some((1920, 1080))
+            );
+            f.send(Request::Disconnect).await;
+            assert!(matches!(f.event().await, Event::Ended));
+        })
+        .await;
 }
