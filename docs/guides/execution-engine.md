@@ -146,6 +146,7 @@ macOS/Linux에서는 앱 데이터 폴더를 `0700`, DB 및 기존 WAL/SHM/journ
 ## 검증
 
 ```sh
+bun run rdp:build # Cargo를 직접 실행하기 전에 앱에 포함할 RDP 엔진 준비
 cargo test --manifest-path src-tauri/Cargo.toml --lib execution::tests
 cargo test --manifest-path src-tauri/Cargo.toml
 bun run build

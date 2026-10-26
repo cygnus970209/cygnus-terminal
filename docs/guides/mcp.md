@@ -218,6 +218,7 @@ cygnus_sftp_write({"profile_id": 42, "path": "deploy-notes.txt", "content": "배
 소유권은 도구 구현에서도 검사한다. UI 설정은 Tauri IPC로만 변경할 수 있다.
 
 ```sh
+bun run rdp:build # Cargo를 직접 실행하기 전에 앱에 포함할 RDP 엔진 준비
 cargo test --manifest-path src-tauri/Cargo.toml --lib mcp::tests
 cargo test --manifest-path src-tauri/Cargo.toml
 bun run build
