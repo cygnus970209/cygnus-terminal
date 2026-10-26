@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.1.17] - 2026-10-26
+
+### Added
+- Show the Vault picker for password prompts in MCP terminals. Choose a saved credential, submit a masked one-time password without saving it, or dismiss the picker and type directly. Open it manually with **Password / Vault** for custom prompts.
+- Save server OS and shell preferences, detect the connected environment, and show Windows CPU, memory, disk, service and event information over SSH with PowerShell.
+- Add **Beta** read-only IIS tools for sites, application pools, bindings, recent events and bounded log previews.
+- Add **Beta** embedded RDP sessions with saved connection profiles, certificate fingerprint confirmation, keyboard and mouse input, short Unicode text input, DPI selection, reconnect and server-supported live resolution changes.
+- Add opt-in RDP text clipboard exchange with explicit previews and send/copy actions. Sharing defaults to off and stops when the panel closes, the tab changes or the app loses focus; file, image and automatic clipboard synchronization are not supported.
+
+### Changed
+- Verify OS and shell capabilities before using Windows or Linux server tools. Include server environment settings and RDP profile metadata in connection backups without exporting credentials or certificate trust.
+- Keep MCP Vault decryption in the backend and apply the same output protection as manual typing: entered secrets and subsequent output are excluded from AI results and execution history.
+
+### Fixed
+- Restore keyboard focus when switching to a running MCP terminal. Discard password drafts when leaving a tab or finishing a job, and prevent stale input from reaching a reused tab's next job.
+- Limit RDP dynamic channel negotiation to supported protocol versions so servers do not send unsupported compressed channel messages.
+
+### Known limitations
+- Windows monitoring, IIS and embedded RDP remain **Beta**. Automated fixtures and local protocol integration tests pass; real Windows server policies, native IME and installed-app interoperability still need broader validation. WinRM/PSRP and IIS configuration changes are not included.
+
 ## [0.1.16] - 2026-10-12
 
 ### Added
