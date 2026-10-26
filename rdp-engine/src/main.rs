@@ -1,4 +1,6 @@
 #![cfg_attr(target_os = "windows", windows_subsystem = "windows")]
+mod channel;
+mod clipboard;
 mod connection;
 mod display;
 mod tls;
@@ -93,10 +95,8 @@ async fn run(rx: &mut mpsc::Receiver<Request>) -> Result<()> {
             let address = stream.local_addr().map_err(|_| "RDP socket setup failed")?;
             let mut framed = Framed::new(stream);
             let mut connector = ClientConnector::new(connection::config(&config), address);
-            connector.attach_static_channel(
-                ironrdp::dvc::DrdynvcClient::new()
-                    .with_dynamic_channel(display::DisplayControl(display_area.clone())),
-            );
+            connector.attach_static_channel(display::DynamicChannels::new(display_area.clone()));
+            connector.attach_static_channel(clipboard::ManualClipboard::default());
             while !connector.should_perform_security_upgrade() {
                 framed.step(&mut connector).await?;
             }
@@ -159,6 +159,10 @@ async fn run(rx: &mut mpsc::Receiver<Request>) -> Result<()> {
     );
     let display_channel = display::channel_id(&result.static_channels);
     let mut channel_guard = display::ChannelGuard::default();
+    let clipboard_channel = result
+        .static_channels
+        .get_channel_id_by_type::<clipboard::ManualClipboard>();
+    let mut clipboard_guard = channel::Fragments::<16384>::default();
     let mut stage = ActiveStageBuilder {
         static_channels: result.static_channels,
         io_channel_id,
@@ -185,8 +189,29 @@ async fn run(rx: &mut mpsc::Receiver<Request>) -> Result<()> {
     let mut pending_resize: Option<cygnus_rdp_protocol::DesktopSize> = None;
     let resize_deadline = tokio::time::sleep(Duration::from_secs(15));
     tokio::pin!(resize_deadline);
+    let mut clipboard_state = (false, false);
+    let mut clipboard_timer = tokio::time::interval(Duration::from_millis(250));
     loop {
+        if let Some(clip) = stage.get_svc_processor_mut::<clipboard::ManualClipboard>() {
+            let state = clip.state();
+            let events = clip.events();
+            if state != clipboard_state {
+                clipboard_state = state;
+                event(Event::ClipboardState {
+                    available: state.0,
+                    remote_text: state.1,
+                })
+                .await?;
+            }
+            for value in events {
+                event(value).await?;
+            }
+        }
         let outputs = tokio::select! {
+            _ = clipboard_timer.tick() => {
+                if let Some(clip) = stage.get_svc_processor_mut::<clipboard::ManualClipboard>() { clip.tick(); }
+                continue;
+            },
             _ = &mut resize_deadline, if pending_resize.is_some() => {
                 pending_resize = None;
                 event(Event::ResizeResult { applied: false }).await?;
@@ -198,6 +223,16 @@ async fn run(rx: &mut mpsc::Receiver<Request>) -> Result<()> {
                         for out in outputs { if let ActiveStageOutput::ResponseFrame(bytes) = out { let _ = framed.write(&bytes).await; } }
                     }
                     return Ok(());
+                }
+                Some(Request::Clipboard { request_id, action }) => {
+                    if let Some(clip) = stage.get_svc_processor_mut::<clipboard::ManualClipboard>() {
+                        let messages = clip.action(request_id, action)?;
+                        if !messages.is_empty() {
+                            let bytes = stage.process_svc_processor_messages(ironrdp::svc::SvcProcessorMessages::<clipboard::ManualClipboard>::new(messages)).map_err(|_| "Clipboard request failed")?;
+                            framed.write(&bytes).await?;
+                        }
+                    } else { event(Event::ClipboardResult { request_id, outcome: cygnus_rdp_protocol::ClipboardOutcome::Unavailable }).await?; }
+                    continue;
                 }
                 Some(Request::Resize { size }) => {
                     size.validate()?;
@@ -264,6 +299,7 @@ async fn run(rx: &mut mpsc::Receiver<Request>) -> Result<()> {
                 if action == ironrdp::pdu::Action::X224 {
                     let ctx = ironrdp::pdu::mcs::decode_send_data_indication(&bytes).map_err(|_| "Invalid RDP channel frame")?;
                     if display_channel == Some(ctx.channel_id) { channel_guard.check(ctx.user_data)?; }
+                    if clipboard_channel == Some(ctx.channel_id) { clipboard_guard.check(ctx.user_data)?; }
                 }
                 stage.process(&mut image, action, &bytes).map_err(|_| "RDP display update failed")?
             }
@@ -343,7 +379,7 @@ async fn run(rx: &mut mpsc::Receiver<Request>) -> Result<()> {
                         .await?;
                     }
                 }
-                // No auxiliary transport, clipboard, drive, audio or smart-card channel is registered.
+                // No auxiliary transport, drive, audio or smart-card channel is registered.
                 _ => {}
             }
         }

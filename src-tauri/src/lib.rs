@@ -269,6 +269,7 @@ pub fn run() {
             commands::rdp_input,
             commands::rdp_frame,
             commands::rdp_resize,
+            commands::rdp_clipboard,
             commands::rdp_close,
             commands::rdp_forget_certificate,
             commands::rdp_list_profiles,

@@ -21,6 +21,7 @@ fn fixture(phase: u8) -> (RdpManager, Arc<Session>, mpsc::Receiver<Request>) {
         tx,
         display_area: AtomicU32::new(0),
         resizing: AtomicBool::new(false),
+        clipboard: Mutex::new(ClipboardGate::default()),
         phase: AtomicU8::new(phase),
         endpoint: Endpoint::new(&ConnectConfig {
             host: "test.local".into(),
@@ -429,4 +430,130 @@ fn failed_resize_enqueue_releases_pending_slot_without_closing_connection() {
     assert!(!session.cancel.is_cancelled());
     rx.try_recv().unwrap();
     manager.resize("test", size).unwrap();
+}
+
+#[test]
+fn clipboard_requires_explicit_permission_bounded_text_and_fresh_request_ids() {
+    use cygnus_rdp_protocol::ClipboardOutcome;
+    let (manager, session, mut rx) = fixture(3);
+    assert!(manager
+        .clipboard("test", 1, ClipboardAction::Enable)
+        .is_err());
+    session.clipboard.lock().unwrap().set_available(true);
+    assert!(manager.clipboard("test", 1, ClipboardAction::Read).is_err());
+    manager
+        .clipboard("test", 1, ClipboardAction::Enable)
+        .unwrap();
+    rx.try_recv().unwrap();
+    assert!(manager.clipboard("test", 2, ClipboardAction::Read).is_err());
+    session
+        .clipboard
+        .lock()
+        .unwrap()
+        .accept(1, &ClipboardOutcome::Enabled)
+        .unwrap();
+    for text in ["x".repeat(2049), "control\0text".into()] {
+        assert!(manager
+            .clipboard("test", 2, ClipboardAction::Send { text })
+            .is_err());
+    }
+    manager
+        .clipboard(
+            "test",
+            2,
+            ClipboardAction::Send {
+                text: "한글\r\n🙂".into(),
+            },
+        )
+        .unwrap();
+    assert!(matches!(
+        rx.try_recv().unwrap(),
+        Request::Clipboard { request_id: 2, .. }
+    ));
+    assert!(manager.clipboard("test", 3, ClipboardAction::Read).is_err());
+    assert!(session
+        .clipboard
+        .lock()
+        .unwrap()
+        .accept(2, &ClipboardOutcome::Offered)
+        .unwrap());
+    assert!(manager.clipboard("test", 2, ClipboardAction::Read).is_err());
+}
+#[test]
+fn stopping_clipboard_supersedes_a_pending_read_and_discards_late_secrets() {
+    use cygnus_rdp_protocol::ClipboardOutcome;
+    let (manager, session, _rx) = fixture(3);
+    session.clipboard.lock().unwrap().set_available(true);
+    manager
+        .clipboard("test", 1, ClipboardAction::Enable)
+        .unwrap();
+    session
+        .clipboard
+        .lock()
+        .unwrap()
+        .accept(1, &ClipboardOutcome::Enabled)
+        .unwrap();
+    manager.clipboard("test", 2, ClipboardAction::Read).unwrap();
+    manager
+        .clipboard("test", 3, ClipboardAction::Disable)
+        .unwrap();
+    assert!(!session
+        .clipboard
+        .lock()
+        .unwrap()
+        .accept(
+            2,
+            &ClipboardOutcome::Received {
+                text: "late secret".into()
+            }
+        )
+        .unwrap());
+    assert!(session
+        .clipboard
+        .lock()
+        .unwrap()
+        .accept(3, &ClipboardOutcome::Disabled)
+        .unwrap());
+    assert!(manager.clipboard("test", 4, ClipboardAction::Read).is_err());
+    assert!(!session
+        .clipboard
+        .lock()
+        .unwrap()
+        .accept(
+            2,
+            &ClipboardOutcome::Received {
+                text: "unsolicited".into()
+            }
+        )
+        .unwrap());
+}
+#[test]
+fn clipboard_invalid_reply_and_failed_revocation_are_rejected() {
+    use cygnus_rdp_protocol::ClipboardOutcome;
+    let (manager, session, _rx) = fixture(3);
+    session.clipboard.lock().unwrap().set_available(true);
+    manager
+        .clipboard("test", 1, ClipboardAction::Enable)
+        .unwrap();
+    assert!(session
+        .clipboard
+        .lock()
+        .unwrap()
+        .accept(
+            1,
+            &ClipboardOutcome::Received {
+                text: "wrong operation".into()
+            }
+        )
+        .is_err());
+    for _ in 0..15 {
+        session.tx.try_send(Request::Frame).ok().unwrap();
+    }
+    assert!(manager
+        .clipboard("test", 2, ClipboardAction::Disable)
+        .is_err());
+    assert!(session.cancel.is_cancelled());
+    assert!(manager
+        .clipboard("test", 3, ClipboardAction::Enable)
+        .is_err());
 }

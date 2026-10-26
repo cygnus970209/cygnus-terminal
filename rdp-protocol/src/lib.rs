@@ -7,6 +7,7 @@ pub const MAX_FRAME_BYTES: usize = 16 + MAX_WIDTH as usize * MAX_HEIGHT as usize
 pub const MAX_CONTROL_BYTES: usize = 16 * 1024;
 pub const MAX_INPUT_BATCH: usize = 64;
 pub const MAX_TEXT_UNITS: usize = 256;
+pub const MAX_CLIPBOARD_UNITS: usize = 2048;
 pub const WIRE_VERSION: u32 = 1;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -77,6 +78,32 @@ impl DesktopSize {
     }
 }
 
+/// Plain Unicode text only; CR/LF/TAB are data, never keyboard actions.
+pub fn valid_clipboard_text(text: &str) -> bool {
+    !text.is_empty()
+        && text.encode_utf16().count() <= MAX_CLIPBOARD_UNITS
+        && !text
+            .chars()
+            .any(|c| c.is_control() && !matches!(c, '\r' | '\n' | '\t'))
+}
+#[derive(Deserialize, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ClipboardAction {
+    Enable,
+    Disable,
+    Send { text: String },
+    Read,
+}
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+pub enum ClipboardOutcome {
+    Enabled,
+    Disabled,
+    Offered,
+    Received { text: String },
+    Unavailable,
+}
+
 // Intentionally no Debug: authentication/input must never appear in diagnostics.
 #[derive(Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
@@ -93,6 +120,10 @@ pub enum Request {
     },
     Resize {
         size: DesktopSize,
+    },
+    Clipboard {
+        request_id: u32,
+        action: ClipboardAction,
     },
     Frame,
     Disconnect,
@@ -166,6 +197,14 @@ pub enum Event {
     },
     ResizeResult {
         applied: bool,
+    },
+    ClipboardState {
+        available: bool,
+        remote_text: bool,
+    },
+    ClipboardResult {
+        request_id: u32,
+        outcome: ClipboardOutcome,
     },
     Ended,
     Error {

@@ -1,30 +1,75 @@
-//! Only Display Control is registered. Bound both channel fragmentation layers
+//! Only Display Control is registered on drdynvc. Bound both channel fragmentation layers
 //! before IronRDP's unbounded SVC/DVC reassemblers consume remote data.
 use ironrdp::{
-    core::{decode, Decode, ReadCursor},
+    core::{decode, encode_vec, AsAny},
     displaycontrol::{
         pdu::{DisplayControlMonitorLayout, DisplayControlPdu},
         CHANNEL_NAME,
     },
     dvc::{
         encode_dvc_messages,
-        pdu::{DrdynvcDataPdu, DrdynvcServerPdu},
+        pdu::{CapabilitiesRequestPdu, CapsVersion, DrdynvcDataPdu, DrdynvcServerPdu},
         DrdynvcClient, DvcClientProcessor, DvcMessage, DvcProcessor,
     },
-    pdu::{
-        pdu_other_err,
-        rdp::vc::{ChannelControlFlags, ChannelPduHeader},
-        PduResult,
-    },
+    pdu::{gcc::ChannelName, pdu_other_err, PduResult},
     session::ActiveStage,
-    svc::ChannelFlags,
+    svc::{
+        ChannelFlags, CompressionCondition, SvcClientProcessor, SvcMessage, SvcProcessor,
+        SvcProcessorMessages,
+    },
 };
 use std::sync::{
     atomic::{AtomicU32, Ordering},
     Arc,
 };
 
-pub struct DisplayControl(pub Arc<AtomicU32>);
+/// ironrdp-dvc 0.8 echoes DVC V3 capabilities but cannot decode its compressed PDUs.
+/// Negotiate V1/V2 only, while retaining bitmap bulk compression independently.
+#[derive(Debug)]
+pub struct DynamicChannels(DrdynvcClient);
+impl DynamicChannels {
+    pub fn new(area: Arc<AtomicU32>) -> Self {
+        Self(DrdynvcClient::new().with_dynamic_channel(DisplayControl(area)))
+    }
+}
+impl AsAny for DynamicChannels {
+    fn as_any(&self) -> &dyn std::any::Any {
+        self
+    }
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+impl SvcClientProcessor for DynamicChannels {}
+impl SvcProcessor for DynamicChannels {
+    fn channel_name(&self) -> ChannelName {
+        self.0.channel_name()
+    }
+    fn compression_condition(&self) -> CompressionCondition {
+        CompressionCondition::Never
+    }
+    fn start(&mut self) -> PduResult<Vec<SvcMessage>> {
+        self.0.start()
+    }
+    fn process(&mut self, payload: &[u8]) -> PduResult<Vec<SvcMessage>> {
+        let message: DrdynvcServerPdu =
+            decode(payload).map_err(|_| pdu_other_err!("Invalid dynamic channel message"))?;
+        if let DrdynvcServerPdu::Capabilities(CapabilitiesRequestPdu::V3 { charges, .. }) = message
+        {
+            let compatible = DrdynvcServerPdu::Capabilities(CapabilitiesRequestPdu::new(
+                CapsVersion::V2,
+                Some(charges),
+            ));
+            let bytes = encode_vec(&compatible)
+                .map_err(|_| pdu_other_err!("Invalid dynamic channel capabilities"))?;
+            self.0.process(&bytes)
+        } else {
+            self.0.process(payload)
+        }
+    }
+}
+
+struct DisplayControl(Arc<AtomicU32>);
 impl ironrdp::core::AsAny for DisplayControl {
     fn as_any(&self) -> &dyn std::any::Any {
         self
@@ -70,7 +115,8 @@ pub fn resize(
     scale: u32,
 ) -> crate::Result<Vec<u8>> {
     let channel = stage
-        .get_dvc::<DisplayControl>()
+        .get_svc_processor::<DynamicChannels>()
+        .and_then(|channels| channels.0.get_dvc_by_type_id::<DisplayControl>())
         .and_then(|dvc| dvc.channel_id())
         .ok_or("Display Control is unavailable")?;
     let pdu: DisplayControlPdu = DisplayControlMonitorLayout::new_single_primary_monitor(
@@ -84,76 +130,45 @@ pub fn resize(
     let messages = encode_dvc_messages(channel, vec![Box::new(pdu)], ChannelFlags::empty())
         .map_err(|_| "Invalid display request")?;
     stage
-        .encode_dvc_messages(messages)
+        .process_svc_processor_messages(SvcProcessorMessages::<DynamicChannels>::new(messages))
         .map_err(|_| "Display Control is unavailable")
 }
 
-const MAX_CHANNEL_BYTES: usize = 4096;
 #[derive(Default)]
-pub struct ChannelGuard {
-    length: usize,
-    bytes: Vec<u8>,
-}
+pub struct ChannelGuard(crate::channel::Fragments<4096>);
 impl ChannelGuard {
     pub fn check(&mut self, payload: &[u8]) -> crate::Result<()> {
-        let mut cursor = ReadCursor::new(payload);
-        let header =
-            ChannelPduHeader::decode(&mut cursor).map_err(|_| "Invalid display channel header")?;
-        let flags = header.flags;
-        let allowed = ChannelControlFlags::FLAG_FIRST
-            | ChannelControlFlags::FLAG_LAST
-            | ChannelControlFlags::FLAG_SHOW_PROTOCOL;
-        if header.length == 0
-            || header.length as usize > MAX_CHANNEL_BYTES
-            || !(flags & !allowed).is_empty()
-        {
-            return Err("Unsupported display channel payload");
-        }
-        if flags.contains(ChannelControlFlags::FLAG_FIRST) {
-            if self.length != 0 {
-                return Err("Overlapping display channel fragments");
-            }
-            self.length = header.length as usize;
-        }
-        if self.length != header.length as usize
-            || cursor.is_empty()
-            || self.bytes.len() + cursor.len() > self.length
-        {
-            return Err("Invalid display channel fragment");
-        }
-        self.bytes.extend_from_slice(cursor.remaining());
-        if flags.contains(ChannelControlFlags::FLAG_LAST) {
-            if self.bytes.len() != self.length {
-                return Err("Incomplete display channel message");
-            }
+        if let Some(bytes) = self.0.check(payload)? {
             let message: DrdynvcServerPdu =
-                decode(&self.bytes).map_err(|_| "Invalid dynamic channel message")?;
+                decode(&bytes).map_err(|_| "Invalid dynamic channel message")?;
             if let DrdynvcServerPdu::Data(DrdynvcDataPdu::DataFirst(first)) = message {
                 if first.length() == 0
-                    || first.length() as usize > MAX_CHANNEL_BYTES
+                    || first.length() > 4096
                     || first.data().len() > first.length() as usize
                 {
                     return Err("Oversized dynamic channel message");
                 }
             }
-            self.length = 0;
-            self.bytes.clear();
         }
         Ok(())
     }
 }
 
 pub fn channel_id(channels: &ironrdp::svc::StaticChannelSet) -> Option<u16> {
-    channels.get_channel_id_by_type::<DrdynvcClient>()
+    channels.get_channel_id_by_type::<DynamicChannels>()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use ironrdp::{
-        core::encode_vec,
         displaycontrol::pdu::DisplayControlCapabilities,
-        dvc::pdu::{CapabilitiesRequestPdu, CapsVersion, DataFirstPdu},
+        dvc::pdu::{
+            CapabilitiesResponsePdu, CreateRequestPdu, DataFirstPdu, DataPdu, DrdynvcClientPdu,
+        },
+        pdu::{mcs::SendDataRequest, x224::X224},
+        session::ActiveStageBuilder,
+        svc::{make_channel_definition, StaticChannelSet},
     };
 
     fn chunk(bytes: &[u8], length: u32, flags: u32) -> Vec<u8> {
@@ -161,6 +176,89 @@ mod tests {
         out.extend(flags.to_le_bytes());
         out.extend(bytes);
         out
+    }
+    #[test]
+    fn dynamic_channels_negotiate_only_supported_versions() {
+        for (offered, expected) in [
+            (CapsVersion::V1, CapsVersion::V1),
+            (CapsVersion::V2, CapsVersion::V2),
+            (CapsVersion::V3, CapsVersion::V2),
+        ] {
+            let mut channels = DynamicChannels::new(Arc::new(AtomicU32::new(0)));
+            let request = DrdynvcServerPdu::Capabilities(CapabilitiesRequestPdu::new(
+                offered,
+                Some([1, 2, 3, 4]),
+            ));
+            let replies = channels.process(&encode_vec(&request).unwrap()).unwrap();
+            assert_eq!(replies.len(), 1);
+            let bytes = replies[0].encode_unframed_pdu().unwrap();
+            assert_eq!(
+                decode::<DrdynvcClientPdu>(&bytes).unwrap(),
+                DrdynvcClientPdu::Capabilities(CapabilitiesResponsePdu::new(expected))
+            );
+        }
+    }
+    #[test]
+    fn wrapped_display_channel_preserves_lookup_capabilities_and_resize_routing() {
+        let area = Arc::new(AtomicU32::new(0));
+        let mut channels = StaticChannelSet::new();
+        channels.insert(DynamicChannels::new(area.clone()));
+        let channel = channels.get_by_type::<DynamicChannels>().unwrap();
+        assert!(make_channel_definition(channel).options.is_empty());
+        channels.attach_channel_id(std::any::TypeId::of::<DynamicChannels>(), 1005);
+        assert_eq!(channel_id(&channels), Some(1005));
+        let mut stage = ActiveStageBuilder {
+            static_channels: channels,
+            user_channel_id: 1001,
+            io_channel_id: 1003,
+            message_channel_id: None,
+            share_id: 1,
+            compression_type: None,
+            enable_server_pointer: false,
+            pointer_software_rendering: false,
+        }
+        .build();
+        let channel = stage.get_svc_processor_mut::<DynamicChannels>().unwrap();
+        channel
+            .process(
+                &encode_vec(&DrdynvcServerPdu::Create(CreateRequestPdu::new(
+                    7,
+                    CHANNEL_NAME.into(),
+                )))
+                .unwrap(),
+            )
+            .unwrap();
+        let caps: DisplayControlPdu = DisplayControlCapabilities::new(1, 1920, 1080)
+            .unwrap()
+            .into();
+        channel
+            .process(
+                &encode_vec(&DrdynvcServerPdu::Data(DrdynvcDataPdu::Data(DataPdu::new(
+                    7,
+                    encode_vec(&caps).unwrap(),
+                ))))
+                .unwrap(),
+            )
+            .unwrap();
+        assert_eq!(area.load(Ordering::Acquire), 1920 * 1080);
+        let bytes = resize(&mut stage, 1280, 720, 150).unwrap();
+        let request: X224<SendDataRequest<'_>> = decode(&bytes).unwrap();
+        assert_eq!(request.0.channel_id, 1005);
+        let data = crate::channel::Fragments::<4096>::default()
+            .check(&request.0.user_data)
+            .unwrap()
+            .unwrap();
+        let DrdynvcClientPdu::Data(data) = decode(&data).unwrap() else {
+            panic!("expected dynamic channel data");
+        };
+        assert_eq!(data.channel_id(), 7);
+        let DrdynvcDataPdu::Data(data) = data else {
+            panic!("expected unfragmented display layout");
+        };
+        let DisplayControlPdu::MonitorLayout(layout) = decode(data.data()).unwrap() else {
+            panic!("expected display layout");
+        };
+        assert_eq!(layout.monitors()[0].dimensions(), (1280, 720));
     }
     #[test]
     fn capabilities_decode_header_validate_length_and_clear_on_close() {

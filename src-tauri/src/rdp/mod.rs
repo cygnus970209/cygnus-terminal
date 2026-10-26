@@ -1,11 +1,13 @@
 //! The bundled helper isolates IronRDP's crypto dependencies from SSH. Private pipes only.
+mod clipboard;
 use crate::db::{
     rdp::{valid_fingerprint, Endpoint},
     Database,
 };
+use clipboard::ClipboardGate;
 use cygnus_rdp_protocol::{
-    frame_header, ConnectConfig, DesktopSize, Event, Input, Request, MAX_CONTROL_BYTES,
-    MAX_FRAME_BYTES, MAX_INPUT_BATCH,
+    frame_header, ClipboardAction, ConnectConfig, DesktopSize, Event, Input, Request,
+    MAX_CONTROL_BYTES, MAX_FRAME_BYTES, MAX_INPUT_BATCH,
 };
 use serde::{Deserialize, Serialize};
 use std::{
@@ -64,6 +66,7 @@ struct Session {
     phase: AtomicU8,
     display_area: AtomicU32,
     resizing: AtomicBool,
+    clipboard: Mutex<ClipboardGate>,
     endpoint: Endpoint,
     certificate: Mutex<Option<PendingCertificate>>,
     frame: Mutex<Option<FrameReply>>,
@@ -106,6 +109,7 @@ impl RdpManager {
             phase: AtomicU8::new(0),
             display_area: AtomicU32::new(0),
             resizing: AtomicBool::new(false),
+            clipboard: Mutex::new(ClipboardGate::default()),
             endpoint,
             certificate: Mutex::new(None),
             frame: Mutex::new(None),
@@ -224,6 +228,30 @@ impl RdpManager {
             "RDP input queue is full; the session was closed to release pressed keys".into()
         })
     }
+    pub fn clipboard(
+        &self,
+        id: &str,
+        request_id: u32,
+        mut action: ClipboardAction,
+    ) -> Result<(), String> {
+        let session = self.session(id)?;
+        if session.cancel.is_cancelled() || session.phase.load(Ordering::Acquire) != 3 {
+            if let ClipboardAction::Send { text } = &mut action {
+                text.zeroize();
+            }
+            return Err("RDP is not connected".into());
+        }
+        let disabling = matches!(action, ClipboardAction::Disable);
+        let result = session
+            .clipboard
+            .lock()
+            .unwrap()
+            .queue(&session.tx, request_id, action);
+        if disabling && result.is_err() {
+            session.cancel.cancel();
+        }
+        result
+    }
     pub fn resize(&self, id: &str, size: DesktopSize) -> Result<(), String> {
         size.validate()?;
         let session = self.session(id)?;
@@ -308,6 +336,13 @@ async fn write_request(
     mut request: Request,
 ) -> Result<(), String> {
     let encoded = serde_json::to_vec(&request);
+    if let Request::Clipboard {
+        action: ClipboardAction::Send { text },
+        ..
+    } = &mut request
+    {
+        text.zeroize();
+    }
     if let Request::Authenticate { password, .. } = &mut request {
         password.zeroize();
     }
@@ -387,12 +422,16 @@ async fn run(
     });
     let result = async {
         write_request(&mut stdin, Request::Connect { config }).await?;
+        let mut clipboard_timer = tokio::time::interval(Duration::from_secs(1));
         let deadline = tokio::time::sleep(Duration::from_secs(40));
         tokio::pin!(deadline);
         loop {
             tokio::select! {
                 biased;
                 _ = session.cancel.cancelled() => break Ok(()),
+                _ = clipboard_timer.tick() => {
+                    if session.clipboard.lock().unwrap().expired() { break Err("RDP clipboard stopped responding".into()); }
+                },
                 _ = &mut deadline, if session.phase.load(Ordering::Acquire) != 3 => break Err("RDP connection or certificate approval timed out".into()),
                 packet = packets.recv() => {
                     let (kind, body) = packet.ok_or("RDP engine stopped")??;
@@ -410,6 +449,14 @@ async fn run(
                                 *session.certificate.lock().unwrap() = Some(PendingCertificate { fingerprint: fingerprint.clone(), saved: saved_fingerprint.clone() });
                                 session.phase.store(1, Ordering::Release);
                                 deadline.as_mut().reset(tokio::time::Instant::now() + Duration::from_secs(190));
+                            }
+                            Event::ClipboardState { available, .. } => {
+                                if session.phase.load(Ordering::Acquire) != 3 { break Err("Invalid clipboard state".into()); }
+                                session.clipboard.lock().unwrap().set_available(*available);
+                            }
+                            Event::ClipboardResult { request_id, outcome } => {
+                                if session.phase.load(Ordering::Acquire) != 3 { break Err("Invalid clipboard response".into()); }
+                                if !session.clipboard.lock().unwrap().accept(*request_id, outcome)? { continue; }
                             }
                             Event::DisplayControl { max_area } => {
                                 if session.phase.load(Ordering::Acquire) != 3 || *max_area > u32::from(cygnus_rdp_protocol::MAX_WIDTH) * u32::from(cygnus_rdp_protocol::MAX_HEIGHT) { break Err("Invalid RDP display capability".into()); }
@@ -457,6 +504,13 @@ async fn run(
     while let Ok(mut request) = requests.try_recv() {
         if let Request::Authenticate { password, .. } = &mut request {
             password.zeroize();
+        }
+        if let Request::Clipboard {
+            action: ClipboardAction::Send { text },
+            ..
+        } = &mut request
+        {
+            text.zeroize();
         }
     }
     result

@@ -3,7 +3,7 @@ use crate::db::{
     Database,
 };
 use crate::rdp::{CertificateApproval, RdpManager, SessionEvent};
-use cygnus_rdp_protocol::{ConnectConfig, DesktopSize, Input};
+use cygnus_rdp_protocol::{ClipboardAction, ConnectConfig, DesktopSize, Input};
 use std::sync::Arc;
 use tauri::{
     ipc::{Channel, Response},
@@ -45,6 +45,17 @@ pub fn rdp_input(
 ) -> Result<(), String> {
     main_window(&window)?;
     manager.input(&session_id, events)
+}
+#[tauri::command]
+pub fn rdp_clipboard(
+    window: WebviewWindow,
+    manager: State<'_, RdpManager>,
+    session_id: String,
+    request_id: u32,
+    action: ClipboardAction,
+) -> Result<(), String> {
+    main_window(&window)?;
+    manager.clipboard(&session_id, request_id, action)
 }
 #[tauri::command]
 pub fn rdp_resize(

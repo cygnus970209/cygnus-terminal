@@ -16,12 +16,16 @@ export interface RdpCertificate {
   valid_from: string;
   valid_until: string;
 }
+export type RdpClipboardAction = { type: "enable" | "disable" | "read" } | { type: "send"; text: string };
+export type RdpClipboardOutcome = { type: "enabled" | "disabled" | "offered" | "unavailable" } | { type: "received"; text: string };
 export type RdpEvent =
   | { type: "connecting" | "authenticating" | "ended" }
   | RdpCertificate
   | { type: "connected"; width: number; height: number }
   | { type: "display_control"; max_area: number }
   | { type: "resize_result"; applied: boolean }
+  | { type: "clipboard_state"; available: boolean; remote_text: boolean }
+  | { type: "clipboard_result"; request_id: number; outcome: RdpClipboardOutcome }
   | { type: "error"; message: string };
 export type RdpInput =
   | { type: "text"; text: string }

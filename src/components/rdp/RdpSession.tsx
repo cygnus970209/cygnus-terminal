@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "re
 import { Channel, invoke } from "@tauri-apps/api/core";
 import RdpConnectionForm from "./RdpConnectionForm";
 import RdpCertificateForm from "./RdpCertificateForm";
+import RdpClipboardPanel from "./RdpClipboardPanel";
+import useRdpClipboard from "./useRdpClipboard";
 import RdpTextInput from "./RdpTextInput";
 import Select from "../common/Select";
 import useRdpViewport from "./useRdpViewport";
@@ -50,7 +52,10 @@ export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleCh
   const inputs = useRef<RdpInputQueue | null>(null);
   const frameRequest = useRef<{ id: string; promise: Promise<ArrayBuffer> } | null>(null);
 
+  const clipboard = useRdpClipboard(() => currentId.current, () => disconnect("Clipboard sharing could not be stopped. The connection was closed."));
+
   const clearSession = useCallback(() => {
+    clipboard.reset();
     currentId.current = null;
     frameRequest.current = null;
     inputs.current?.close();
@@ -61,7 +66,7 @@ export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleCh
     setTextInput(false);
     setDisplayArea(0); setResizing(false); setResizeNotice(null);
     resizePending.current = false; resizeSerial.current++;
-  }, []);
+  }, [clipboard.reset]);
 
   const disconnect = useCallback((message?: string) => {
     const attempt = ++generation.current;
@@ -112,7 +117,8 @@ export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleCh
     onTitleChange(tabId, `RDP · ${name || settings.host}`);
     const onEvent = (event: RdpEvent) => {
       if (generation.current !== attempt) return;
-      if (event.type === "certificate") { setCertificate(event); setPhase("certificate"); }
+      if (event.type === "clipboard_state" || event.type === "clipboard_result") { clipboard.handle(event); }
+      else if (event.type === "certificate") { setCertificate(event); setPhase("certificate"); }
       else if (event.type === "connected") {
         remoteSize.current = { width: event.width, height: event.height };
         setSize(remoteSize.current);
@@ -174,8 +180,8 @@ export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleCh
   }, [phase, sessionId, disconnect]);
 
   useEffect(() => {
-    if (!isActive) { inputs.current?.release(); setTextInput(false); }
-  }, [isActive]);
+    if (!isActive) { inputs.current?.release(); setTextInput(false); clipboard.stop(); }
+  }, [isActive, clipboard.stop]);
 
   useEffect(() => {
     if (phase !== "connected" || !sessionId || !isActive) return;
@@ -249,6 +255,7 @@ export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleCh
         <Select aria-label="RDP display view" value={viewMode} onValueChange={(value) => setViewMode(value as "fit" | "pixels")}>
           <option value="fit">Fit to window</option><option value="pixels">1:1 pixels</option>
         </Select>
+        <button aria-pressed={clipboard.open} onClick={clipboard.toggle}>Clipboard</button>
         <button disabled={resizing} aria-pressed={textInput} onClick={() => setTextInput((open) => !open)}>Text input / 한글</button>
       </>}
       {phase === "connected" && <button disabled={resizing} onClick={() => {
@@ -266,6 +273,7 @@ export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleCh
       <button disabled={!displayArea || resizing || resolution === `${size.width}x${size.height}`} onClick={() => void resizeRemote()}>{resizing ? "Applying…" : "Apply resolution"}</button>
       <span className="rdp-note" role="status">{resizing ? "Waiting for the server. Remote input is paused…" : resizeNotice ?? (displayArea ? "Changes this session only. Saved profiles stay unchanged." : "The server has not enabled live resolution changes. Reconnect to change desktop size.")}</span>
     </div>}
+    {phase === "connected" && isActive && clipboard.open && <RdpClipboardPanel clipboard={clipboard} />}
     {phase === "connected" && isActive && textInput && <RdpTextInput onClose={closeTextInput} onSend={(text) => {
       inputs.current?.push({ type: "text", text });
     }} />}

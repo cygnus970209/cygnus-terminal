@@ -1,4 +1,6 @@
 //! Exercises the actual bundled client against a loopback RDP/NLA server.
+#[path = "support/clipboard.rs"]
+mod clipboard_server;
 use cygnus_rdp_protocol::{frame_header, ConnectConfig, Event, Input, Request, MAX_FRAME_BYTES};
 use ironrdp_server::{
     BitmapUpdate, Credentials, DesktopSize, DisplayUpdate, KeyboardEvent, MouseEvent, PixelFormat,
@@ -95,6 +97,9 @@ impl Drop for Fixture {
 }
 impl Fixture {
     async fn new() -> Self {
+        Self::with_clipboard(None).await
+    }
+    async fn with_clipboard(clipboard: Option<clipboard_server::ClipboardServer>) -> Self {
         let _ = rustls::crypto::ring::default_provider().install_default();
         let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
         let public_key = x509_cert::Certificate::from_der(cert.cert.der())
@@ -131,6 +136,9 @@ impl Fixture {
             .with_hybrid(TlsAcceptor::from(Arc::new(tls)), public_key)
             .with_input_handler(display.clone())
             .with_display_handler(display)
+            .with_cliprdr_factory(
+                clipboard.map(|c| Box::new(c) as Box<dyn ironrdp_server::CliprdrServerFactory>),
+            )
             .build();
         server.set_credentials(Some(Credentials {
             username: "test-user".into(),
@@ -457,4 +465,59 @@ async fn display_control_resizes_twice_and_ignored_request_keeps_connection_aliv
             assert!(matches!(f.event().await, Event::Ended));
         })
         .await;
+}
+
+#[tokio::test]
+async fn real_nla_clipboard_transfers_only_explicit_text_in_both_directions() {
+    use cygnus_rdp_protocol::{ClipboardAction, ClipboardOutcome};
+    use ironrdp::cliprdr::{backend::ClipboardMessage, pdu::ClipboardFormatId};
+    tokio::task::LocalSet::new().run_until(async {
+        let clipboard = clipboard_server::ClipboardServer::default();
+        let mut f = Fixture::with_clipboard(Some(clipboard.clone())).await;
+        let fingerprint = f.begin().await;
+        f.send(Request::Authenticate { fingerprint, password: "test-password".into() }).await;
+        assert!(matches!(f.event().await, Event::Authenticating));
+        assert!(matches!(f.event().await, Event::Connected { .. }));
+        let mut display = false;
+        let mut clip = false;
+        while !display || !clip {
+            match f.event().await {
+                Event::DisplayControl { .. } => display = true,
+                Event::ClipboardState { available: true, .. } => clip = true,
+                Event::Error { message } => panic!("{message}"),
+                _ => panic!("unexpected initialization event"),
+            }
+        }
+        assert!(clipboard.received.lock().unwrap().is_empty());
+        assert_eq!(*clipboard.requests.lock().unwrap(), 0);
+        f.send(Request::Clipboard { request_id: 1, action: ClipboardAction::Enable }).await;
+        assert!(matches!(f.event().await, Event::ClipboardResult { request_id: 1, outcome: ClipboardOutcome::Enabled }));
+        clipboard.offer();
+        assert!(matches!(f.event().await, Event::ClipboardState { available: true, remote_text: true }));
+        assert_eq!(*clipboard.requests.lock().unwrap(), 0);
+        f.send(Request::Clipboard { request_id: 2, action: ClipboardAction::Read }).await;
+        assert!(matches!(f.event().await, Event::ClipboardResult { request_id: 2, outcome: ClipboardOutcome::Received { text } } if text == "서버🙂\r\nremote text"));
+        let text = format!("한글🙂\r\n{}", "가".repeat(1800)); // fragmented CLIPRDR payload
+        f.send(Request::Clipboard { request_id: 3, action: ClipboardAction::Send { text: text.clone() } }).await;
+        assert!(matches!(f.event().await, Event::ClipboardState { available: true, remote_text: false }));
+        assert!(matches!(f.event().await, Event::ClipboardResult { request_id: 3, outcome: ClipboardOutcome::Offered }));
+        tokio::time::timeout(Duration::from_secs(3), async {
+            while clipboard.received.lock().unwrap().is_empty() { tokio::time::sleep(Duration::from_millis(10)).await; }
+        }).await.unwrap();
+        assert_eq!(clipboard.received.lock().unwrap().as_slice(), &[text]);
+        clipboard.offer();
+        assert!(matches!(f.event().await, Event::ClipboardState { available: true, remote_text: true }));
+        assert_eq!(*clipboard.requests.lock().unwrap(), 1, "metadata must not fetch remote text");
+        f.send(Request::Clipboard { request_id: 4, action: ClipboardAction::Read }).await;
+        assert!(matches!(f.event().await, Event::ClipboardResult { request_id: 4, outcome: ClipboardOutcome::Received { text } } if text == "서버🙂\r\nremote text"));
+        assert_eq!(*clipboard.requests.lock().unwrap(), 2);
+        f.send(Request::Clipboard { request_id: 5, action: ClipboardAction::Disable }).await;
+        assert!(matches!(f.event().await, Event::ClipboardResult { request_id: 5, outcome: ClipboardOutcome::Disabled }));
+        clipboard.send(ClipboardMessage::SendInitiatePaste(ClipboardFormatId::CF_UNICODETEXT));
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        assert_eq!(clipboard.received.lock().unwrap().len(), 1);
+        assert!(f.inputs.lock().unwrap().is_empty(), "clipboard never synthesizes paste or Enter keys");
+        f.send(Request::Disconnect).await;
+        assert!(matches!(f.event().await, Event::Ended));
+    }).await;
 }
