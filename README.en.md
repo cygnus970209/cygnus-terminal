@@ -19,7 +19,7 @@ Cygnus is a desktop terminal for people working across servers and network equip
 
 | Your task | What Cygnus provides |
 | --- | --- |
-| Connect to servers and devices | SSH, Telnet, Serial, and local shells in one tabbed workspace |
+| Connect to servers and devices | SSH, Telnet, Serial, local shells, and RDP (Beta) in one tabbed workspace |
 | Reconnect quickly | Saved connections, reusable groups, favorites, search, and filters |
 | Enter credentials | Encrypted Vault, server mappings, and credential selection at SSH prompts |
 | Manage files | Dedicated SFTP window, local/remote panels, server-to-server transfers, and transfer progress |
@@ -31,11 +31,12 @@ Cygnus is a desktop terminal for people working across servers and network equip
 ![Connections page with SSH, Telnet, and Serial profiles](docs/media/connections.png)
 
 - **SSH**: password/key authentication, Jump Host, Agent Forwarding, and host-key verification.
+- **RDP (Beta)**: save Windows desktop connections through **New connection → RDP (Beta)**, then search, favorite, connect, edit, or delete them in the same library.
 - **Telnet**: access legacy servers and network equipment.
 - **Serial**: save COM/TTY paths and baud rates, even before a device is plugged in.
 - **Local Shell**: open a local terminal tab when you need one.
 
-Once a group is saved with a connection, select it from the list next time. Use protocol/group filters and favorites to find a connection, then choose **Save** or **Save & Connect**.
+Once a group is saved with an SSH, Telnet, or Serial connection, select it from the list next time. Use protocol/group filters and favorites to find a connection, then choose **Save** or **Save & Connect**. RDP connections do not currently have group assignments.
 
 Drag tabs to reorder them, or right-click for **Close other tabs / Close tabs to the left / Close tabs to the right / Pin tab**. **F10** toggles the active tab’s pin (**Fn+F10** on some Mac keyboards). Pinned tabs stay on the left and survive bulk closing; their close button or **Close tab** still closes them directly. Dragging reorders within the pinned or regular group. Focus a tab and press **Shift+F10** to open its menu with the keyboard.
 
