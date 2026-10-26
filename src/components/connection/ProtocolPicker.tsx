@@ -1,11 +1,11 @@
-import type { ConnectionProtocol } from "../../types";
+import type { ConnectionChoice } from "../../types/connection";
 
 export default function ProtocolPicker({
   value,
   onChange,
 }: {
-  value: ConnectionProtocol;
-  onChange?: (protocol: ConnectionProtocol) => void;
+  value: ConnectionChoice;
+  onChange?: (protocol: ConnectionChoice) => void;
 }) {
   return (
     <div
@@ -13,7 +13,7 @@ export default function ProtocolPicker({
       role="group"
       aria-label="Connection protocol"
     >
-      {(["ssh", "telnet", "serial"] as const).map((protocol) => (
+      {(["ssh", "rdp", "telnet", "serial"] as const).map((protocol) => (
         <button
           key={protocol}
           type="button"
@@ -21,7 +21,7 @@ export default function ProtocolPicker({
           disabled={!onChange && value !== protocol}
           onClick={() => onChange?.(protocol)}
         >
-          {protocol === "serial" ? "Serial" : protocol.toUpperCase()}
+          {protocol === "rdp" ? "RDP (Beta)" : protocol === "serial" ? "Serial" : protocol.toUpperCase()}
         </button>
       ))}
     </div>

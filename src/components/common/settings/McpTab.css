@@ -17,7 +17,17 @@
 .mcp-consent small { margin-top: 4px; }
 .mcp-settings fieldset { margin: 0; padding: 12px; border: 1px solid var(--border); border-radius: 6px; min-width: 0; }
 .mcp-settings legend { padding: 0 4px; }
-.mcp-profiles { max-height: 160px; overflow-y: auto; display: flex; flex-direction: column; gap: 12px; }
+.mcp-profiles { max-height: 280px; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; margin-top: 8px; }
+.mcp-server-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(100px, 160px); gap: 8px; }
+.mcp-server-filters > input { min-width: 0; padding: 8px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-tertiary); color: var(--text-primary); font: inherit; }
+.mcp-server-summary { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px; margin: 8px 0; color: var(--text-secondary); }
+.mcp-server-summary label { display: flex; align-items: center; gap: 4px; }
+.mcp-server-actions { margin: 0; }
+.mcp-profile { padding: 8px; border-radius: 4px; cursor: pointer; }
+.mcp-profile:hover { background: var(--bg-hover); }
+.mcp-profile-selected { background: var(--bg-hover); }
+.mcp-settings .mcp-server-hint, .mcp-settings .mcp-server-locked { margin-top: 8px; font-size: 11px; }
+@media (max-width: 600px) { .mcp-server-filters { grid-template-columns: 1fr; } }
 .mcp-profile, .mcp-permission { display: flex; gap: 8px; align-items: flex-start; line-height: 1.5; }
 .mcp-profile span { min-width: 0; overflow-wrap: anywhere; }
 .mcp-profile strong { font-weight: 500; }
@@ -37,4 +47,11 @@
 .mcp-client-setup .mcp-heading { flex-wrap: wrap; }
 .mcp-client-setup code { font-family: var(--font-mono); overflow-wrap: anywhere; }
 .mcp-config-path { display: block; margin-top: 4px; color: var(--text-secondary); }
+.mcp-authorized-clients { display: flex; flex-direction: column; gap: 12px; border-top: 1px solid var(--border); padding-top: 16px; }
+.mcp-authorized-clients h3 { margin: 0; font-size: 14px; }
+.mcp-authorized-client { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 4px; }
+.mcp-authorized-client > div { min-width: 0; overflow-wrap: anywhere; }
+.mcp-authorized-client button { flex-shrink: 0; }
+.mcp-connection summary { cursor: pointer; color: var(--text-secondary); }
+.mcp-connection[open] > * + * { margin-top: 12px; }
 .mcp-setup-code { margin: 0; padding: 12px; background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 4px; font-size: 11px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere; }

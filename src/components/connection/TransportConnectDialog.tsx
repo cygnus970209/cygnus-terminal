@@ -1,6 +1,7 @@
+import type { ConnectionChoice } from "../../types/connection";
 import { useEffect, useState, type FormEvent } from "react";
 import { invoke } from "../../services/secureInvoke";
-import type { ConnectionProtocol, Profile } from "../../types";
+import type { Profile } from "../../types";
 import Icon from "../common/Icon";
 import ProtocolPicker from "./ProtocolPicker";
 import GroupPicker from "./GroupPicker";
@@ -9,7 +10,7 @@ import "./ConnectDialog.css";
 interface Props {
   protocol: "telnet" | "serial";
   editProfile: Profile | null;
-  onProtocolChange: (protocol: ConnectionProtocol) => void;
+  onProtocolChange: (protocol: ConnectionChoice) => void;
   onCancel: () => void;
   onSaved: () => void;
   onConnect: (config: {

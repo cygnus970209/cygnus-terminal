@@ -35,6 +35,8 @@ export type RdpInput =
   | { type: "release_all" };
 
 export interface RdpProfile { id: number; name: string; config: RdpConfig; }
+export interface RdpLaunch { config: RdpConfig; name: string; profileId?: number; }
+export const DEFAULT_RDP_CONFIG: RdpConfig = { host: "", port: 3389, username: "", domain: "", width: 1280, height: 720, desktop_scale_factor: 0 };
 export interface RdpApproval {
   fingerprint: string;
   password: string;

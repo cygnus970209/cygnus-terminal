@@ -16,13 +16,14 @@ MCP는 기본적으로 꺼져 있으며 **Settings → MCP**에서 직접 켠다
 
 Settings → MCP에서 위 주의사항에 **동의해야 MCP를 시작할 수 있다.**
 동의 여부는 현재 활성화에만 적용하며, 중지 후 다시 시작할 때는 다시 체크해야 한다.
-실행 중에는 **Stop MCP**로 접근을 철회한다. 백엔드도 동의가 없거나 거부된 시작 요청을 차단한다.
+실행 중에는 **Stop MCP**로 접근을 중단한다. OAuth 승인 자체를 철회하려면
+**Authorized clients → Revoke access**를 누른다. 백엔드도 동의가 없거나 거부된 시작 요청을 차단한다.
 
 ## 연결하기
 
 1. Connections에 SSH 프로필을 저장하고, 터미널로 한 번 접속해 호스트 키를 확인한다.
    Jump Host를 사용하면 경유 서버와 대상 서버 모두 신뢰된 키가 필요하다.
-2. Settings → MCP에서 공유할 SSH 서버를 선택한다. 기본 포트는 `38473`이다.
+2. Settings → MCP에서 공유할 SSH 서버를 선택한다. 이름·주소·계정·그룹 검색, 그룹 필터와 **Selected only**로 대상을 좁힐 수 있다. **Select shown / Clear shown**은 현재 보이는 서버만 변경하며 숨겨진 선택은 유지한다. 실행 중에는 검색만 가능하고, 공유 대상을 바꾸려면 먼저 **Stop MCP**를 누른다. 기본 포트는 `38473`이다.
    다른 앱이 사용 중이면 포트를 바꾸거나 `0`으로 설정해 빈 포트를 배정받는다.
 3. 서버 조회만 필요하면 **Allow remote command execution**을 끈다.
    켜면 해당 SSH 계정이 허용하는 임의 명령을 AI 클라이언트가 실행할 수 있다.
@@ -30,64 +31,111 @@ Settings → MCP에서 위 주의사항에 **동의해야 MCP를 시작할 수 �
    별도 허용한다. 둘 다 기본 꺼짐이며, 파일 변경은 파일 조회를 함께 켜야 한다.
    명령 실행을 켜면 SFTP 설정과 관계없이 셸 명령으로 파일에 접근할 수 있다.
 4. 보안·개인정보 주의사항을 읽고 동의 체크박스를 선택한 뒤 **Start MCP**를 누른다.
-   표시된 URL과 토큰을 AI 클라이언트에 등록한다.
-   전송 방식은 **Streamable HTTP**, 인증 헤더는 `Authorization: Bearer <토큰>`이다.
+   하단 **Connect an AI client → App approval (OAuth · Beta)**에서 클라이언트를 선택하고
+   URL만 포함한 등록 내용을 복사한다. 클라이언트에서 인증을 시작한 뒤 Cygnus에서 승인한다.
 5. 저장된 비밀번호를 사용하는 작업에서 잠금 해제 오류가 나오면
    **Unlock saved credentials**를 누른다. 기존 Cygnus 키체인 안내와 OS 권한 절차를
    거쳐 잠금이 해제된다. MCP 요청 자체가 OS 키체인 접근을 승인하지는 않는다.
 
-클라이언트의 HTTP MCP 서버 설정에 전달할 값은 다음과 같다. 설정 파일의 바깥 구조는
-클라이언트마다 다르다. 포트 `0`을 선택했다면 화면에 표시되는 실제 URL을 사용한다.
-
-```json
-{
-  "url": "http://127.0.0.1:38473/mcp",
-  "headers": {
-    "Authorization": "Bearer <Settings에서 복사한 토큰>"
-  }
-}
-```
-
 이 버전은 로컬 클라이언트의 HTTP 연결을 지원한다. stdio 전용 클라이언트, 브라우저에서
-직접 호출하는 클라이언트, 클라우드에서 사용자의 컴퓨터로 연결하는 중계 서비스는 포함하지 않는다.
+MCP 도구를 직접 호출하는 클라이언트, 클라우드에서 사용자의 컴퓨터로 연결하는 중계 서비스는 포함하지 않는다.
+OAuth 승인 안내·복귀 페이지는 브라우저로 열 수 있지만 도구 호출과 앱의 승인 IPC는 노출하지 않는다.
 
 ## 클라이언트별 빠른 등록
 
+### OAuth 앱 승인 (Beta, 기본)
+
+1. 클라이언트에 URL만 등록한다. 기존 수동 `Authorization` 헤더·환경변수 참조는 제거한다.
+   Claude Code는 헤더 인증이 설정되어 있으면 실패해도 OAuth로 전환하지 않는다.
+2. Claude Code는 `/mcp`에서 `cygnus`를 선택해 인증한다. Codex는 등록 시 인증이 시작되지
+   않으면 `codex mcp login cygnus`를 실행한다. Cursor·Kiro는 MCP 연결의 인증 동작을 사용한다.
+3. 브라우저에 표시된 8자리 확인 코드를 확인하고 Cygnus의 **Review connection** 알림을 연다.
+   클라이언트가 보낸 이름은 검증된 신원이 아니므로, 본인이 시작한 브라우저의 코드와
+   반드시 비교한다. 공유 서버·권한을 확인하고 체크한 뒤 **Approve connection**을 누른다.
+4. 브라우저가 클라이언트의 로컬 콜백으로 돌아가면 인증이 완료된다. 요청은 5분 뒤 만료되며,
+   거절·만료된 요청은 클라이언트에서 다시 인증한다. 앱의 터미널 입력 포커스는 알림이 빼앗지 않는다.
+
+등록 명령 예시:
+
+```sh
+codex mcp add cygnus --url 'http://127.0.0.1:38473/mcp'
+```
+
+```sh
+claude mcp add --transport http --scope user cygnus 'http://127.0.0.1:38473/mcp'
+```
+
+기존 `cygnus`가 있으면 먼저 `codex mcp remove cygnus` 또는
+`claude mcp remove --scope user cygnus`로 해당 항목만 제거한다.
+Cursor 데스크톱용 JSON에는 공개 클라이언트 ID `cygnus-cursor-desktop`이 들어간다.
+이 ID는 비밀값이 아니며 `http://localhost:8787/callback`만 허용해 클라우드 콜백으로
+로컬 인증 코드를 보내지 않는다. Kiro는 동적 클라이언트 등록과 `cygnus` scope를 사용한다.
+
+접근 토큰은 15분, 갱신 권한은 마지막 발급·갱신 후 90일 동안 유효하다. 클라이언트가
+갱신 토큰으로 자동 갱신하므로 설정을 다시 복사할 필요가 없다. 갱신 토큰은 매번 교체하며,
+사용한 토큰의 재사용이 감지되면 해당 승인을 철회한다. 앱에는 원문 토큰 대신 무작위
+256비트 갱신 토큰의 SHA-256 해시와 승인 범위만 저장한다. 원문 토큰 보관은 클라이언트가 담당한다.
+
+MCP 중지·앱 종료는 활성 요청을 취소하고 수신을 멈추지만 OAuth 승인은 보존한다.
+다시 시작할 때는 보안 동의가 필요하다. 이전 포트·공유 설정을 불러오며 자동으로 시작하지 않는다.
+같은 포트를 유지해야 기존 OAuth 연결을 재사용할 수 있다. 포트를 바꾸면 새 URL에서 다시 인증한다.
+설정에서 권한을 늘려도 기존 승인에는 자동 적용되지 않는다. 기존 승인의 범위와 현재 공유
+설정이 겹치는 권한만 허용하며, 추가 권한이 필요하면 다시 인증하고 승인한다.
+
+**Authorized clients → Revoke access**는 선택한 승인의 토큰을 무효화하고 그 승인이
+시작한 작업에 취소를 요청한다. 다른 클라이언트의 승인·실행 기록은 분리된다.
+공식 MCP TypeScript SDK로 전체 인증·자동 갱신·도구 연결을 검증했다. 개별 IDE의 실제
+OS 브라우저 복귀는 추가 실사용 검증이 필요한 Beta이며, 호환 문제가 있으면 수동 방식을 사용할 수 있다.
+
+[MCP 인증 사양](https://modelcontextprotocol.io/specification/2026-07-28/basic/authorization) ·
+[Claude Code OAuth](https://code.claude.com/docs/en/mcp#authenticate-with-remote-mcp-servers) ·
+[OpenAI 공식 MCP 문서](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)
+
+### 수동 Bearer 토큰 (호환용)
+
 Settings → MCP 하단의 **Connect an AI client**에서 Codex CLI, Claude Code,
-Cursor, Kiro IDE를 선택한다. MCP를 시작하면 현재 URL과 토큰을 반영한 내용을 복사할 수 있다.
+Cursor, Kiro IDE를 선택하고 **Authentication → Manual bearer token**으로 전환한다.
+MCP를 시작하면 현재 URL과 토큰을 반영한 내용을 복사할 수 있다.
 Windows는 PowerShell, macOS는 zsh/bash 문법과 사용자 설정 경로를 자동으로 표시한다.
 화면의 `<BEARER_TOKEN>`은 미리보기용이며 복사 버튼은 실제 토큰을 넣는다.
+환경변수 설정이나 `${...}` 치환은 필요하지 않다.
 
-Codex CLI와 Claude Code는 설치된 CLI가 필요하다. 복사한 두 줄을 **이 컴퓨터의 터미널**에
-실행한 뒤 같은 터미널에서 `codex` 또는 `claude`를 시작한다. 첫 줄은 현재 셸의
-`CYGNUS_MCP_TOKEN`을 설정하고, 두 번째 줄은 사용자 범위에 `cygnus` 서버를 등록한다.
-설정 파일에는 토큰 자체 대신 환경변수 참조를 저장한다. 새 터미널에서는 토큰을 다시
-설정해야 한다. 등록 명령어를 붙여넣으면 셸 히스토리에는 토큰이 남을 수 있다.
+Codex의 **Copy TOML**은 `http_headers.Authorization`에 실제 토큰이 들어간
+`[mcp_servers.cygnus]` 설정을 복사한다. 아래 사용자 설정 파일에서 기존 `cygnus`
+항목과 하위 헤더 설정을 교체하거나, 없으면 추가한다. 예전에 등록한
+`bearer_token_env_var`와 `env_http_headers` 등 환경변수 참조는 해당 서버에서 제거한다.
+다른 서버·사용자 설정은 보존하고, 저장한 뒤 Codex를 다시 시작한다.
+Codex 구성 디렉터리를 별도로 지정한 경우에는 그 디렉터리의 `config.toml`을 수정한다.
 
-Codex는 `--bearer-token-env-var CYGNUS_MCP_TOKEN`, Claude Code는
-`--transport http --scope user`와 리터럴 `Authorization: Bearer ${CYGNUS_MCP_TOKEN}`
-헤더를 사용한다. 이미 등록한 `cygnus`를 교체해야 하면 화면에 나온 remove 명령으로
-해당 항목을 지운 뒤 다시 등록한다.
-[OpenAI 구성 문서](https://learn.chatgpt.com/docs/config-file/config-reference)와
-[Claude Code MCP 문서](https://code.claude.com/docs/en/mcp)를 기준으로 하며,
-로컬 Codex CLI 0.160.1·Claude Code 2.1.294의 CLI 도움말에서도 옵션을 확인했다.
+Claude Code의 **Copy command**는 `--transport http --scope user`와 실제
+`Authorization: Bearer …` 헤더를 포함한 등록 명령어를 복사한다.
+설치된 Claude Code CLI가 있는 **이 컴퓨터의 터미널**에 붙여넣는다.
+이미 `cygnus`를 등록했다면 `claude mcp remove --scope user cygnus`를 먼저 실행하고
+새 명령어로 다시 등록한다. 등록 후 클라이언트를 다시 연결한다.
+같은 터미널에서 시작하거나 새 터미널마다 토큰을 설정할 필요는 없다.
+토큰은 사용자 설정에 평문으로 저장되고 명령어는 셸 히스토리에도 남을 수 있다.
+[OpenAI MCP 구성 문서](https://learn.chatgpt.com/docs/extend/mcp?surface=cli)와
+[Claude Code MCP 문서](https://code.claude.com/docs/en/mcp)를 참고한다.
+로컬 Codex CLI 0.163.0·Claude Code 2.1.310의 CLI 도움말에서도 지원 옵션을 확인했다.
 
 Cursor와 Kiro IDE는 아래 사용자 설정 파일의 `mcpServers`에 `cygnus` 항목을 병합한다.
 이미 있는 다른 서버 항목을 덮어쓰지 않는다.
 
 | 클라이언트 | macOS | Windows |
 | --- | --- | --- |
+| Codex | `~/.codex/config.toml` | `%USERPROFILE%\.codex\config.toml` |
 | Cursor | `~/.cursor/mcp.json` | `%USERPROFILE%\.cursor\mcp.json` |
 | Kiro IDE | `~/.kiro/settings/mcp.json` | `%USERPROFILE%\.kiro\settings\mcp.json` |
 
 Kiro는 명령 팔레트의 **Kiro: Open user MCP config (JSON)**으로도 열 수 있다.
-복사한 JSON은 URL과 Authorization 헤더의 실제 토큰을 포함하므로 개인 설정에만 저장하고
+복사한 TOML·JSON은 URL과 Authorization 헤더의 실제 토큰을 포함하므로 개인 설정에만 저장하고
 공유 저장소에 넣지 않는다. Kiro의 `autoApprove`는 빈 배열로 유지한다.
 [Cursor 설정 문서](https://cursor.com/docs/mcp) ·
 [Kiro 설정 문서](https://kiro.dev/docs/mcp/configuration/)
 
-MCP를 중지하고 다시 시작하면 토큰이 바뀌며, 포트 0을 사용하면 URL도 바뀔 수 있다.
-새 명령어 또는 JSON을 복사해 갱신하고 클라이언트를 다시 연결한다.
+수동 방식은 MCP를 중지하고 다시 시작하면 토큰이 바뀌며, 포트 0을 사용하면 URL도 바뀔 수 있다.
+선택한 클라이언트는 그대로 유지된다. 새 TOML·명령어·JSON을 복사해 이전 설정을 교체하고
+클라이언트를 다시 연결한다. 이전 토큰이 들어간 설정은 재시작 후 사용할 수 없다.
 이 안내는 같은 컴퓨터에서 실행하는 클라이언트용이다. 원격 개발 환경·컨테이너·WSL 등은
 `127.0.0.1`이 Cygnus를 실행한 컴퓨터를 가리키는지 별도로 확인해야 한다.
 
@@ -191,15 +239,20 @@ cygnus_sftp_write({"profile_id": 42, "path": "deploy-notes.txt", "content": "배
 
 - `127.0.0.1`에만 수신한다. 모든 MCP 요청에 256비트 무작위 토큰 인증을 요구한다.
   Host는 해당 로컬 포트로 제한하고, 브라우저 Origin이 있는 요청은 거부한다.
+  승인·대기 페이지는 브라우저가 보내는 Fetch Metadata도 검사하여 다른 사이트에서
+  유도한 이동이나 이미지·프레임 요청을 차단한다. 인증은 클라이언트가 직접 연 브라우저에서
+  시작한다. 관련 헤더를 보내지 않는 클라이언트에는 기존 Host·Origin·앱 승인 검사가 적용된다.
 - 공유할 서버와 실행 허용 여부를 바꾸려면 중지 후 다시 시작한다.
   접근 범위는 선택한 프로필 ID를 기준으로 하므로, 프로필 편집은 이후 접속 대상에도 반영된다.
-- 토큰과 허용 범위는 디스크에 저장하지 않는다. 앱을 다시 실행하면 MCP는 꺼져 있다.
-  MCP를 중지하고 다시 켤 때마다 새 토큰을 생성하므로 클라이언트 토큰도 갱신한다.
+- 수동 토큰·OAuth 접근 토큰·일회용 코드는 메모리에만 보관한다. OAuth 갱신 토큰의
+  해시·승인 범위·클라이언트 등록 정보·마지막 공유 설정은 사용자 전용 DB에 보관한다.
+  앱을 다시 실행하면 MCP는 꺼져 있다. 수동 방식만 매번 새 토큰을 복사해야 한다.
 - 서버 조회에 비밀번호·개인키 경로·Jump Host 자격 증명을 포함하지 않는다.
   명령과 원격 출력에 포함된 비밀 값을 자동 제거하지는 않는다.
-- MCP는 **현재 활성화에서 자신이 시작한 작업만** 조회·취소할 수 있다.
+- MCP는 **현재 활성화에서 같은 승인으로 시작한 작업만** 조회·취소할 수 있다.
   이전 활성화나 다른 경로에서 만든 작업 기록은 이 토큰으로 읽을 수 없다.
-- **Stop MCP**는 토큰 접근을 폐기하고 이 활성화에서 시작한 작업에 취소를 요청한다.
+- **Stop MCP**는 현재 토큰 접근을 중단하고 이 활성화에서 시작한 작업에 취소를 요청한다.
+  OAuth 승인과 갱신 권한은 유지되며, 영구 철회는 **Revoke access**로 처리한다.
   실제 원격 프로세스 종료는 보장하지 않는다. `remote_outcome_unknown`이 참인 결과나
   응답을 받지 못한 실행 요청은 자동 재시도하지 않는다.
 - MCP 연결이 일시적으로 끊겨도 제출된 작업은 계속된다. Cygnus 앱 자체가 종료되면
@@ -208,8 +261,14 @@ cygnus_sftp_write({"profile_id": 42, "path": "deploy-notes.txt", "content": "배
   새 설치는 디스크 저장 꺼짐이며, 저장하지 않은 완료 결과는 최대 15분·32개·64 MiB의
   메모리 캐시에서만 조회할 수 있다. 결과가 만료·삭제되면 목록에서 빠지고 개별 조회는
   오류를 반환한다. 결과 없음은 원격 실행 실패나 미실행을 뜻하지 않는다.
-- HTTP 요청 본문은 최대 128 KiB, 동시 요청은 32개, 활성화당 작업은 최대 1000개다.
+- MCP 요청 본문은 최대 128 KiB, 동시 요청은 32개, 승인별 활성화당 작업은 최대 1000개다.
   실행 엔진의 동시 작업 한도 16개와 출력·시간 제한도 함께 적용된다.
+- OAuth 요청 본문은 최대 16 KiB, 동시 HTTP 요청은 16개·요청 시간은 15초,
+  대기 승인은 8개, 저장된 승인은 최대 64개다.
+  등록·승인·토큰 발급 요청에는 분당 제한을 적용한다. S256 PKCE, 등록된 로컬 콜백,
+  일회용 코드, 리소스·클라이언트 결합을 검사하며 브라우저 요청으로 승인할 수 없다.
+  동적 등록한 로컬 콜백은 [RFC 8252](https://www.rfc-editor.org/rfc/rfc8252.html#section-7.3)에 따라
+  재인증 시 포트 변경을 허용한다. 호스트·경로는 유지하고, 코드 교환 시에는 승인 요청의 정확한 URI를 요구한다.
 
 ## 구현과 검증
 
@@ -220,6 +279,7 @@ cygnus_sftp_write({"profile_id": 42, "path": "deploy-notes.txt", "content": "배
 ```sh
 bun run rdp:build # Cargo를 직접 실행하기 전에 앱에 포함할 RDP 엔진 준비
 cargo test --manifest-path src-tauri/Cargo.toml --lib mcp::tests
+cargo test --manifest-path src-tauri/Cargo.toml --lib mcp::oauth::tests
 cargo test --manifest-path src-tauri/Cargo.toml
 bun run build
 bun run test
@@ -228,6 +288,15 @@ bun run test
 테스트는 임시 로컬 HTTP·SSH 서버와 메모리 DB를 사용한다. 공식 SDK 클라이언트와의
 연결·SSH 결과 조회, 2025-11-25 프로토콜 초기화, 인증·Host·Origin 검증, 읽기 전용 권한,
 프로필·작업 접근 범위, 키체인 잠금 오류, 중지·취소·토큰 교체를 확인한다.
+
+공식 TypeScript SDK가 로컬에 설치되어 있다면 다음 상호운용 테스트를 추가 실행할 수 있다.
+사용자 클라이언트 설정은 수정하지 않으며 임시 서버와 메모리 자격 증명만 사용한다.
+
+```sh
+CYGNUS_QA_MCP_SDK=/path/to/node_modules/@modelcontextprotocol/sdk \
+  cargo test --manifest-path src-tauri/Cargo.toml --lib \
+  mcp::oauth::tests::official_typescript_sdk_interoperability -- --ignored --nocapture
+```
 SFTP는 메모리 파일시스템을 가진 임시 SSH/SFTP 서버로 조회·읽기·쓰기·이름 변경·삭제,
 권한 분리, 입력·응답 크기 제한, 덮어쓰기 방지, UTF-8 경계, 중지 중 대기 해제를 검증한다.
 실제 사용자의 SSH 서버나 키체인을 사용하지 않는다.

@@ -212,6 +212,10 @@ const MIGRATIONS: &[Migration] = &[
         sql: "ALTER TABLE rdp_profiles ADD COLUMN desktop_scale_factor INTEGER NOT NULL DEFAULT 0
             CHECK(desktop_scale_factor = 0 OR desktop_scale_factor BETWEEN 100 AND 500);",
     },
+    Migration {
+        version: 13,
+        sql: "CREATE TABLE mcp_oauth_state (id INTEGER PRIMARY KEY CHECK(id = 1), value TEXT NOT NULL);",
+    },
 ];
 
 impl Database {

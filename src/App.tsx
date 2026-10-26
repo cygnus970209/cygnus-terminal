@@ -1,3 +1,6 @@
+import type { ConnectionChoice } from "./types/connection";
+import type { RdpLaunch, RdpProfile } from "./types/rdp";
+import RdpConnectDialog from "./components/connection/RdpConnectDialog";
 import { useState, useCallback, useRef, useEffect } from "react";
 import { invoke, keychainNotice } from "./services/secureInvoke";
 import { emit, listen } from "@tauri-apps/api/event";
@@ -7,7 +10,6 @@ import {
   SshConfig,
   Tab,
   type SessionStatus,
-  type ConnectionProtocol,
 } from "./types";
 import TransferDock from "./components/sftp/TransferDock";
 import { TransferJob } from "./types/sftp";
@@ -17,6 +19,7 @@ import ResizablePanel from "./components/common/ResizablePanel";
 import SettingsDialog from "./components/common/SettingsDialog";
 import Terminal from "./components/terminal/Terminal";
 import McpTerminal from "./components/terminal/McpTerminal";
+import McpOAuthApprovalNotice from "./components/common/McpOAuthApproval";
 import type { ExecutionSummary } from "./types/execution";
 import LogViewer from "./components/terminal/LogViewer";
 import MonitorPanel from "./components/terminal/MonitorPanel";
@@ -102,6 +105,7 @@ function App() {
   }, []);
   const [showConnectDialog, setShowConnectDialog] = useState(false);
   const [editProfile, setEditProfile] = useState<Profile | null>(null);
+  const [editRdpProfile, setEditRdpProfile] = useState<RdpProfile | null>(null);
   const [sessionMap, setSessionMap] = useState<Record<string, string>>({});
   const [sftpSessions, setSftpSessions] = useState<
     Record<string, { sftpId: string; homePath: string }>
@@ -131,7 +135,7 @@ function App() {
   const [showSnippets, setShowSnippets] = useState(false);
   const [showVault, setShowVault] = useState(false);
   const [connectionProtocol, setConnectionProtocol] =
-    useState<ConnectionProtocol>("ssh");
+    useState<ConnectionChoice>("ssh");
   // SSH host key 확인 큐. 연속 연결 시 여러 개가 쌓일 수 있어 FIFO 로 하나씩 처리.
   const [hostKeyPrompts, setHostKeyPrompts] = useState<HostKeyPromptPayload[]>(
     [],
@@ -146,7 +150,7 @@ function App() {
   // e.code 사용 — 한영 IME 상태와 무관하게 물리 K 키를 잡는다.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (keychainNotice.getSnapshot()) return;
+      if (keychainNotice.getSnapshot() || document.querySelector(".mcp-oauth-dialog")) return;
       if ((e.metaKey || e.ctrlKey) && e.code === "KeyK") {
         e.preventDefault();
         e.stopPropagation();
@@ -341,9 +345,9 @@ function App() {
     setActiveTabId(id);
   }, []);
 
-  const createRdpTab = useCallback(() => {
+  const createRdpTab = useCallback((launch?: RdpLaunch) => {
     const id = `tab-${++tabCounter}`;
-    setTabs((previous) => [...previous, { id, title: "Remote desktop", type: "rdp" }]);
+    setTabs((previous) => [...previous, { id, title: launch ? `RDP · ${launch.name || launch.config.host}` : "Remote desktop", type: "rdp", rdpLaunch: launch, rdpProfileId: launch?.profileId }]);
     setActiveTabId(id);
   }, []);
 
@@ -657,9 +661,19 @@ function App() {
   }, []);
 
   const handleNewProfile = useCallback(() => {
-    setEditProfile(null);
+    setEditProfile(null); setEditRdpProfile(null);
     setConnectionProtocol("ssh");
     setShowConnectDialog(true);
+  }, []);
+
+  const handleRdpConnect = useCallback((profile: RdpProfile) => {
+    createRdpTab({ config: profile.config, name: profile.name, profileId: profile.id });
+  }, [createRdpTab]);
+  const handleRdpEdit = useCallback((profile: RdpProfile) => {
+    setEditProfile(null); setEditRdpProfile(profile); setConnectionProtocol("rdp"); setShowConnectDialog(true);
+  }, []);
+  const handleRdpProfileChange = useCallback((tabId: string, profileId?: number) => {
+    setTabs((previous) => previous.map((tab) => tab.id === tabId ? { ...tab, rdpProfileId: profileId } : tab));
   }, []);
 
   const handleProfileSaved = useCallback(() => {
@@ -821,6 +835,9 @@ function App() {
                 onConnect={handleConnectProfile}
                 onEdit={handleEditProfile}
                 onNew={handleNewProfile}
+                onRdpConnect={handleRdpConnect} onRdpEdit={handleRdpEdit}
+                activeRdpProfileId={activeTab?.rdpProfileId}
+                connectedRdpProfileIds={tabs.filter((tab) => tab.type === "rdp" && sessionStatuses[tab.id] === "connected").flatMap((tab) => tab.rdpProfileId === undefined ? [] : [tab.rdpProfileId])}
                 reloadKey={profileReloadKey}
                 activeProfileId={activeProfileId}
                 onProfilesLoaded={setKnownProfiles}
@@ -1012,6 +1029,9 @@ function App() {
                   onConnect={handleConnectProfile}
                   onEdit={handleEditProfile}
                   onNew={handleNewProfile}
+                  onRdpConnect={handleRdpConnect} onRdpEdit={handleRdpEdit}
+                  activeRdpProfileId={activeTab?.rdpProfileId}
+                  connectedRdpProfileIds={tabs.filter((tab) => tab.type === "rdp" && sessionStatuses[tab.id] === "connected").flatMap((tab) => tab.rdpProfileId === undefined ? [] : [tab.rdpProfileId])}
                   onLocalShell={createLocalTab}
                   reloadKey={profileReloadKey}
                   onProfilesLoaded={setKnownProfiles}
@@ -1115,7 +1135,8 @@ function App() {
                 ))}
                 {tabs.filter((tab) => tab.type === "rdp").map((tab) => (
                   <RdpSession key={tab.id} tabId={tab.id} isActive={tab.id === activeTabId}
-                    onSessionStatus={handleSessionStatus} onTitleChange={handleTitleChange} />
+                    onSessionStatus={handleSessionStatus} onTitleChange={handleTitleChange}
+                    initialConnection={tab.rdpLaunch} onProfileChange={handleRdpProfileChange} />
                 ))}
               </div>
             </div>
@@ -1208,6 +1229,7 @@ function App() {
       {showSettings && (
         <SettingsDialog onClose={() => setShowSettings(false)} />
       )}
+      <McpOAuthApprovalNotice profiles={knownProfiles} />
 
       {showSnippets && (
         <div
@@ -1245,7 +1267,12 @@ function App() {
         items={paletteItems}
       />
 
-      {showConnectDialog && connectionProtocol !== "ssh" && (
+      {showConnectDialog && connectionProtocol === "rdp" && (
+        <RdpConnectDialog key={editRdpProfile?.id ?? "new"} profile={editRdpProfile}
+          onProtocolChange={setConnectionProtocol} onSaved={handleProfileSaved} onConnect={createRdpTab}
+          onCancel={() => { setShowConnectDialog(false); setEditRdpProfile(null); }} />
+      )}
+      {showConnectDialog && (connectionProtocol === "telnet" || connectionProtocol === "serial") && (
         <TransportConnectDialog
           key={`${connectionProtocol}-${editProfile?.id ?? "new"}`}
           protocol={connectionProtocol}

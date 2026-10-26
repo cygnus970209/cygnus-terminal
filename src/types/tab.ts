@@ -1,10 +1,13 @@
 import type { ExecutionSummary } from "./execution";
+import type { RdpLaunch } from "./rdp";
 
 export type SessionStatus = "connecting" | "connected" | "ended" | "error";
 
 export interface Tab {
   id: string;
   profileId?: number;
+  rdpProfileId?: number;
+  rdpLaunch?: RdpLaunch;
   telnetConfig?: { host: string; port: number };
   serialConfig?: { portName: string; baudRate: number };
   title: string;

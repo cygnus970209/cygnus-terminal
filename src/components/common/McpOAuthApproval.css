@@ -1,0 +1,16 @@
+.mcp-oauth-notice { position: fixed; right: 20px; bottom: 44px; z-index: 1300; display: flex; align-items: center; gap: 12px; padding: 12px; background: var(--bg-secondary); color: var(--text-primary); border: 1px solid var(--accent); border-radius: 6px; font-size: 12px; }
+.mcp-oauth-overlay { position: fixed; inset: 0; z-index: 1400; background: #0009; display: grid; place-items: center; padding: 16px; }
+.mcp-oauth-dialog { box-sizing: border-box; width: min(520px, 100%); max-height: calc(100vh - 32px); overflow-y: auto; padding: 24px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-secondary); color: var(--text-primary); font-size: 12px; line-height: 1.5; }
+.mcp-oauth-dialog h2 { margin: 0 0 12px; font-size: 17px; }
+.mcp-oauth-dialog h3 { font-size: 13px; margin-bottom: 8px; }
+.mcp-oauth-dialog p { color: var(--text-secondary); }
+.mcp-oauth-dialog ul { max-height: 140px; overflow-y: auto; padding-left: 20px; }
+.mcp-oauth-dialog li, .mcp-oauth-callback { overflow-wrap: anywhere; }
+.mcp-oauth-code { display: block; padding: 12px; font: 24px var(--font-mono); letter-spacing: 3px; text-align: center; background: var(--bg-tertiary); color: var(--accent); border-radius: 4px; }
+.mcp-oauth-dialog label { display: flex; gap: 8px; align-items: flex-start; margin: 16px 0; }
+.mcp-oauth-dialog input { accent-color: var(--accent); margin-top: 4px; }
+.mcp-oauth-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.mcp-oauth-notice button, .mcp-oauth-dialog button { background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border); border-radius: 4px; padding: 8px 12px; cursor: pointer; font: inherit; }
+.mcp-oauth-actions button:last-child { border-color: var(--accent); }
+.mcp-oauth-dialog button:disabled { opacity: .5; cursor: default; }
+.mcp-oauth-dialog :focus-visible, .mcp-oauth-notice :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }

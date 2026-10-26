@@ -169,12 +169,26 @@ pub fn run() {
                         .emit_to("main", "mcp-execution-created", job)
                         .map_err(|_| "Unable to open the local terminal monitor".into())
                 });
-            app.manage(mcp::McpManager::new(
-                Arc::clone(&database),
-                crypto.clone(),
-                execution.clone(),
-                ssh_manager.clone(),
-            ));
+            let oauth_app = app.handle().clone();
+            app.manage(
+                mcp::McpManager::new(
+                    Arc::clone(&database),
+                    crypto.clone(),
+                    execution.clone(),
+                    ssh_manager.clone(),
+                )
+                .with_oauth_notifier(move || {
+                    oauth_app
+                        .emit_to("main", "mcp-oauth-pending", ())
+                        .map_err(|_| "Cannot display the MCP authorization request".to_string())?;
+                    if let Some(window) = oauth_app.get_webview_window("main") {
+                        let _ = window.show();
+                        // Untrusted requests must not steal focus from a password prompt.
+                        let _ = window.request_user_attention(Some(tauri::UserAttentionType::Informational));
+                    }
+                    Ok(())
+                }),
+            );
             let history_maintenance = execution.clone();
             tauri::async_runtime::spawn(async move {
                 let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
@@ -206,6 +220,10 @@ pub fn run() {
             commands::mcp_status,
             commands::mcp_stop,
             commands::mcp_require_credentials,
+            commands::mcp_oauth_approvals,
+            commands::mcp_oauth_respond,
+            commands::mcp_oauth_clients,
+            commands::mcp_oauth_revoke,
             commands::execution_start,
             commands::execution_get,
             commands::execution_list,

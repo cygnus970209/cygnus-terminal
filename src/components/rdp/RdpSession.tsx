@@ -1,3 +1,4 @@
+import { DEFAULT_RDP_CONFIG, type RdpLaunch } from "../../types/rdp";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import RdpConnectionForm from "./RdpConnectionForm";
@@ -15,13 +16,15 @@ import "./RdpSession.css";
 
 type Phase = "idle" | "reconnecting" | "closing" | "connecting" | "certificate" | "authenticating" | "connected" | "ended" | "error";
 interface Props {
+  initialConnection?: RdpLaunch;
+  onProfileChange?: (tabId: string, profileId?: number) => void;
   tabId: string;
   isActive: boolean;
   onSessionStatus: (id: string, status: SessionStatus) => void;
   onTitleChange: (id: string, title: string) => void;
 }
-export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleChange }: Props) {
-  const [config, setConfig] = useState<RdpConfig>({ host: "", port: 3389, username: "", domain: "", width: 1280, height: 720, desktop_scale_factor: 0 });
+export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleChange, initialConnection, onProfileChange }: Props) {
+  const [config, setConfig] = useState<RdpConfig>(() => ({ ...(initialConnection?.config ?? DEFAULT_RDP_CONFIG) }));
   const [phase, setPhase] = useState<Phase>("idle");
   const [sessionId, setSessionId] = useState<string | null>(null);
   const [certificate, setCertificate] = useState<RdpCertificate | null>(null);
@@ -37,7 +40,7 @@ export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleCh
   const remoteSize = useRef(size);
   const [viewMode, setViewMode] = useState<"fit" | "pixels">("fit");
   const [textInput, setTextInput] = useState(false);
-  const [lastConnection, setLastConnection] = useState<{ config: RdpConfig; name: string } | null>(null);
+  const [lastConnection, setLastConnection] = useState<RdpLaunch | null>(null);
   const screen = useRef<HTMLDivElement>(null);
   const viewport = useRdpViewport(screen, phase === "connected" && isActive);
   const displaySize = rdpDisplaySize(size.width, size.height, viewport.width, viewport.height, viewMode, viewport.pixelRatio);
@@ -94,6 +97,7 @@ export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleCh
       close: (id) => invoke<void>("rdp_close", { sessionId: id }),
     });
     connection.current = owner;
+    transitioning.current = false;
     onSessionStatus(tabId, "ended");
     return () => {
       generation.current++;
@@ -104,7 +108,7 @@ export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleCh
     };
   }, [onSessionStatus, tabId]);
 
-  async function connect(config: RdpConfig, name: string) {
+  async function connect(config: RdpConfig, name: string, profileId?: number) {
     const owner = connection.current;
     if (!owner || transitioning.current) return;
     transitioning.current = true;
@@ -113,7 +117,8 @@ export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleCh
     setPhase("reconnecting"); setError(null);
     onSessionStatus(tabId, "connecting");
     const settings = { ...config, host: config.host.trim(), username: config.username.trim(), domain: config.domain.trim() };
-    setLastConnection({ config: settings, name });
+    setLastConnection({ config: settings, name, profileId });
+    onProfileChange?.(tabId, profileId);
     onTitleChange(tabId, `RDP · ${name || settings.host}`);
     const onEvent = (event: RdpEvent) => {
       if (generation.current !== attempt) return;
@@ -145,6 +150,12 @@ export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleCh
       setPhase("error"); onSessionStatus(tabId, "error");
     } finally { if (generation.current === attempt) transitioning.current = false; }
   }
+  useEffect(() => {
+    if (initialConnection) void connect(initialConnection.config, initialConnection.name, initialConnection.profileId);
+    // A launch belongs to this tab; subsequent state changes must not reconnect it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialConnection]);
+
   async function authenticate(approval: RdpApproval) {
     if (!certificate || !sessionId || currentId.current !== sessionId || authenticatingAttempt.current === generation.current) return;
     const attempt = generation.current;
@@ -246,7 +257,7 @@ export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleCh
     inputs.current?.push({ type: "key", code, down });
   }
   const busy = ["reconnecting", "closing", "connecting", "certificate", "authenticating", "connected"].includes(phase);
-  const reconnect = () => { if (lastConnection) void connect(lastConnection.config, lastConnection.name); };
+  const reconnect = () => { if (lastConnection) void connect(lastConnection.config, lastConnection.name, lastConnection.profileId); };
   return <section className="rdp-session" style={{ display: isActive ? "flex" : "none" }} aria-label="RDP session">
     <div className="rdp-toolbar">
       <span>Remote desktop <span className="rdp-note">Beta</span></span>
@@ -305,7 +316,7 @@ export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleCh
       {(phase === "connecting" || phase === "authenticating") && <p role="status">{phase === "connecting" ? "Connecting and reading the server certificate…" : "Authenticating with the RDP server…"}</p>}
       {(phase === "reconnecting" || phase === "closing") && <p role="status">{phase === "reconnecting" ? "Closing the previous connection before reconnecting…" : "Closing the RDP connection…"}</p>}
       <div style={{ display: busy ? "none" : "contents" }}>
-        <RdpConnectionForm config={config} onChange={setConfig} onConnect={(event, name) => { event.preventDefault(); void connect(config, name); }} />
+        <RdpConnectionForm config={config} onChange={setConfig} onConnect={(event, name, profileId) => { event.preventDefault(); void connect(config, name, profileId); }} />
       </div>
     </div>
   </section>;

@@ -89,12 +89,17 @@ Monitoring and log viewing use separate SSH channels. Check server resources and
 
 Terminal typing, pasted text, and saved-command execution **convert non-breaking spaces (U+00A0) to regular spaces**. This prevents commands such as `sudo su` from being read as a single command name. The conversion also applies inside quoted text.
 
+In regular and MCP terminals, paste with `⌘V` on macOS or `Ctrl+V`, `Ctrl+Shift+V`, or `Shift+Insert` on Windows/Linux. The right-click menu provides **Copy / Paste**. Copy uses `⌘C` on macOS and `Ctrl+Shift+C` on Windows/Linux; `Ctrl+C` remains an interrupt.
+
 ## Connect AI clients through MCP
 
 Settings → MCP lets you share selected SSH profiles with a local MCP server.
 AI clients can list servers and, when command execution is enabled, submit jobs,
-inspect results, and request cancellation. Connections require a bearer token;
-MCP is disabled again when the app restarts. See the [setup and tool reference (Korean)](docs/guides/mcp.md).
+inspect results, and request cancellation. **OAuth app approval (Beta)** registers only the URL:
+match the browser's verification code in Cygnus and approve. Clients renew tokens automatically;
+approvals survive restarts and can be revoked individually under **Authorized clients**.
+MCP is disabled on app restart and requires consent to start again. Manual bearer tokens remain available.
+See the [setup and tool reference (Korean)](docs/guides/mcp.md).
 Separate SFTP read and change permissions enable listing, metadata, reading, writing,
 directory creation, renaming, and deletion. File content is limited to 64 KiB per request
 and is not stored in Cygnus execution history.
@@ -147,7 +152,7 @@ cargo test --manifest-path src-tauri/Cargo.toml --locked
 bun run tauri build
 ```
 
-Open RDP Beta from the tab bar's `+ → RDP desktop (Beta)` menu. Save named connections with the server, username, domain, desktop size, and Windows scale (DPI) in the RDP connection form; edit them or save a copy. Direct NLA/NTLM connections, display rendering, and basic US keyboard and mouse input are supported. The IIS viewer is also labeled Beta while Windows server validation is pending.
+Choose **New connection → RDP (Beta)**, then **Save** or **Save & Connect**. Saved RDP connections support search, favorites, connecting, editing and deletion in Connections and the sidebar. The tab bar's `+ → RDP desktop (Beta)` menu is also available. Save named connections with the server, username, domain, desktop size, and Windows scale (DPI) in the RDP connection form; edit them or save a copy. Direct NLA/NTLM connections, display rendering, and basic US keyboard and mouse input are supported. The IIS viewer is also labeled Beta while Windows server validation is pending.
 
 Verify the certificate's SHA-256 fingerprint before entering your password. Remembering it is optional. If a saved fingerprint changes, compare both fingerprints and explicitly acknowledge the change before continuing. Automatic issuer, hostname, and validity checks are not supported yet. Passwords are neither saved nor exposed to MCP. Backup v5 includes RDP scale settings but excludes certificate trust; v1–v4 backups remain importable. Existing connections without a scale setting use the server default.
 
@@ -155,7 +160,7 @@ Use `Reconnect` in the connected toolbar or after a connection ends/fails to reu
 
 After connecting, open `Text input / 한글`, compose with your local IME, and click `Send text` to type into the focused remote field. Composition keys and Enter are not forwarded. Text is not recorded; drafts are cleared after sending, closing, switching tabs, or leaving the app. Single-line text is limited to 256 UTF-16 units and control characters are rejected. Remote applications may handle Unicode input differently. Inline IME composition directly on the remote canvas is not supported yet.
 
-`Fit to window` follows the window size; `1:1 pixels` accounts for monitor DPI to map remote pixels to physical display pixels. Connection resolution is limited to 1920 × 1080. Windows scale is requested when connecting; the server may retain an existing session’s scale. RD Gateway, real Windows server validation, and Windows packaging validation are still pending.
+`Fit to window` follows the window size; `1:1 pixels` accounts for monitor DPI to map remote pixels to physical display pixels. Connection resolution is limited to 1920 × 1080. Windows scale is requested when connecting; the server may retain an existing session’s scale. Windows installers are built in CI; installed-app behavior and real Windows server connections still need broader validation. RD Gateway is not supported yet.
 
 When the server enables Display Control, use `Remote resolution → Apply resolution` while connected (up to 1920 × 1080, within the server’s limits). Remote input pauses during the change and the display follows the size confirmed by the server. If the server ignores the request, a notice appears after 15 seconds and the connection stays open. Saved profiles and the initial settings used for reconnect remain unchanged. RemoteFX is not advertised, following [Microsoft’s Display Control prerequisites](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpedisp/2878b488-794e-42c1-8f98-a23fa950def8); display traffic may increase.
 

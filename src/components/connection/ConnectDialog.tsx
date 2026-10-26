@@ -1,3 +1,4 @@
+import type { ConnectionChoice } from "../../types/connection";
 import { useEffect, useReducer, useState } from "react";
 import { invoke } from "../../services/secureInvoke";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -14,14 +15,14 @@ import Icon from "../common/Icon";
 import ProtocolPicker from "./ProtocolPicker";
 import GroupPicker from "./GroupPicker";
 import Select from "../common/Select";
-import type { ConnectionProtocol, TargetOs, RemoteShell } from "../../types";
+import type { TargetOs, RemoteShell } from "../../types";
 
 interface ConnectDialogProps {
   onConnect: (config: SshConfig) => void;
   onCancel: () => void;
   onSaved?: () => void;
   editProfile?: Profile | null;
-  onProtocolChange?: (protocol: ConnectionProtocol) => void;
+  onProtocolChange?: (protocol: ConnectionChoice) => void;
 }
 
 interface FormState {

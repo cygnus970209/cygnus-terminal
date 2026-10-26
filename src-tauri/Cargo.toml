@@ -56,8 +56,11 @@ rmcp = { version = "3.5.1", default-features = false, features = ["server", "tra
 axum = "0.8"
 tokio-util = "0.7"
 subtle = "2"
+sha2 = "0.10"
+url = "2"
+tower = { version = "0.5", features = ["util"] }
 cygnus-rdp-protocol = { path = "../rdp-protocol" }
 
 [dev-dependencies]
-reqwest = { version = "0.13", default-features = false, features = ["json", "rustls"] }
+reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "form", "query"] }
 rmcp = { version = "3.5.1", default-features = false, features = ["client", "transport-streamable-http-client-reqwest"] }
