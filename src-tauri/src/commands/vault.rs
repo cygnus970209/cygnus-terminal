@@ -2,9 +2,11 @@ use std::sync::Arc;
 
 use crate::crypto::CryptoManager;
 use crate::db::Database;
+use crate::execution::ExecutionManager;
 use crate::ssh::SshManager;
 use crate::vault::store::{CreateVaultItemRequest, UpdateVaultItemRequest, VaultItem};
-use tauri::State;
+use tauri::{State, WebviewWindow};
+use zeroize::Zeroizing;
 
 #[tauri::command]
 pub fn vault_create(
@@ -52,24 +54,41 @@ pub fn vault_link_server(
 /// 볼트 항목을 복호화해 열린 SSH 세션의 채널 stdin에 주입한다.
 /// 평문은 백엔드를 벗어나지 않는다 — 복호화→주입이 한 호출 안에서 끝나
 /// 프론트엔드 메모리에 비밀번호가 노출되지 않는다.
-/// `append_newline`이 true(기본)면 `\r`를 붙여 프롬프트를 바로 제출한다.
+/// SSH 세션에는 `append_newline`이 true(기본)면 `\r`를 붙인다.
+/// MCP 작업에는 한 줄 비밀번호와 `\r`를 보내고 이후 출력을 로컬로 제한한다.
 #[tauri::command]
+#[allow(clippy::too_many_arguments)] // Tauri injects the window and managed services.
 pub async fn vault_inject(
-    session_id: String,
+    window: WebviewWindow,
+    session_id: Option<String>,
+    job_id: Option<String>,
     vault_item_id: i64,
     append_newline: Option<bool>,
     db: State<'_, Arc<Database>>,
     crypto: State<'_, CryptoManager>,
     ssh_manager: State<'_, SshManager>,
+    execution: State<'_, ExecutionManager>,
 ) -> Result<(), String> {
+    // MCP jobs have a separate SSH transport: never route through a shell session
+    // or bypass the execution manager's output-withholding protection.
+    match (session_id.as_deref(), job_id.as_deref()) {
+        (None, Some(id)) if window.label() == "main" => {
+            return execution
+                .terminal_vault_input(id, vault_item_id, &crypto)
+                .await;
+        }
+        (Some(_), None) => {}
+        _ => return Err("Choose one local terminal for Vault input".into()),
+    }
     // 동기 복호화 — conn 락은 이 호출이 끝나며 해제되고, 평문만 들고 나온다.
-    let secret = db.reveal_vault_secret(vault_item_id, &crypto)?;
-    let payload = if append_newline.unwrap_or(true) {
-        format!("{secret}\r")
-    } else {
-        secret
-    };
+    let mut payload = Zeroizing::new(db.reveal_vault_secret(vault_item_id, &crypto)?);
+    if append_newline.unwrap_or(true) {
+        payload.push('\r');
+    }
     ssh_manager
-        .write_to_session(&session_id, payload.as_bytes())
+        .write_to_session(
+            session_id.as_deref().expect("validated session"),
+            payload.as_bytes(),
+        )
         .await
 }

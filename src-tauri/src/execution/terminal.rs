@@ -69,9 +69,35 @@ impl ExecutionManager {
     }
 
     pub async fn terminal_input(&self, id: &str, data: Zeroizing<Vec<u8>>) -> Result<(), String> {
-        if data.is_empty() || data.len() > 65536 {
-            return Err("Terminal input must contain 1–65536 bytes".into());
-        }
+        self.enqueue_terminal_input(id, || Ok(data)).await
+    }
+
+    /// Decrypt only after validating the live, monitored job. Secrets never leave
+    /// the backend; the same output-withholding boundary applies as for typing.
+    pub async fn terminal_vault_input(
+        &self,
+        id: &str,
+        vault_item_id: i64,
+        crypto: &CryptoManager,
+    ) -> Result<(), String> {
+        self.enqueue_terminal_input(id, || {
+            let secret = Zeroizing::new(self.db.reveal_vault_secret(vault_item_id, crypto)?);
+            if secret.is_empty() || secret.len() > 65535 || secret.chars().any(char::is_control) {
+                return Err("Choose a single-line password of at most 65535 bytes".into());
+            }
+            let mut data = Zeroizing::new(Vec::with_capacity(secret.len() + 1));
+            data.extend_from_slice(secret.as_bytes());
+            data.push(b'\r');
+            Ok(data)
+        })
+        .await
+    }
+
+    async fn enqueue_terminal_input(
+        &self,
+        id: &str,
+        prepare: impl FnOnce() -> Result<Zeroizing<Vec<u8>>, String>,
+    ) -> Result<(), String> {
         let active = self.active.lock().await;
         let job = active.get(id).ok_or("Execution is no longer running")?;
         let mut state = job.state.lock().await;
@@ -82,6 +108,10 @@ impl ExecutionManager {
             .input
             .as_ref()
             .ok_or("This job has no interactive terminal")?;
+        let data = prepare()?;
+        if data.is_empty() || data.len() > 65536 {
+            return Err("Terminal input must contain 1–65536 bytes".into());
+        }
         // Set this BEFORE enqueuing input: even a server that echoes passwords cannot
         // put manual input into MCP responses, the result cache, or execution history.
         if !state.summary.output_withheld {

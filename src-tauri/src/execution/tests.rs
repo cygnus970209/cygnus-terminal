@@ -1195,6 +1195,108 @@ async fn manual_input_and_echoed_secrets_stay_in_local_terminal_even_with_histor
 }
 
 #[tokio::test]
+async fn vault_input_is_local_only_and_requires_a_live_monitored_job() {
+    use crate::vault::store::CreateVaultItemRequest;
+    let f = Fixture::new(true).await;
+    f.manager
+        .set_history_settings(HistorySettings {
+            enabled: true,
+            retention_days: 7,
+        })
+        .await
+        .unwrap();
+    let create_secret = |value: &str| {
+        f.db.create_vault_item(
+            CreateVaultItemRequest {
+                label: "Fixture sudo".into(),
+                kind: "password".into(),
+                pair_id: None,
+                source: None,
+                source_ref: None,
+                value: Some(value.into()),
+                sensitive: Some(true),
+                scope: None,
+                server_ids: Some(vec![f.profile_id]),
+            },
+            &f.crypto,
+        )
+        .unwrap()
+    };
+    let credential = create_secret("private-vault-password-한글");
+    let multiline = create_secret("password\nsecond-command");
+    let too_large = create_secret(&"x".repeat(65536));
+    let manager = f.manager.clone().with_terminal_notifier(|_| Ok(()));
+    let id = manager
+        .start_interactive(f.request("interactive"), &f.crypto, f.ssh.clone())
+        .await
+        .unwrap();
+    assert!(manager
+        .terminal_vault_input(&id, credential.id, &f.crypto)
+        .await
+        .is_err());
+    assert!(f
+        .db
+        .get_vault_item(credential.id)
+        .unwrap()
+        .last_used_at
+        .is_none());
+    let events = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let captured = events.clone();
+    manager
+        .attach_terminal(
+            &id,
+            Arc::new(move |event| {
+                captured.lock().unwrap().push(event);
+                Ok(())
+            }),
+        )
+        .await
+        .unwrap();
+    f.has_output(&id).await;
+    for invalid in [multiline.id, too_large.id, i64::MAX] {
+        assert!(manager
+            .terminal_vault_input(&id, invalid, &f.crypto)
+            .await
+            .is_err());
+        assert!(!manager.get(&id).await.unwrap().summary.output_withheld);
+    }
+    manager
+        .terminal_vault_input(&id, credential.id, &f.crypto)
+        .await
+        .unwrap();
+    let result = f.finished(&id).await;
+    assert_eq!(result.summary.status, ExecutionStatus::Succeeded);
+    assert!(result.summary.output_withheld);
+    assert!(result.stdout.contains("Password:"));
+    for job in [result, f.db.get_execution_job(&id).unwrap()] {
+        assert!(!serde_json::to_string(&job)
+            .unwrap()
+            .contains("private-vault-password"));
+    }
+    let local: Vec<u8> = {
+        let events = events.lock().unwrap();
+        events
+            .iter()
+            .filter_map(|event| match event {
+                TerminalEvent::Output(bytes) => Some(bytes.as_slice()),
+                _ => None,
+            })
+            .flatten()
+            .copied()
+            .collect()
+    };
+    assert!(String::from_utf8_lossy(&local).contains("private-vault-password-한글\r"));
+    assert!(manager
+        .terminal_vault_input(&id, credential.id, &f.crypto)
+        .await
+        .is_err());
+    assert!(manager
+        .terminal_vault_input("missing-job", credential.id, &f.crypto)
+        .await
+        .is_err());
+}
+
+#[tokio::test]
 async fn refused_pty_and_lost_monitor_do_not_silently_execute_in_background() {
     let f = Fixture::with_pty(true, false).await;
     let manager = f.manager.clone().with_terminal_notifier(|_| Ok(()));

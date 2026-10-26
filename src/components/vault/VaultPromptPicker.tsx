@@ -20,9 +20,7 @@ interface VaultItem {
   last_used_at: string | null;
 }
 
-interface VaultPromptPickerProps {
-  /** 비밀번호를 주입할 SSH 세션 id. */
-  sessionId: string;
+type VaultPromptPickerProps = {
   /** 현재 세션의 서버(profile) id — 매핑된 항목 우선 + 새 항목 자동 연결. */
   serverId?: number;
   /** 터미널 커서 줄 근처 viewport 좌표 (px) — 최초 위치. 이후 드래그로 이동. */
@@ -33,10 +31,21 @@ interface VaultPromptPickerProps {
   onClose: () => void;
   /** 주입 성공 시 호출 — 재트리거 가드 유지용. */
   onInjected: () => void;
-}
+} & (
+  | { sessionId: string; onInject?: never; onSubmitPassword?: never }
+  | {
+    sessionId?: never;
+    /** MCP uses its job's local-only input queue instead of an SSH shell session. */
+    onInject: (vaultItemId: number) => Promise<void>;
+    /** One-time input. This does not create a Vault item. */
+    onSubmitPassword: (password: string) => Promise<void>;
+  }
+);
 
 export default function VaultPromptPicker({
   sessionId,
+  onInject,
+  onSubmitPassword,
   serverId,
   anchorTop,
   anchorLeft,
@@ -50,7 +59,14 @@ export default function VaultPromptPicker({
   const [error, setError] = useState<string | null>(null);
   const injectingRef = useRef(false);
   const [injecting, setInjecting] = useState(false);
-  const [mode, setMode] = useState<"list" | "add">("list");
+  const [mode, setMode] = useState<"list" | "add" | "manual">("list");
+  const [password, setPassword] = useState("");
+  const passwordRef = useRef<HTMLInputElement>(null);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => { mounted.current = false; };
+  }, []);
 
   // 새 항목 추가 폼
   const [newLabel, setNewLabel] = useState("");
@@ -78,6 +94,7 @@ export default function VaultPromptPicker({
   // 모드별 focus — xterm textarea 를 blur 시키고 픽커가 입력을 받게 한다.
   useEffect(() => {
     if (mode === "list") searchRef.current?.focus();
+    else if (mode === "manual") passwordRef.current?.focus();
     else labelInputRef.current?.focus();
   }, [mode]);
 
@@ -105,19 +122,47 @@ export default function VaultPromptPicker({
       if (injectingRef.current) return;
       injectingRef.current = true;
       setInjecting(true);
+      setError(null);
       try {
-        await invoke("vault_inject", { sessionId, vaultItemId: item.id });
+        if (onInject) await onInject(item.id);
+        else if (sessionId) await invoke("vault_inject", { sessionId, vaultItemId: item.id });
+        else throw new Error("No terminal is available for input");
+        if (!mounted.current) return;
         onInjected();
         onClose();
       } catch (e) {
-        setError(String(e));
+        if (mounted.current) setError(String(e));
       } finally {
         injectingRef.current = false;
-        setInjecting(false);
+        if (mounted.current) setInjecting(false);
       }
     },
-    [sessionId, onInjected, onClose],
+    [sessionId, onInject, onInjected, onClose],
   );
+
+  const submitPassword = async () => {
+    if (!onSubmitPassword || injectingRef.current || !password) return;
+    if (new TextEncoder().encode(password).length > 65535 || /[\p{Cc}]/u.test(password)) {
+      setError("줄바꿈 없는 65535바이트 이하의 비밀번호를 입력하세요.");
+      return;
+    }
+    injectingRef.current = true;
+    setInjecting(true);
+    setError(null);
+    const value = password;
+    setPassword("");
+    try {
+      await onSubmitPassword(value);
+      if (!mounted.current) return;
+      onInjected();
+      onClose();
+    } catch {
+      if (mounted.current) setError("전송하지 못했습니다. 터미널 상태를 확인한 뒤 다시 입력하세요.");
+    } finally {
+      injectingRef.current = false;
+      if (mounted.current) setInjecting(false);
+    }
+  };
 
   const handleCreate = useCallback(async () => {
     if (!newValue || saving) return;
@@ -154,10 +199,12 @@ export default function VaultPromptPicker({
     const onKey = (e: KeyboardEvent) => {
       if (keychainNotice.getSnapshot()) return;
       if (e.isComposing || e.keyCode === 229) return;
-      if (mode === "add") {
+      if (mode !== "list") {
         if (e.key === "Escape") {
           e.preventDefault();
           e.stopPropagation();
+          setPassword("");
+          setError(null);
           setMode("list");
         }
         return; // 나머지 키는 폼 input 으로 통과.
@@ -221,6 +268,9 @@ export default function VaultPromptPicker({
     <div className="vpp-backdrop" onMouseDown={onClose}>
       <div
         className="vpp"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Vault password input"
         style={{ top: pos.top, left: pos.left }}
         onMouseDown={(e) => e.stopPropagation()}
       >
@@ -231,7 +281,7 @@ export default function VaultPromptPicker({
             Vault
           </span>
           <span className="vpp-sub">
-            {mode === "add" ? "새 비밀번호" : promptLabel}
+            {mode === "add" ? "새 비밀번호" : mode === "manual" ? "직접 입력" : promptLabel}
           </span>
           <button className="vpp-x" onClick={onClose} title="닫기 (Esc)">
             ×
@@ -276,9 +326,31 @@ export default function VaultPromptPicker({
               <button className="vpp-add-btn" onClick={() => setMode("add")}>
                 + 새 비밀번호
               </button>
-              <span className="vpp-hint">↑↓ · Enter · Esc</span>
+              {onSubmitPassword ? (
+                <button className="vpp-add-btn" disabled={injecting}
+                  onClick={() => { setError(null); setMode("manual"); }}>직접 입력</button>
+              ) : <span className="vpp-hint">↑↓ · Enter · Esc</span>}
             </div>
+            {onSubmitPassword && <div className="vpp-note">선택한 비밀번호는 이 서버로 전송됩니다. Esc로 닫으면 터미널에 직접 입력할 수 있어요.</div>}
           </>
+        ) : mode === "manual" ? (
+          <form className="vpp-add" onSubmit={(event) => { event.preventDefault(); void submitPassword(); }}>
+            {error && <div className="vpp-error" role="alert">{error}</div>}
+            <label className="vpp-field">
+              <span className="vpp-flabel">비밀번호</span>
+              <input ref={passwordRef} className="vpp-input" type="password" autoComplete="off"
+                spellCheck={false} value={password} disabled={injecting} maxLength={65535}
+                onChange={(event) => setPassword(event.target.value)}
+                onKeyDown={(event) => { if (event.key === "Enter" && event.nativeEvent.isComposing) event.preventDefault(); }} />
+            </label>
+            <div className="vpp-note">이번 입력에만 사용하며 Vault에 저장하지 않습니다. 입력 후 출력은 AI 응답·실행기록에서 제외됩니다.</div>
+            <div className="vpp-add-actions">
+              <button type="button" className="vpp-cancel" onClick={() => { setPassword(""); setError(null); setMode("list"); }}>취소</button>
+              <button type="submit" className="vpp-save" disabled={!password || injecting}>
+                {injecting ? "전송 중…" : "전송"}
+              </button>
+            </div>
+          </form>
         ) : (
           <div className="vpp-add">
             {error && <div className="vpp-error">{error}</div>}

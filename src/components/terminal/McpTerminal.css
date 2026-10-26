@@ -15,7 +15,8 @@
   border-bottom: 1px solid var(--border);
   font-size: 12px;
 }
-.mcp-terminal-stop {
+.mcp-terminal-password { margin-left: auto; }
+.mcp-terminal-stop, .mcp-terminal-password {
   margin-left: auto;
   padding: 4px 12px;
   border: 1px solid var(--border);
@@ -28,6 +29,10 @@
 .mcp-terminal-stop:hover:not(:disabled) { border-color: var(--warn); }
 .mcp-terminal-stop:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .mcp-terminal-stop:disabled { opacity: 0.6; cursor: default; }
+.mcp-terminal-password + .mcp-terminal-stop { margin-left: 0; }
+.mcp-terminal-password:hover:not(:disabled) { border-color: var(--accent); }
+.mcp-terminal-password:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mcp-terminal-password:disabled { opacity: 0.6; cursor: default; }
 .mcp-terminal-status { font-weight: 600; }
 .mcp-terminal-command {
   flex-shrink: 0;

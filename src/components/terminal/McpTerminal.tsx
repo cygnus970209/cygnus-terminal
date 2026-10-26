@@ -6,6 +6,9 @@ import { readText, writeText } from "@tauri-apps/plugin-clipboard-manager";
 import { invoke } from "../../services/secureInvoke";
 import { cancelExecution } from "../../services/executionService";
 import { useTheme } from "../../hooks/useTheme";
+import { useVaultPromptRules } from "../../hooks/useVaultPromptRules";
+import VaultPromptPicker from "../vault/VaultPromptPicker";
+import { createPromptTriggerGuard } from "../../utils/promptTriggerGuard";
 import { createTerminalLayoutScheduler } from "../../utils/terminalLayout";
 import { TERMINAL_SCROLLBACK_LINES } from "../../constants";
 import type { ExecutionSummary, ExecutionTerminalEvent } from "../../types/execution";
@@ -34,6 +37,26 @@ export default function McpTerminal({ tabId, job, isActive, onSessionStatus, onJ
   const [summary, setSummary] = useState(job);
   const [error, setError] = useState<string | null>(null);
   const { theme } = useTheme();
+  const { rules } = useVaultPromptRules();
+  const rulesRef = useRef(rules);
+  rulesRef.current = rules;
+  const [picker, setPicker] = useState<{ jobId: string; top: number; left: number; label?: string } | null>(null);
+  const pickerOpen = useRef(false);
+  const detectPrompt = useRef<() => void>(() => {});
+  const openPicker = useRef<() => void>(() => {});
+  const sendInput = useRef<(jobId: string, data: string) => Promise<void>>(async () => {});
+  const injectVault = useRef<(jobId: string, vaultItemId: number) => Promise<void>>(async () => {});
+  const focusTerminal = () => {
+    if (active.current && !document.querySelector('[role="dialog"], [aria-modal="true"], .dialog-overlay')) {
+      terminal.current?.focus();
+    }
+  };
+  const closePicker = () => {
+    pickerOpen.current = false;
+    setPicker(null);
+    // Wait for the modal DOM to disappear before checking for other dialogs.
+    requestAnimationFrame(focusTerminal);
+  };
 
   useEffect(() => {
     if (!host.current) return;
@@ -41,7 +64,9 @@ export default function McpTerminal({ tabId, job, isActive, onSessionStatus, onJ
     let attached = false;
     let current = job;
     let failed = false;
+    let outputReady = false;
     let pendingBytes = 0;
+    const triggerGuard = createPromptTriggerGuard();
     const term = new XTerm({
       cursorBlink: true,
       fontSize: 13,
@@ -58,6 +83,8 @@ export default function McpTerminal({ tabId, job, isActive, onSessionStatus, onJ
     const fail = (reason: unknown) => {
       if (disposed) return;
       failed = true;
+      pickerOpen.current = false;
+      setPicker(null);
       setError(String(reason));
       term.options.disableStdin = true;
       onSessionStatus(tabId, "error");
@@ -68,6 +95,10 @@ export default function McpTerminal({ tabId, job, isActive, onSessionStatus, onJ
         term.write(`\r\n[MCP ${value.status}${value.exit_code === null ? "" : ` · exit ${value.exit_code}`} ]\r\n`);
       }
       current = value;
+      if (value.status !== "running") {
+        pickerOpen.current = false;
+        setPicker(null);
+      }
       setSummary(value);
       onJobStatus(tabId, value);
       term.options.disableStdin = failed || !attached || value.status !== "running";
@@ -75,13 +106,55 @@ export default function McpTerminal({ tabId, job, isActive, onSessionStatus, onJ
         : value.status === "connecting" || value.status === "cancelling" ? "connecting"
         : value.status === "succeeded" || value.status === "cancelled" ? "ended" : "error");
     };
-    const write = (data: string | Uint8Array) => {
+    const showPicker = (label?: string) => {
+      if (disposed || failed || !attached || !active.current || current.status !== "running" || pickerOpen.current) return;
+      if (document.querySelector('[role="dialog"], [aria-modal="true"], .dialog-overlay')) return;
+      const rect = host.current!.getBoundingClientRect();
+      const cursorY = term.buffer.active.cursorY;
+      pickerOpen.current = true;
+      setPicker({ jobId: current.id, label,
+        top: Math.max(8, Math.min(rect.top + (cursorY + 1) * rect.height / Math.max(term.rows, 1), window.innerHeight - 460)),
+        left: Math.max(8, Math.min(rect.left + 12, window.innerWidth - 368)),
+      });
+    };
+    detectPrompt.current = () => {
+      if (disposed || failed || !attached || !active.current || !outputReady || current.status !== "running" || pickerOpen.current) return;
+      const buffer = term.buffer.active;
+      if (buffer.type === "alternate") return;
+      const row = buffer.baseY + buffer.cursorY;
+      const line = buffer.getLine(row)?.translateToString(true) ?? "";
+      const key = `${row}:${line}`;
+      if (!line.trim() || triggerGuard.isSameAsLast(key)) return;
+      for (const rule of rulesRef.current) {
+        if (!rule.enabled) continue;
+        try {
+          if (!new RegExp(rule.pattern).test(line)) continue;
+        } catch { continue; }
+        showPicker(rule.label);
+        if (pickerOpen.current) triggerGuard.markTriggered(key);
+        return;
+      }
+    };
+    openPicker.current = () => {
+      const buffer = term.buffer.active;
+      const row = buffer.baseY + buffer.cursorY;
+      showPicker("Password / Vault");
+      if (pickerOpen.current) triggerGuard.markTriggered(`${row}:${buffer.getLine(row)?.translateToString(true) ?? ""}`);
+    };
+    term.onLineFeed(() => triggerGuard.reset());
+    const write = (data: string | Uint8Array, outputJobId?: string) => {
       pendingBytes += data.length;
       if (pendingBytes > 4 * 1024 * 1024) {
         fail("Terminal output exceeded the display buffer; cancellation requested.");
         return;
       }
-      term.write(data, () => { pendingBytes -= data.length; });
+      term.write(data, () => {
+        pendingBytes -= data.length;
+        if (outputJobId === current.id && data.length) {
+          outputReady = true;
+          detectPrompt.current();
+        }
+      });
     };
     const layout = createTerminalLayoutScheduler(
       () => !disposed && active.current && !!host.current?.clientWidth && !!host.current?.clientHeight,
@@ -100,6 +173,10 @@ export default function McpTerminal({ tabId, job, isActive, onSessionStatus, onJ
     connect.current = (next) => {
       let disconnected = false;
       current = next;
+      outputReady = false;
+      pickerOpen.current = false;
+      setPicker(null);
+      triggerGuard.reset();
       attached = false;
       failed = false;
       setError(null);
@@ -114,10 +191,10 @@ export default function McpTerminal({ tabId, job, isActive, onSessionStatus, onJ
       events.onmessage = (event) => {
         if (disposed || disconnected) return;
         if (event.type === "Output") {
-          write(new Uint8Array(event.data));
+          write(new Uint8Array(event.data), next.id);
         } else if (event.type === "Snapshot") {
-          write(event.data.stdout);
-          write(event.data.stderr);
+          write(event.data.stdout, next.id);
+          write(event.data.stderr, next.id);
           update(event.data);
         } else {
           update(event.data);
@@ -131,32 +208,40 @@ export default function McpTerminal({ tabId, job, isActive, onSessionStatus, onJ
         attached = true;
         update(current);
         layout.schedule();
-        if (active.current && !document.querySelector('[role="dialog"], [aria-modal="true"], .dialog-overlay')) term.focus();
+        detectPrompt.current();
+        if (!pickerOpen.current) focusTerminal();
       }).catch((reason) => { if (!disconnected) fail(reason); });
       return () => {
         disconnected = true;
         if (current.id === next.id && !isFinished(current)) void cancelExecution(next.id).catch(() => {});
       };
     };
-    // One ordered queue for local keyboard/paste input. Never send it to command history,
-    // completion notifications, the vault parser, or MCP. Errors never include the data.
+    // Keyboard, one-time passwords and Vault selections share one ordered queue.
+    // Parse remote output only; local input never enters history or prompt detection.
     let inputQueue = Promise.resolve();
     let queuedBytes = 0;
-    term.onData((data) => {
-      if (failed || !attached || current.status !== "running") return;
-      const jobId = current.id;
-      queuedBytes += data.length;
-      if (queuedBytes > 65536) {
-        fail("Terminal input is too large; cancellation requested.");
-        return;
+    const enqueue = (jobId: string, bytes: number, operation: () => Promise<void>) => {
+      if (queuedBytes + bytes > 65536) {
+        return Promise.reject(new Error("Terminal input is too large"));
       }
-      inputQueue = inputQueue.then(async () => {
-        if (!disposed && !failed && current.id === jobId && current.status === "running") {
-          await invoke("execution_terminal_input", { jobId, data });
+      queuedBytes += bytes;
+      const result = inputQueue.then(async () => {
+        if (disposed || failed || !attached || !active.current || current.id !== jobId || current.status !== "running") {
+          throw new Error("This terminal is no longer ready for input");
         }
-      }).catch((reason) => {
-        if (current.id === jobId) fail(reason);
-      }).finally(() => { queuedBytes -= data.length; });
+        await operation();
+      }).finally(() => { queuedBytes -= bytes; });
+      inputQueue = result.catch(() => {});
+      return result;
+    };
+    sendInput.current = (jobId, data) => enqueue(jobId, new TextEncoder().encode(data).length,
+      () => invoke("execution_terminal_input", { jobId, data }));
+    injectVault.current = (jobId, vaultItemId) => enqueue(jobId, 1,
+      () => invoke("vault_inject", { jobId, vaultItemId }));
+    term.onData((data) => {
+      if (failed || !attached || !active.current || pickerOpen.current || current.status !== "running") return;
+      const jobId = current.id;
+      void sendInput.current(jobId, data).catch((reason) => { if (current.id === jobId) fail(reason); });
     });
     term.attachCustomKeyEventHandler((event) => {
       if (event.type !== "keydown" || !(event.metaKey || event.ctrlKey)) return true;
@@ -169,7 +254,7 @@ export default function McpTerminal({ tabId, job, isActive, onSessionStatus, onJ
         event.preventDefault();
         const jobId = current.id;
         void readText().then((text) => {
-          if (text && !disposed && !failed && active.current && current.id === jobId && current.status === "running") term.paste(text);
+          if (text && !disposed && !failed && !pickerOpen.current && active.current && current.id === jobId && current.status === "running") term.paste(text);
         }).catch(() => {});
         return false;
       }
@@ -180,6 +265,8 @@ export default function McpTerminal({ tabId, job, isActive, onSessionStatus, onJ
       observer.disconnect();
       layout.dispose();
       scheduleLayout.current = () => {};
+      detectPrompt.current = () => {};
+      openPicker.current = () => {};
       terminal.current = null;
       term.dispose();
     };
@@ -193,25 +280,42 @@ export default function McpTerminal({ tabId, job, isActive, onSessionStatus, onJ
     if (terminal.current) terminal.current.options.theme = theme.colors;
   }, [theme]);
   useEffect(() => {
-    if (isActive) scheduleLayout.current();
-  }, [isActive]);
+    if (isActive) {
+      scheduleLayout.current();
+      detectPrompt.current();
+      if (!pickerOpen.current) focusTerminal();
+    } else {
+      pickerOpen.current = false;
+      setPicker(null);
+    }
+  }, [isActive, job.id]);
 
   return (
     <section className="mcp-terminal" style={{ display: isActive ? "flex" : "none" }} aria-label="MCP terminal">
       <div className="mcp-terminal-header">
         <span className="mcp-terminal-status" role="status">MCP · {summary.status.replace(/_/g, " ")}</span>
         <span>{summary.username}@{summary.host}</span>
+        {summary.status === "running" && <button className="mcp-terminal-password" disabled={!!error}
+          onClick={() => openPicker.current()}>Password / Vault</button>}
         {!isFinished(summary) && <button className="mcp-terminal-stop" disabled={summary.status === "cancelling"}
           onClick={() => void cancelExecution(job.id).catch((reason) => setError(String(reason)))}>Stop</button>}
       </div>
       <pre className="mcp-terminal-command" title={summary.command}>{summary.command}</pre>
       <p className="mcp-terminal-hint">{summary.output_withheld
         ? "Manual input detected. Subsequent output stays in this terminal and is excluded from AI results and execution history."
-        : "You can type here, including passwords. After your first input, subsequent output stays local. Closing this tab requests cancellation."}</p>
+        : "Type here or use Password / Vault when prompted. After your first input, subsequent output stays local. Closing this tab requests cancellation."}</p>
       {(error || summary.error) && <p className="mcp-terminal-error" role="alert">{error || summary.error}</p>}
       {summary.remote_outcome_unknown && isFinished(summary) &&
         <p className="mcp-terminal-error">Remote termination is not confirmed. Check the server before retrying.</p>}
       <div className="mcp-terminal-screen" ref={host} />
+      {picker && isActive && picker.jobId === job.id && summary.status === "running" && <VaultPromptPicker
+        key={picker.jobId}
+        serverId={summary.profile_id}
+        anchorTop={picker.top} anchorLeft={picker.left} promptLabel={picker.label}
+        onInject={(vaultItemId) => injectVault.current(picker.jobId, vaultItemId)}
+        onSubmitPassword={(password) => sendInput.current(picker.jobId, `${password}\r`)}
+        onClose={closePicker} onInjected={closePicker}
+      />}
     </section>
   );
 }
