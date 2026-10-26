@@ -1,5 +1,28 @@
 # Changelog
 
+## [0.1.18] - 2026-10-26
+
+### Added
+- Connect MCP clients through **Beta** browser authorization and explicit approval in Cygnus. Compare the displayed code, review shared servers and permissions, and approve without copying a bearer token.
+- Keep OAuth approvals across MCP restarts, renew client tokens automatically, and revoke individual clients from Settings. MCP still requires manual activation and the security acknowledgement each time it starts.
+- Create RDP connections from **New connection → RDP (Beta)**, with Save and Save & Connect actions. Search, filter, favorite, connect, edit and delete saved RDP destinations in Connections and the sidebar.
+- Add Copy / Paste context menus to regular and MCP terminals.
+
+### Changed
+- Search MCP servers by name, address, account, group or environment; filter groups or selected servers and select only the visible results.
+- Default Codex, Claude Code, Cursor and Kiro setup to OAuth. Keep a manual-token option that copies directly usable commands or configuration without environment-variable placeholders.
+- Remember the last MCP port, server selection and permissions. Saved OAuth grants remain limited to their approved servers and permissions when settings change.
+
+### Fixed
+- Restore terminal focus and clipboard shortcuts on macOS and Windows, including Korean keyboard layouts. Preserve multiline paste handling and discard delayed clipboard reads after tab, job or window-focus changes.
+- Keep RDP favorites separate from SSH profiles with the same numeric ID, and preserve open sessions when deleting saved destinations.
+- Handle the default HTTP port correctly during MCP OAuth requests while retaining exact local Host checks.
+- Reject cross-site browser requests to OAuth approval pages when browser request metadata is available, reducing unwanted approval prompts.
+
+### Known limitations
+- OAuth client integration and Windows/IIS/RDP features remain **Beta**. Automated browser fixtures and official MCP SDK interoperability pass; installed Codex/Claude/Cursor/Kiro browser return, native OS clipboard behavior and real Windows-server interoperability still need broader validation.
+- When switching an existing MCP registration to OAuth, remove its static Authorization header and register it again using the setup shown in Settings. Keep the same MCP port to reuse saved authorizations.
+
 ## [0.1.17] - 2026-10-26
 
 ### Added
