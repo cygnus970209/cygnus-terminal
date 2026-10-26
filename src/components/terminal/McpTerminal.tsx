@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState } from "react";
+import { attachTerminalClipboard } from "../../utils/terminalClipboard";
+import TerminalClipboardMenu from "./TerminalClipboardMenu";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Channel } from "@tauri-apps/api/core";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -30,6 +32,13 @@ interface Props {
 export default function McpTerminal({ tabId, job, isActive, onSessionStatus, onJobStatus }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const terminal = useRef<XTerm | null>(null);
+  const clipboard = useRef<ReturnType<typeof attachTerminalClipboard> | null>(null);
+  const [clipboardError, setClipboardError] = useState("");
+  const [clipboardMenu, setClipboardMenu] = useState<{ x: number; y: number } | null>(null);
+  const closeClipboardMenu = useCallback((restoreFocus = false) => {
+    setClipboardMenu(null);
+    if (restoreFocus) focusTerminal();
+  }, []);
   const scheduleLayout = useRef<() => void>(() => {});
   const connect = useRef<(job: ExecutionSummary) => () => void>(() => () => {});
   const active = useRef(isActive);
@@ -243,25 +252,14 @@ export default function McpTerminal({ tabId, job, isActive, onSessionStatus, onJ
       const jobId = current.id;
       void sendInput.current(jobId, data).catch((reason) => { if (current.id === jobId) fail(reason); });
     });
-    term.attachCustomKeyEventHandler((event) => {
-      if (event.type !== "keydown" || !(event.metaKey || event.ctrlKey)) return true;
-      if (event.key.toLowerCase() === "c" && term.hasSelection()) {
-        event.preventDefault();
-        void writeText(term.getSelection()).catch(() => {});
-        return false;
-      }
-      if (event.key.toLowerCase() === "v") {
-        event.preventDefault();
-        const jobId = current.id;
-        void readText().then((text) => {
-          if (text && !disposed && !failed && !pickerOpen.current && active.current && current.id === jobId && current.status === "running") term.paste(text);
-        }).catch(() => {});
-        return false;
-      }
-      return true;
+    const clip = attachTerminalClipboard(term, {
+      inputTarget: () => !disposed && !failed && attached && active.current && !pickerOpen.current && current.status === "running" ? current.id : null,
+      readText, writeText, onError: setClipboardError, onMenu: setClipboardMenu,
     });
+    clipboard.current = clip;
     return () => {
       disposed = true;
+      clip.dispose(); clipboard.current = null;
       observer.disconnect();
       layout.dispose();
       scheduleLayout.current = () => {};
@@ -280,6 +278,7 @@ export default function McpTerminal({ tabId, job, isActive, onSessionStatus, onJ
     if (terminal.current) terminal.current.options.theme = theme.colors;
   }, [theme]);
   useEffect(() => {
+    clipboard.current?.invalidate(); setClipboardMenu(null); setClipboardError("");
     if (isActive) {
       scheduleLayout.current();
       detectPrompt.current();
@@ -291,7 +290,13 @@ export default function McpTerminal({ tabId, job, isActive, onSessionStatus, onJ
   }, [isActive, job.id]);
 
   return (
-    <section className="mcp-terminal" style={{ display: isActive ? "flex" : "none" }} aria-label="MCP terminal">
+    <section className="mcp-terminal" style={{ position: "relative", display: isActive ? "flex" : "none" }} aria-label="MCP terminal">
+      {clipboardError && isActive && <div className="terminal-clipboard-error" role="status">{clipboardError}</div>}
+      {clipboardMenu && isActive && <TerminalClipboardMenu position={clipboardMenu}
+        canCopy={!!terminal.current?.hasSelection()} canPaste={clipboard.current?.canPaste() ?? false}
+        onClose={closeClipboardMenu}
+        onCopy={() => { void clipboard.current?.copy(); closeClipboardMenu(); focusTerminal(); }}
+        onPaste={() => { closeClipboardMenu(); focusTerminal(); clipboard.current?.paste(); }} />}
       <div className="mcp-terminal-header">
         <span className="mcp-terminal-status" role="status">MCP · {summary.status.replace(/_/g, " ")}</span>
         <span>{summary.username}@{summary.host}</span>

@@ -29,6 +29,8 @@ import { extractCommand } from "../../utils/promptParser";
 import { createPromptTriggerGuard } from "../../utils/promptTriggerGuard";
 import { createTerminalLayoutScheduler } from "../../utils/terminalLayout";
 import { normalizeTerminalInput } from "../../utils/terminalInput";
+import { attachTerminalClipboard } from "../../utils/terminalClipboard";
+import TerminalClipboardMenu from "./TerminalClipboardMenu";
 import "@xterm/xterm/css/xterm.css";
 
 interface TerminalProps {
@@ -124,6 +126,13 @@ export default function Terminal({
   const sessionIdRef = useRef<string | null>(null);
   const bufferRef = useRef<string>("");
   const rafRef = useRef<number | null>(null);
+  const clipboard = useRef<ReturnType<typeof attachTerminalClipboard> | null>(null);
+  const [clipboardError, setClipboardError] = useState("");
+  const [clipboardMenu, setClipboardMenu] = useState<{ x: number; y: number } | null>(null);
+  const closeClipboardMenu = useCallback((restoreFocus = false) => {
+    setClipboardMenu(null);
+    if (restoreFocus && isActiveRef.current) xtermRef.current?.focus();
+  }, []);
 
   const { theme } = useTheme();
   const { settings: highlightSettings } = useHighlightSettings();
@@ -244,6 +253,9 @@ export default function Terminal({
 
   useEffect(() => {
     scheduleLayoutRef.current?.();
+    clipboard.current?.invalidate();
+    setClipboardMenu(null); setClipboardError("");
+    if (isActive && !pickerOpenRef.current && !document.querySelector('[role="dialog"], [aria-modal="true"], .dialog-overlay')) xtermRef.current?.focus();
   }, [isActive]);
 
   useEffect(() => {
@@ -339,52 +351,13 @@ export default function Terminal({
     const resizeObserver = new ResizeObserver(layout.schedule);
     resizeObserver.observe(terminalRef.current);
 
-    // Copy / Paste 단축키. xterm 은 기본 clipboard 연동이 없어서 직접 붙인다.
-    //  macOS: ⌘C copy (선택 있을 때만), ⌘V paste
-    //  Win/Linux: Ctrl+Shift+C copy, Ctrl+Shift+V paste
-    //  Ctrl+C 는 SIGINT 로 남겨둠 (터미널 관례).
-    const isMac = /Mac|iPhone|iPad/.test(navigator.platform);
-    xterm.attachCustomKeyEventHandler((ev) => {
-      if (ev.type !== "keydown") return true;
-      const k = ev.key.toLowerCase();
-
-      const isCopy = isMac
-        ? ev.metaKey && !ev.ctrlKey && !ev.altKey && !ev.shiftKey && k === "c"
-        : ev.ctrlKey && ev.shiftKey && !ev.altKey && k === "c";
-      const isPaste = isMac
-        ? ev.metaKey && !ev.ctrlKey && !ev.altKey && !ev.shiftKey && k === "v"
-        : ev.ctrlKey && ev.shiftKey && !ev.altKey && k === "v";
-      const isSelectAll = isMac
-        ? ev.metaKey && !ev.ctrlKey && !ev.altKey && !ev.shiftKey && k === "a"
-        : false; // 리눅스/윈도우에서 Ctrl+A 는 bash bind key (line start) — 건드리지 않음
-
-      if (isCopy) {
-        const sel = xterm.getSelection();
-        // Tauri native clipboard — WKWebView 의 Safari 권한 프롬프트("Paste" 미니 팝업)를 우회.
-        if (sel) writeText(sel).catch(() => {});
-        ev.preventDefault();
-        ev.stopPropagation();
-        return false;
-      }
-      if (isPaste) {
-        // preventDefault 안 하면 브라우저 native paste 가 xterm textarea 로 또 들어가서 2회 paste 됨.
-        ev.preventDefault();
-        ev.stopPropagation();
-        readText()
-          .then((text) => {
-            if (text) xterm.paste(text);
-          })
-          .catch(() => {});
-        return false;
-      }
-      if (isSelectAll) {
-        xterm.selectAll();
-        ev.preventDefault();
-        ev.stopPropagation();
-        return false;
-      }
-      return true;
+    let sessionEnded = false;
+    const clip = attachTerminalClipboard(xterm, {
+      inputTarget: () => !disposed && !sessionEnded && isActiveRef.current && !pickerOpenRef.current ? sessionIdRef.current : null,
+      readText, writeText, onError: setClipboardError, onMenu: setClipboardMenu,
     });
+    clipboard.current = clip;
+    if (isActiveRef.current && !pickerOpenRef.current && !document.querySelector('[role="dialog"], [aria-modal="true"], .dialog-overlay')) xterm.focus();
 
     const initSession = async () => {
       onSessionStatus?.(tabId, "connecting");
@@ -396,7 +369,7 @@ export default function Terminal({
           if (event.type === "Output") {
             scheduleWrite(event.data);
           } else if (event.type === "Exit") {
-            ended = true;
+            ended = true; sessionEnded = true; clip.invalidate();
             onSessionStatus?.(tabId, "ended");
             xterm.write("\r\n\x1b[31m[Session ended]\x1b[0m\r\n");
           }
@@ -486,7 +459,7 @@ export default function Terminal({
         const profileId = sshConfig?.profileId;
 
         xterm.onData((data) => {
-          if (!sessionIdRef.current) return;
+          if (!sessionIdRef.current || ended) return;
 
           // 에디터/페이저 모드에서는 히스토리 캡처 스킵
           if (
@@ -554,6 +527,7 @@ export default function Terminal({
 
     return () => {
       disposed = true;
+      clip.dispose(); clipboard.current = null;
       window.removeEventListener("resize", layout.schedule);
       window.removeEventListener("focus", layout.schedule);
       window.removeEventListener("pageshow", layout.schedule);
@@ -583,7 +557,7 @@ export default function Terminal({
   }, [theme]);
 
   return (
-    <>
+    <div style={{ position: "relative", width: "100%", height: "100%", display: isActive ? "block" : "none" }}>
       <div
         ref={terminalRef}
         style={{
@@ -593,6 +567,12 @@ export default function Terminal({
           display: isActive ? "block" : "none",
         }}
       />
+      {clipboardError && isActive && <div className="terminal-clipboard-error" role="status">{clipboardError}</div>}
+      {clipboardMenu && isActive && <TerminalClipboardMenu position={clipboardMenu}
+        canCopy={!!xtermRef.current?.hasSelection()} canPaste={clipboard.current?.canPaste() ?? false}
+        onClose={closeClipboardMenu}
+        onCopy={() => { void clipboard.current?.copy(); closeClipboardMenu(); xtermRef.current?.focus(); }}
+        onPaste={() => { closeClipboardMenu(); xtermRef.current?.focus(); clipboard.current?.paste(); }} />}
       {picker && isActive && sessionIdRef.current && (
         <VaultPromptPicker
           sessionId={sessionIdRef.current}
@@ -611,6 +591,6 @@ export default function Terminal({
           }}
         />
       )}
-    </>
+    </div>
   );
 }

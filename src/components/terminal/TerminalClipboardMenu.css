@@ -1,0 +1,5 @@
+.terminal-clipboard-menu { position: fixed; z-index: 1000; width: 180px; padding: 4px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-secondary); box-shadow: 0 8px 24px #0005; }
+.terminal-clipboard-menu button { display: block; width: 100%; padding: 8px 12px; border: 0; border-radius: 4px; background: transparent; color: var(--text-primary); font: inherit; text-align: left; cursor: pointer; }
+.terminal-clipboard-menu button:hover:not(:disabled), .terminal-clipboard-menu button:focus-visible { background: var(--bg-hover); outline: 1px solid var(--accent); }
+.terminal-clipboard-menu button:disabled { opacity: .5; cursor: default; }
+.terminal-clipboard-error { position: absolute; bottom: 8px; left: 12px; z-index: 10; max-width: calc(100% - 24px); padding: 8px 12px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-secondary); color: var(--error); font-size: 12px; }
