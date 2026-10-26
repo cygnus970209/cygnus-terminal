@@ -4,7 +4,7 @@
 
 ### Added
 - Show the Vault picker for password prompts in MCP terminals. Choose a saved credential, submit a masked one-time password without saving it, or dismiss the picker and type directly. Open it manually with **Password / Vault** for custom prompts.
-- Save server OS and shell preferences, detect the connected environment, and show Windows CPU, memory, disk, service and event information over SSH with PowerShell.
+- Save server OS and shell preferences, detect the connected environment, and show Windows CPU, memory, disk, process and event information over SSH with PowerShell.
 - Add **Beta** read-only IIS tools for sites, application pools, bindings, recent events and bounded log previews.
 - Add **Beta** embedded RDP sessions with saved connection profiles, certificate fingerprint confirmation, keyboard and mouse input, short Unicode text input, DPI selection, reconnect and server-supported live resolution changes.
 - Add opt-in RDP text clipboard exchange with explicit previews and send/copy actions. Sharing defaults to off and stops when the panel closes, the tab changes or the app loses focus; file, image and automatic clipboard synchronization are not supported.
