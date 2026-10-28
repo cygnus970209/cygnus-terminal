@@ -19,7 +19,7 @@ Cygnus is a desktop terminal for people working across servers and network equip
 
 | Your task | What Cygnus provides |
 | --- | --- |
-| Connect to servers and devices | SSH, Telnet, Serial, local shells, and RDP (Beta) in one tabbed workspace |
+| Connect to servers and devices | SSH, WinRM, Telnet, Serial, local shells, and RDP (Beta) in one tabbed workspace |
 | Reconnect quickly | Saved connections, reusable groups, favorites, search, and filters |
 | Enter credentials | Encrypted Vault, server mappings, and credential selection at SSH prompts |
 | Manage files | Dedicated SFTP window, local/remote panels, server-to-server transfers, and transfer progress |
@@ -32,11 +32,12 @@ Cygnus is a desktop terminal for people working across servers and network equip
 
 - **SSH**: password/key authentication, Jump Host, Agent Forwarding, and host-key verification.
 - **RDP (Beta)**: save Windows desktop connections through **New connection → RDP (Beta)**, then search, favorite, connect, edit, or delete them in the same library.
+- **WinRM**: save Windows management connections, run PowerShell scripts, inspect output, and stop commands.
 - **Telnet**: access legacy servers and network equipment.
 - **Serial**: save COM/TTY paths and baud rates, even before a device is plugged in.
 - **Local Shell**: open a local terminal tab when you need one.
 
-Once a group is saved with an SSH, Telnet, or Serial connection, select it from the list next time. Use protocol/group filters and favorites to find a connection, then choose **Save** or **Save & Connect**. RDP connections do not currently have group assignments.
+Once a group is saved with an SSH, WinRM, Telnet, or Serial connection, select it from the list next time. Use protocol/group filters and favorites to find a connection, then choose **Save** or **Save & Connect**. RDP connections do not currently have group assignments.
 
 Drag tabs to reorder them, or right-click for **Close other tabs / Close tabs to the left / Close tabs to the right / Pin tab**. **F10** toggles the active tab’s pin (**Fn+F10** on some Mac keyboards). Pinned tabs stay on the left and survive bulk closing; their close button or **Close tab** still closes them directly. Dragging reorders within the pinned or regular group. Focus a tab and press **Shift+F10** to open its menu with the keyboard.
 
@@ -171,7 +172,7 @@ bun run tauri build
 
 Choose **New connection → RDP (Beta)**, then **Save** or **Save & Connect**. Saved RDP connections support search, favorites, connecting, editing and deletion in Connections and the sidebar. The tab bar's `+ → RDP desktop (Beta)` menu is also available. Save named connections with the server, username, domain, desktop size, and Windows scale (DPI) in the RDP connection form; edit them or save a copy. Direct NLA/NTLM connections, display rendering, and basic US keyboard and mouse input are supported. The IIS viewer is also labeled Beta while Windows server validation is pending.
 
-Verify the certificate's SHA-256 fingerprint before entering your password. Remembering it is optional. If a saved fingerprint changes, compare both fingerprints and explicitly acknowledge the change before continuing. Automatic issuer, hostname, and validity checks are not supported yet. Passwords are neither saved nor exposed to MCP. Backup v5 includes RDP scale settings but excludes certificate trust; v1–v4 backups remain importable. Existing connections without a scale setting use the server default.
+Verify the certificate's SHA-256 fingerprint before entering your password. Remembering it is optional. If a saved fingerprint changes, compare both fingerprints and explicitly acknowledge the change before continuing. Automatic issuer, hostname, and validity checks are not supported yet. Passwords are neither saved nor exposed to MCP. Backup v6 includes RDP scale settings and WinRM profiles but excludes certificate trust; v1–v5 backups remain importable. Existing connections without a scale setting use the server default.
 
 Use `Reconnect` in the connected toolbar or after a connection ends/fails to reuse the last server, account, resolution, and DPI settings in the same tab. Separate edits in the connection form are kept. The previous connection must finish closing before a replacement starts, and each attempt requires a fresh certificate review and password entry. Passwords are not reused and reconnect is manual.
 
