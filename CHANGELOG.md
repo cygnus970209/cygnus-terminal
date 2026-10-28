@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.1.19] - 2026-10-28
+
+### Added
+- Open SSH, local shell, RDP, Telnet, Serial and WinRM connections from the native Connection menu. Reach SFTP, snippets, Vault, MCP settings and the command palette from Tools, and server panels from View.
+- Choose English or Korean in Settings → General. Remember the language across launches and synchronize it across app windows and native menus.
+- Save and connect to Windows hosts through WinRM, separately from SSH. Run PowerShell commands, inspect stdout, stderr and exit codes, stop running commands, and reconnect from a dedicated console.
+- Support NTLM over HTTPS or HTTP with message encryption, and Basic authentication over HTTPS. Validate TLS certificates, with an optional explicit SHA-256 certificate pin.
+
+### Changed
+- Include WinRM destinations in the connection library, search, groups, favorites and backups. Keep saved passwords encrypted and exclude credentials and certificate pins from exported backups.
+- Build the application and RDP helper with Rust 1.98.0 to support the WinRM client.
+
+### Fixed
+- Dismiss dialogs and nested overlays with Escape, closing only the topmost layer and preserving Korean IME composition. Reject pending approvals when dismissed.
+- Prevent Save & Connect from opening a session after its dialog has been dismissed, and clean up WinRM connections when their tab closes during connection setup.
+- Keep stopping a WinRM command from accidentally submitting it again. Refuse stale-tab reconnections after a saved destination changes so commands cannot silently target a different host.
+
+### Known limitations
+- Each WinRM command starts a new noninteractive PowerShell process; variables and the working directory do not persist between runs. Interactive prompts, full-screen terminal programs, PSRP and SFTP are not supported in this console.
+- WinRM protocol fixtures and cancellation/authentication tests pass. Interoperability with real Windows hosts, including NTLM and organization-specific WinRM policies, still needs validation.
+
 ## [0.1.18] - 2026-10-26
 
 ### Added

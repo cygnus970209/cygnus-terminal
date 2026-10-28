@@ -1,3 +1,4 @@
+import { t, useLocale } from "../../i18n";
 import type { ConnectionChoice } from "../../types/connection";
 
 export default function ProtocolPicker({
@@ -7,13 +8,14 @@ export default function ProtocolPicker({
   value: ConnectionChoice;
   onChange?: (protocol: ConnectionChoice) => void;
 }) {
+  useLocale();
   return (
     <div
       className="protocol-picker"
       role="group"
-      aria-label="Connection protocol"
+      aria-label={t("Connection protocol")}
     >
-      {(["ssh", "rdp", "telnet", "serial"] as const).map((protocol) => (
+      {(["ssh", "rdp", "winrm", "telnet", "serial"] as const).map((protocol) => (
         <button
           key={protocol}
           type="button"
@@ -21,7 +23,7 @@ export default function ProtocolPicker({
           disabled={!onChange && value !== protocol}
           onClick={() => onChange?.(protocol)}
         >
-          {protocol === "rdp" ? "RDP (Beta)" : protocol === "serial" ? "Serial" : protocol.toUpperCase()}
+          {protocol === "rdp" ? t("RDP (Beta)") : protocol === "winrm" ? "WinRM" : protocol === "serial" ? t("Serial") : protocol.toUpperCase()}
         </button>
       ))}
     </div>

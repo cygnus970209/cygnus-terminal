@@ -1,3 +1,4 @@
+import { t, useLocale } from "../../i18n";
 import { useEffect, useRef, useState } from "react";
 import { check, Update, DownloadEvent } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
@@ -12,6 +13,7 @@ type Phase = "idle" | "checking" | "available" | "downloading" | "ready" | "erro
  * View 메뉴의 "Check for updates" 이벤트(`updater-check`)도 수신해 수동 체크 지원.
  */
 export default function UpdateBanner() {
+  useLocale();
   const [phase, setPhase] = useState<Phase>("idle");
   const [update, setUpdate] = useState<Update | null>(null);
   const [progress, setProgress] = useState<{ downloaded: number; total: number }>({
@@ -93,33 +95,27 @@ export default function UpdateBanner() {
 
   return (
     <div className={`ub-bar ub-phase-${phase}`}>
-      {phase === "checking" && <span className="ub-text">Checking for updates...</span>}
+      {phase === "checking" && <span className="ub-text">{t("Checking for updates...")}</span>}
 
       {phase === "available" && update && (
         <>
-          <span className="ub-text">
-            Update available: <strong>v{update.version}</strong>
+          <span className="ub-text">{t("Update available: ")}<strong>v{update.version}</strong>
             {update.date && <span className="ub-meta"> · {update.date}</span>}
           </span>
           <div className="ub-actions">
-            <button className="ub-btn ub-btn-primary" onClick={handleInstall}>
-              Install & relaunch
-            </button>
+            <button className="ub-btn ub-btn-primary" onClick={handleInstall}>{t("Install & relaunch")}</button>
             <button
               className="ub-btn ub-btn-ghost"
               onClick={() => setDismissed(true)}
-              title="Dismiss (until next launch)"
-            >
-              Later
-            </button>
+              title={t("Dismiss (until next launch)")}
+            >{t("Later")}</button>
           </div>
         </>
       )}
 
       {phase === "downloading" && (
         <>
-          <span className="ub-text">
-            Downloading update... {pct}%
+          <span className="ub-text">{t("Downloading update... ")}{pct}%
             {progress.total > 0 && (
               <span className="ub-meta">
                 {" "}
@@ -133,14 +129,12 @@ export default function UpdateBanner() {
         </>
       )}
 
-      {phase === "ready" && <span className="ub-text">Restarting...</span>}
+      {phase === "ready" && <span className="ub-text">{t("Restarting...")}</span>}
 
       {phase === "error" && errorMsg && (
         <>
           <span className="ub-text ub-err">{errorMsg}</span>
-          <button className="ub-btn ub-btn-ghost" onClick={() => setDismissed(true)}>
-            Dismiss
-          </button>
+          <button className="ub-btn ub-btn-ghost" onClick={() => setDismissed(true)}>{t("Dismiss")}</button>
         </>
       )}
     </div>

@@ -1,3 +1,4 @@
+import { t, useLocale } from "../../i18n";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Tab, type SessionStatus } from "../../types";
 import { type TabCloseAction, type TabDropSide } from "../../utils/tabs";
@@ -19,11 +20,13 @@ interface TabBarProps {
   onNewTelnetTab: () => void;
   onNewSerialTab: () => void;
   onNewRdpTab: () => void;
+  onNewWinrmTab: () => void;
   onToggleSidebar: () => void;
   sidebarCollapsed: boolean;
 }
 
 export default function TabBar(props: TabBarProps) {
+  useLocale();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const activeRef = useRef<HTMLButtonElement>(null);
@@ -75,9 +78,9 @@ export default function TabBar(props: TabBarProps) {
           className="tabbar-btn"
           onClick={props.onToggleSidebar}
           title={
-            props.sidebarCollapsed ? "Show connections" : "Hide connections"
+            props.sidebarCollapsed ? t("Show connections") : t("Hide connections")
           }
-          aria-label="Toggle connections sidebar"
+          aria-label={t("Toggle connections sidebar")}
           aria-expanded={!props.sidebarCollapsed}
         >
           <Icon name="panel" />
@@ -87,7 +90,7 @@ export default function TabBar(props: TabBarProps) {
         ref={listRef}
         className="tabbar-tabs"
         role="tablist"
-        aria-label="Terminal sessions"
+        aria-label={t("Terminal sessions")}
         onScroll={() => closeContextMenu()}
       >
         {sessionTabs.map((tab, index) => {
@@ -107,7 +110,7 @@ export default function TabBar(props: TabBarProps) {
                 className="tab-select"
                 role="tab"
                 aria-selected={active}
-                aria-label={`${tab.title}${tab.pinned ? ", pinned" : ""}, ${status}`}
+                aria-label={`${tab.title}${tab.pinned ? t(", pinned") : ""}, ${t(status)}`}
                 aria-haspopup="menu"
                 tabIndex={
                   active ||
@@ -116,7 +119,7 @@ export default function TabBar(props: TabBarProps) {
                     ? 0
                     : -1
                 }
-                title={`${tab.title} · ${status}${tab.pinned ? " · Pinned" : ""}\nDrag to reorder · Right-click for tab actions`}
+                title={`${tab.title} · ${t(status)}${tab.pinned ? t(" · Pinned") : ""}\n${t("Drag to reorder · Right-click for tab actions")}`}
                 onPointerDown={(event) => {
                   closeContextMenu();
                   drag.onPointerDown(event, tab.id, !!tab.pinned);
@@ -167,13 +170,13 @@ export default function TabBar(props: TabBarProps) {
                   />
                 )}
                 <span className="tab-title">{tab.title}</span>
-                {tab.pinned && <span className="tab-pin" title="Pinned · F10 to unpin"><Icon name="pin" size={13} /></span>}
+                {tab.pinned && <span className="tab-pin" title={t("Pinned · F10 to unpin")}><Icon name="pin" size={13} /></span>}
               </button>
               <button
                 className="tab-close"
                 onClick={() => props.onCloseTabs(tab.id, "single")}
-                title={`Close ${tab.title}`}
-                aria-label={`Close ${tab.title}`}
+                title={t("Close {v0}", { v0: tab.title })}
+                aria-label={t("Close {v0}", { v0: tab.title })}
               >
                 <Icon name="close" size={13} />
               </button>
@@ -188,8 +191,8 @@ export default function TabBar(props: TabBarProps) {
           onClick={() => { closeContextMenu(); setMenuOpen(!menuOpen); }}
           aria-expanded={menuOpen}
           aria-controls="new-session-menu"
-          title="New session"
-          aria-label="New session"
+          title={t("New session")}
+          aria-label={t("New session")}
         >
           <Icon name="plus" />
         </button>
@@ -197,27 +200,28 @@ export default function TabBar(props: TabBarProps) {
           <div
             id="new-session-menu"
             className="session-menu"
-            aria-label="New session options"
+            aria-label={t("New session options")}
           >
-            <span className="session-menu-label">NEW SESSION</span>
+            <span className="session-menu-label">{t("NEW SESSION")}</span>
             {(
               [
                 ["SSH connection", props.onNewSshTab, "server"],
                 ["RDP desktop (Beta)", props.onNewRdpTab, "monitor"],
+                ["WinRM connection", props.onNewWinrmTab, "server"],
                 ["Local shell", props.onNewLocalTab, "terminal"],
                 ["Telnet connection", props.onNewTelnetTab, "server"],
                 ["Serial connection", props.onNewSerialTab, "terminal"],
               ] as const
             ).map(([label, action, icon]) => (
               <button
-                key={label}
+                key={t(label)}
                 onClick={() => {
                   setMenuOpen(false);
                   action();
                 }}
               >
                 <Icon name={icon} />
-                {label}
+                {t(label)}
               </button>
             ))}
           </div>

@@ -1,3 +1,4 @@
+import { t, useLocale } from "../../../i18n";
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useInvokeState } from "../../../hooks/useInvokeState";
@@ -16,6 +17,7 @@ export default function PathsTab({
   onCaptureCurrentPath,
   showToast,
 }: Props) {
+  useLocale();
   const [newPath, setNewPath] = useState("");
   const [newLabel, setNewLabel] = useState("");
   const [showAdd, setShowAdd] = useState(false);
@@ -84,19 +86,17 @@ export default function PathsTab({
     <>
       <div className="sc-header-row">
         {onCaptureCurrentPath && (
-          <button className="sc-add-btn" onClick={handleSaveCurrent}>
-            Save Current
-          </button>
+          <button className="sc-add-btn" onClick={handleSaveCurrent}>{t("Save Current")}</button>
         )}
         <button className="sc-add-btn" onClick={() => setShowAdd(!showAdd)}>
-          {showAdd ? "Cancel" : "+ Add"}
+          {showAdd ? t("Cancel") : t("+ Add")}
         </button>
       </div>
       {showAdd && (
         <div className="sc-add-form">
           <input
             type="text"
-            placeholder="Path (e.g. /var/log)"
+            placeholder={t("Path (e.g. /var/log)")}
             value={newPath}
             onChange={(e) => setNewPath(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleAdd()}
@@ -104,14 +104,12 @@ export default function PathsTab({
           />
           <input
             type="text"
-            placeholder="Label (optional)"
+            placeholder={t("Label (optional)")}
             value={newLabel}
             onChange={(e) => setNewLabel(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleAdd()}
           />
-          <button className="sc-save-btn" onClick={handleAdd}>
-            Save
-          </button>
+          <button className="sc-save-btn" onClick={handleAdd}>{t("Save")}</button>
         </div>
       )}
       <div className="sc-list">
@@ -136,11 +134,7 @@ export default function PathsTab({
           </div>
         ))}
         {bookmarks.length === 0 && !showAdd && (
-          <div className="sc-empty">
-            No bookmarked paths.
-            <br />
-            Click + Add to save one.
-          </div>
+          <div className="sc-empty">{t("No bookmarked paths.")}<br />{t("Click + Add to save one.")}</div>
         )}
       </div>
     </>

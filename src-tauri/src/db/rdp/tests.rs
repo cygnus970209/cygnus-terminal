@@ -155,7 +155,7 @@ fn backup_roundtrip_never_imports_trust_and_bad_rdp_data_aborts_everything() {
     db.approve_rdp_certificate(&endpoint, &pin("AB"), None, true, false)
         .unwrap();
     let backup = db.export_data(&crypto).unwrap();
-    assert_eq!(backup.version, 5);
+    assert_eq!(backup.version, 6);
     let json = serde_json::to_value(&backup).unwrap();
     assert!(!json.to_string().contains("fingerprint"));
     assert!(!json.to_string().contains("password"));

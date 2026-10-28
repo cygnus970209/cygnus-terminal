@@ -1,3 +1,4 @@
+import { t, useLocale } from "../../i18n";
 import { attachTerminalClipboard } from "../../utils/terminalClipboard";
 import TerminalClipboardMenu from "./TerminalClipboardMenu";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -30,6 +31,7 @@ interface Props {
 }
 
 export default function McpTerminal({ tabId, job, isActive, onSessionStatus, onJobStatus }: Props) {
+  useLocale();
   const host = useRef<HTMLDivElement>(null);
   const terminal = useRef<XTerm | null>(null);
   const clipboard = useRef<ReturnType<typeof attachTerminalClipboard> | null>(null);
@@ -290,7 +292,7 @@ export default function McpTerminal({ tabId, job, isActive, onSessionStatus, onJ
   }, [isActive, job.id]);
 
   return (
-    <section className="mcp-terminal" style={{ position: "relative", display: isActive ? "flex" : "none" }} aria-label="MCP terminal">
+    <section className="mcp-terminal" style={{ position: "relative", display: isActive ? "flex" : "none" }} aria-label={t("MCP terminal")}>
       {clipboardError && isActive && <div className="terminal-clipboard-error" role="status">{clipboardError}</div>}
       {clipboardMenu && isActive && <TerminalClipboardMenu position={clipboardMenu}
         canCopy={!!terminal.current?.hasSelection()} canPaste={clipboard.current?.canPaste() ?? false}
@@ -301,17 +303,17 @@ export default function McpTerminal({ tabId, job, isActive, onSessionStatus, onJ
         <span className="mcp-terminal-status" role="status">MCP · {summary.status.replace(/_/g, " ")}</span>
         <span>{summary.username}@{summary.host}</span>
         {summary.status === "running" && <button className="mcp-terminal-password" disabled={!!error}
-          onClick={() => openPicker.current()}>Password / Vault</button>}
+          onClick={() => openPicker.current()}>{t("Password / Vault")}</button>}
         {!isFinished(summary) && <button className="mcp-terminal-stop" disabled={summary.status === "cancelling"}
-          onClick={() => void cancelExecution(job.id).catch((reason) => setError(String(reason)))}>Stop</button>}
+          onClick={() => void cancelExecution(job.id).catch((reason) => setError(String(reason)))}>{t("Stop")}</button>}
       </div>
       <pre className="mcp-terminal-command" title={summary.command}>{summary.command}</pre>
       <p className="mcp-terminal-hint">{summary.output_withheld
-        ? "Manual input detected. Subsequent output stays in this terminal and is excluded from AI results and execution history."
-        : "Type here or use Password / Vault when prompted. After your first input, subsequent output stays local. Closing this tab requests cancellation."}</p>
+        ? t("Manual input detected. Subsequent output stays in this terminal and is excluded from AI results and execution history.")
+        : t("Type here or use Password / Vault when prompted. After your first input, subsequent output stays local. Closing this tab requests cancellation.")}</p>
       {(error || summary.error) && <p className="mcp-terminal-error" role="alert">{error || summary.error}</p>}
       {summary.remote_outcome_unknown && isFinished(summary) &&
-        <p className="mcp-terminal-error">Remote termination is not confirmed. Check the server before retrying.</p>}
+        <p className="mcp-terminal-error">{t("Remote termination is not confirmed. Check the server before retrying.")}</p>}
       <div className="mcp-terminal-screen" ref={host} />
       {picker && isActive && picker.jobId === job.id && summary.status === "running" && <VaultPromptPicker
         key={picker.jobId}

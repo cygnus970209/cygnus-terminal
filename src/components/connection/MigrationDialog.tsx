@@ -1,3 +1,5 @@
+import { t, useLocale } from "../../i18n";
+import { useEscapeDismiss } from "../../hooks/useEscapeDismiss";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { invoke } from "../../services/secureInvoke";
@@ -27,6 +29,7 @@ type Preview = {
 };
 
 export default function MigrationDialog({ onClose }: { onClose: () => void }) {
+  useLocale();
   const supportsTermius = /Mac/i.test(navigator.platform);
   const [sources, setSources] = useState<Source[]>([]);
   const [detecting, setDetecting] = useState(true);
@@ -53,7 +56,7 @@ export default function MigrationDialog({ onClose }: { onClose: () => void }) {
       })
       .catch(() => {
         if (active)
-          setError("Could not detect local settings. Choose a file below.");
+          setError(t("Could not detect local settings. Choose a file below."));
       })
       .finally(() => {
         if (active) setDetecting(false);
@@ -173,6 +176,7 @@ export default function MigrationDialog({ onClose }: { onClose: () => void }) {
   useEffect(() => {
     if (!busy) close.current?.focus();
   }, [preview, complete, busy]);
+  useEscapeDismiss(onClose, true, 1200);
   return createPortal(
     <div
       className="migration-overlay"
@@ -188,10 +192,6 @@ export default function MigrationDialog({ onClose }: { onClose: () => void }) {
         aria-labelledby="migration-title"
         onKeyDown={(e) => {
           e.stopPropagation();
-          if (e.key === "Escape") {
-            e.preventDefault();
-            if (!busyRef.current) onClose();
-          }
           if (e.key === "Tab") {
             const elements = dialog.current?.querySelectorAll<HTMLElement>(
               'button:not(:disabled), input:not(:disabled), [tabindex="0"]',
@@ -218,15 +218,15 @@ export default function MigrationDialog({ onClose }: { onClose: () => void }) {
       >
         <header className="migration-header">
           <div>
-            <span className="migration-eyebrow">BRING YOUR SERVERS</span>
-            <h2 id="migration-title">Import connections</h2>
+            <span className="migration-eyebrow">{t("BRING YOUR SERVERS")}</span>
+            <h2 id="migration-title">{t("Import connections")}</h2>
           </div>
           <button
             ref={close}
             className="migration-close"
             disabled={busy}
             onClick={onClose}
-            aria-label="Close import"
+            aria-label={t("Close import")}
           >
             <Icon name="close" />
           </button>
@@ -241,13 +241,8 @@ export default function MigrationDialog({ onClose }: { onClose: () => void }) {
             <div className="migration-success" role="status">
               <Icon name="server" size={32} />
               <h3>
-                {complete} {complete === 1 ? "connection" : "connections"}{" "}
-                imported
-              </h3>
-              <p>
-                Your servers are ready in Connections. Edit any profiles that
-                still need a username, password or SSH key.
-              </p>
+                {complete} {complete === 1 ? t("connection") : t("connections")}{" "}{t("imported")}</h3>
+              <p>{t("Your servers are ready in Connections. Edit any profiles that still need a username, password or SSH key.")}</p>
             </div>
           ) : preview ? (
             <>
@@ -255,16 +250,13 @@ export default function MigrationDialog({ onClose }: { onClose: () => void }) {
                 <strong>{source?.name}</strong>
                 <span title={source?.path}>{source?.path}</span>
               </div>
-              <p className="migration-description">
-                Review your connections. Existing endpoints are skipped.
-                Passwords and private key contents are not copied.
-              </p>
+              <p className="migration-description">{t("Review your connections. Existing endpoints are skipped. Passwords and private key contents are not copied.")}</p>
               <div className="migration-list-heading">
                 <label>
                   <input
                     type="checkbox"
                     ref={allCheckbox}
-                    aria-label="Select all available connections"
+                    aria-label={t("Select all available connections")}
                     disabled={busy || !available.length}
                     checked={
                       available.length > 0 && selected.size === available.length
@@ -272,18 +264,15 @@ export default function MigrationDialog({ onClose }: { onClose: () => void }) {
                     onChange={(e) =>
                       setSelected(new Set(e.target.checked ? available : []))
                     }
-                  />{" "}
-                  Select available
-                </label>
+                  />{" "}{t("Select available")}</label>
                 <span>
-                  {selected.size} / {preview.candidates.length} selected
-                </span>
+                  {selected.size} / {preview.candidates.length}{t(" selected")}</span>
               </div>
               {!preview.candidates.length && (
                 <p className="migration-empty">
                   {source?.kind === "termius"
-                    ? "No saved SSH connections found in this Termius data folder."
-                    : "No named connections found. SSH files need explicit Host entries; wildcard defaults alone do not create connections."}
+                    ? t("No saved SSH connections found in this Termius data folder.")
+                    : t("No named connections found. SSH files need explicit Host entries; wildcard defaults alone do not create connections.")}
                 </p>
               )}
               <div className="migration-list">
@@ -294,7 +283,7 @@ export default function MigrationDialog({ onClose }: { onClose: () => void }) {
                   >
                     <input
                       type="checkbox"
-                      aria-label={`Import ${c.profile.name}`}
+                      aria-label={t("Import {v0}", { v0: c.profile.name })}
                       disabled={busy || c.blocked || c.duplicate}
                       checked={selected.has(i)}
                       onChange={(e) => {
@@ -309,12 +298,12 @@ export default function MigrationDialog({ onClose }: { onClose: () => void }) {
                         <strong>{c.profile.name}</strong>
                         <span>
                           {c.blocked
-                            ? "Manual setup"
+                            ? t("Manual setup")
                             : c.duplicate
-                              ? "Duplicate"
+                              ? t("Duplicate")
                               : c.warnings.length
-                                ? "Review settings"
-                                : "Ready"}
+                                ? t("Review settings")
+                                : t("Ready")}
                         </span>
                       </div>
                       {c.profile.host ? (
@@ -323,19 +312,15 @@ export default function MigrationDialog({ onClose }: { onClose: () => void }) {
                           {c.profile.host}:{c.profile.port}
                         </code>
                       ) : (
-                        <small>
-                          Address unavailable — review source settings
-                        </small>
+                        <small>{t("Address unavailable — review source settings")}</small>
                       )}
                       <small>
                         {(groupOverrides[i] ?? c.profile.group_name) ||
-                          "Ungrouped"}
+                          t("Ungrouped")}
                         {c.profile.key_path ? ` · ${c.profile.key_path}` : ""}
                       </small>
                       {c.duplicate && (
-                        <small>
-                          Same endpoint and user already saved or listed above.
-                        </small>
+                        <small>{t("Same endpoint and user already saved or listed above.")}</small>
                       )}
                       {c.warnings.map((warning, n) => (
                         <small className="migration-warning" key={n}>
@@ -344,9 +329,9 @@ export default function MigrationDialog({ onClose }: { onClose: () => void }) {
                       ))}
                     </div>
                     <div className="migration-row-group">
-                      <span>Group</span>
+                      <span>{t("Group")}</span>
                       <Select
-                        aria-label={`Group for ${c.profile.name}`}
+                        aria-label={t("Group for {v0}", { v0: c.profile.name })}
                         value={groupOverrides[i] ?? c.profile.group_name}
                         disabled={busy || c.blocked || c.duplicate}
                         onValueChange={(group) =>
@@ -356,7 +341,7 @@ export default function MigrationDialog({ onClose }: { onClose: () => void }) {
                           }))
                         }
                       >
-                        <option value="">No group</option>
+                        <option value="">{t("No group")}</option>
                         {groupOptions.map((group) => (
                           <option key={group} value={group}>
                             {group}
@@ -370,13 +355,10 @@ export default function MigrationDialog({ onClose }: { onClose: () => void }) {
             </>
           ) : (
             <>
-              <p className="migration-description">
-                Keep your server list when moving to Cygnus. Choose detected
-                settings or a file to preview before importing.
-              </p>
-              <h3 className="migration-section-title">On this computer</h3>
+              <p className="migration-description">{t("Keep your server list when moving to Cygnus. Choose detected settings or a file to preview before importing.")}</p>
+              <h3 className="migration-section-title">{t("On this computer")}</h3>
               {detecting ? (
-                <p role="status">Looking for settings…</p>
+                <p role="status">{t("Looking for settings…")}</p>
               ) : sources.length ? (
                 <div className="migration-sources">
                   {sources.map((s) => (
@@ -395,39 +377,28 @@ export default function MigrationDialog({ onClose }: { onClose: () => void }) {
                   ))}
                 </div>
               ) : (
-                <p className="migration-empty">
-                  No standard settings files found. You can choose a file below.
-                </p>
+                <p className="migration-empty">{t("No standard settings files found. You can choose a file below.")}</p>
               )}
-              <h3 className="migration-section-title">Choose a file or folder</h3>
+              <h3 className="migration-section-title">{t("Choose a file or folder")}</h3>
               <div className="migration-file-options">
                 <button disabled={busy} onClick={() => void choose("ssh")}>
-                  <strong>SSH config</strong>
-                  <small>OpenSSH host entries</small>
+                  <strong>{t("SSH config")}</strong>
+                  <small>{t("OpenSSH host entries")}</small>
                 </button>
                 <button disabled={busy} onClick={() => void choose("iterm")}>
-                  <strong>iTerm2 profiles</strong>
-                  <small>Exported JSON or preferences plist</small>
+                  <strong>{t("iTerm2 profiles")}</strong>
+                  <small>{t("Exported JSON or preferences plist")}</small>
                 </button>
                 {supportsTermius && (
                   <button disabled={busy} onClick={() => void choose("termius")}>
-                    <strong>Termius local data</strong>
-                    <small>macOS · Termius 10.1.0 · Experimental</small>
+                    <strong>{t("Termius local data")}</strong>
+                    <small>{t("macOS · Termius 10.1.0 · Experimental")}</small>
                   </button>
                 )}
               </div>
-              <p className="migration-help">
-                iTerm2: Settings → Profiles → Other Actions → Save Profile as
-                JSON. SSH aliases are resolved using this computer’s
-                ~/.ssh/config.
-              </p>
+              <p className="migration-help">{t("iTerm2: Settings → Profiles → Other Actions → Save Profile as JSON. SSH aliases are resolved using this computer’s ~/.ssh/config.")}</p>
               {supportsTermius && (
-                <p className="migration-help">
-                  Termius: quit Termius before importing. Choose its detected
-                  settings or the Termius data folder. macOS may ask for access to
-                  the Termius Keychain item to read your connections. Passwords and
-                  private keys are not copied. Shared vaults require manual setup.
-                </p>
+                <p className="migration-help">{t("Termius: quit Termius before importing. Choose its detected settings or the Termius data folder. macOS may ask for access to the Termius Keychain item to read your connections. Passwords and private keys are not copied. Shared vaults require manual setup.")}</p>
               )}
             </>
           )}
@@ -435,15 +406,13 @@ export default function MigrationDialog({ onClose }: { onClose: () => void }) {
         <footer className="migration-footer">
           <span role="status">
             {busy
-              ? "Working…"
+              ? t("Working…")
               : complete !== null
-                ? "Original settings are unchanged."
-                : "Your files stay on this computer."}
+                ? t("Original settings are unchanged.")
+                : t("Your files stay on this computer.")}
           </span>
           {complete !== null ? (
-            <button className="migration-primary" onClick={onClose}>
-              Done
-            </button>
+            <button className="migration-primary" onClick={onClose}>{t("Done")}</button>
           ) : (
             <>
               {preview && (
@@ -454,23 +423,18 @@ export default function MigrationDialog({ onClose }: { onClose: () => void }) {
                     setSource(null);
                     setError("");
                   }}
-                >
-                  Back
-                </button>
+                >{t("Back")}</button>
               )}
               {preview ? (
                 <button
                   className="migration-primary"
                   disabled={busy || !selected.size}
                   onClick={() => void save()}
-                >
-                  Import {selected.size}{" "}
-                  {selected.size === 1 ? "connection" : "connections"}
+                >{t("Import ")}{selected.size}{" "}
+                  {selected.size === 1 ? t("connection") : t("connections")}
                 </button>
               ) : (
-                <button disabled={busy} onClick={onClose}>
-                  Cancel
-                </button>
+                <button disabled={busy} onClick={onClose}>{t("Cancel")}</button>
               )}
             </>
           )}

@@ -1,3 +1,4 @@
+import { t, useLocale } from "../../i18n";
 import Icon from "../common/Icon";
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -56,6 +57,7 @@ export default function FilePanel({
   onContextMenu,
   registerHandle,
 }: FilePanelProps) {
+  useLocale();
   const [currentPath, setCurrentPath] = useState(initialPath || "/");
   const [entries, setEntries] = useState<FileEntry[]>([]);
   const [selectedPaths, setSelectedPaths] = useState<Set<string>>(new Set());
@@ -280,14 +282,14 @@ export default function FilePanel({
             {sourceLabel}
           </span>
           <span className="fp-source-kind">
-            {mode === "remote" ? "SFTP" : "LOCAL"}
+            {mode === "remote" ? "SFTP" : t("LOCAL")}
           </span>
         </div>
       )}
 
       {/* Breadcrumb */}
       <div className="fp-breadcrumb">
-        <button className="fp-bc-up" onClick={goParent} title="Parent">↑</button>
+        <button className="fp-bc-up" onClick={goParent} title={t("Parent")}>↑</button>
         <span className="fp-bc-item" onClick={() => navigateTo("/")}>/</span>
         {pathSegments.map((seg, i) => {
           const segPath = "/" + pathSegments.slice(0, i + 1).join("/");
@@ -300,20 +302,20 @@ export default function FilePanel({
             </span>
           );
         })}
-        <button className="fp-refresh" onClick={() => loadDir(currentPath)} title="Refresh">
+        <button className="fp-refresh" onClick={() => loadDir(currentPath)} title={t("Refresh")}>
           ↻
         </button>
       </div>
 
       {/* List header */}
       <div className="fp-list-header">
-        <span className="fp-col-name">Name</span>
-        <span className="fp-col-size">Size</span>
-        <span className="fp-col-date">Modified</span>
+        <span className="fp-col-name">{t("Name")}</span>
+        <span className="fp-col-size">{t("Size")}</span>
+        <span className="fp-col-date">{t("Modified")}</span>
       </div>
 
       <div className="fp-list-body">
-        {loading && entries.length === 0 && <div className="fp-status">Loading...</div>}
+        {loading && entries.length === 0 && <div className="fp-status">{t("Loading...")}</div>}
         {error && <div className="fp-status fp-error">{error}</div>}
 
         {currentPath !== "/" && (
@@ -359,12 +361,11 @@ export default function FilePanel({
       </div>
 
       {dragOverSelf && !dragHoverDir && (
-        <div className="fp-drop-overlay">Drop to {currentPath}</div>
+        <div className="fp-drop-overlay">{t("Drop to ")}{currentPath}</div>
       )}
       {selectedPaths.size > 1 && (
         <div className="fp-selection-info">
-          {selectedPaths.size} selected
-        </div>
+          {selectedPaths.size}{t(" selected")}</div>
       )}
     </div>
   );

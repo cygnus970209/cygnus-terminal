@@ -1,9 +1,10 @@
 [package]
 name = "cygnus-terminal"
-version = "0.1.18"
+version = "0.1.19"
 description = "Diverse and powerful all-in-one terminal"
 authors = ["cygnus970209"]
 edition = "2021"
+rust-version = "1.98"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -60,7 +61,9 @@ sha2 = "0.10"
 url = "2"
 tower = { version = "0.5", features = ["util"] }
 cygnus-rdp-protocol = { path = "../rdp-protocol" }
+winrm-rs = "=2.0.0"
 
 [dev-dependencies]
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring"] }
 reqwest = { version = "0.13", default-features = false, features = ["json", "rustls", "form", "query"] }
 rmcp = { version = "3.5.1", default-features = false, features = ["client", "transport-streamable-http-client-reqwest"] }

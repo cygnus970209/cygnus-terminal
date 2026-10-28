@@ -1,5 +1,7 @@
+import { t, useLocale } from "../../i18n";
+import { useEscapeDismiss } from "../../hooks/useEscapeDismiss";
 import type { ConnectionChoice } from "../../types/connection";
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { invoke } from "../../services/secureInvoke";
 import type { Profile } from "../../types";
 import Icon from "../common/Icon";
@@ -28,6 +30,7 @@ export default function TransportConnectDialog({
   onSaved,
   onConnect,
 }: Props) {
+  useLocale();
   const serial = protocol === "serial";
   const [name, setName] = useState(editProfile?.name ?? "");
   const [host, setHost] = useState(editProfile?.host ?? "");
@@ -52,13 +55,12 @@ export default function TransportConnectDialog({
   useEffect(() => {
     if (serial) void refreshPorts();
   }, [serial]);
+  const dismissed = useRef(false);
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !busy) onCancel();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [busy, onCancel]);
+    dismissed.current = false;
+    return () => { dismissed.current = true; };
+  }, []);
+  useEscapeDismiss(() => { dismissed.current = true; onCancel(); });
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (busy) return;
@@ -101,6 +103,7 @@ export default function TransportConnectDialog({
         profileId = profile.id;
         onSaved();
       }
+      if (dismissed.current) return;
       if (connect)
         onConnect({
           host: host.trim(),
@@ -110,7 +113,7 @@ export default function TransportConnectDialog({
         });
       else onCancel();
     } catch (err) {
-      setError(`Could not save connection: ${String(err)}`);
+      setError(t("Could not save connection: {v0}", { v0: String(err) }));
     } finally {
       setBusy(false);
     }
@@ -126,23 +129,19 @@ export default function TransportConnectDialog({
       >
         <div className="connection-dialog-heading">
           <div>
-            <span className="connection-dialog-eyebrow">
-              CONNECTION DETAILS
-            </span>
+            <span className="connection-dialog-eyebrow">{t("CONNECTION DETAILS")}</span>
             <h2 className="dialog-title" id="transport-dialog-title">
-              {editProfile ? "Edit" : "New"} {serial ? "Serial" : "Telnet"}{" "}
-              connection
-            </h2>
+              {editProfile ? t("Edit") : t("New")} {serial ? t("Serial") : "Telnet"}{" "}{t("connection")}</h2>
             <p>
               {serial
-                ? "Save your device and console settings."
-                : "Connect to a network device or legacy host."}
+                ? t("Save your device and console settings.")
+                : t("Connect to a network device or legacy host.")}
             </p>
           </div>
           <button
             className="icon-button"
             disabled={busy}
-            aria-label="Close connection dialog"
+            aria-label={t("Close connection dialog")}
             onClick={onCancel}
           >
             <Icon name="close" />
@@ -154,17 +153,15 @@ export default function TransportConnectDialog({
         />
         <form onSubmit={submit}>
           <fieldset disabled={busy} className="transport-fields">
-            <label className="dialog-row">
-              Name
-              <input
+            <label className="dialog-row">{t("Name")}<input
                 autoFocus
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder={serial ? "Router console" : "Lab switch"}
+                placeholder={serial ? t("Router console") : t("Lab switch")}
               />
             </label>
             <label className="dialog-row">
-              {serial ? "Device path" : "Host"}
+              {serial ? t("Device path") : t("Host")}
               <input
                 required
                 value={host}
@@ -189,20 +186,18 @@ export default function TransportConnectDialog({
                     {portError ||
                       (ports.length
                         ? `${ports.length} available ports. You can also enter a path.`
-                        : "No ports detected. You can save a device path before plugging it in.")}
+                        : t("No ports detected. You can save a device path before plugging it in."))}
                   </span>
                   <button
                     type="button"
                     className="dialog-browse-btn"
                     onClick={() => void refreshPorts()}
-                  >
-                    Refresh
-                  </button>
+                  >{t("Refresh")}</button>
                 </div>
               </>
             )}
             <label className="dialog-row">
-              {serial ? "Baud rate" : "Port"}
+              {serial ? t("Baud rate") : t("Port")}
               <input
                 required
                 type="number"
@@ -227,10 +222,7 @@ export default function TransportConnectDialog({
             )}
             <GroupPicker value={group} onChange={setGroup} />
             {!serial && (
-              <p className="transport-note">
-                Telnet is unencrypted. Log in through the terminal after
-                connecting.
-              </p>
+              <p className="transport-note">{t("Telnet is unencrypted. Log in through the terminal after connecting.")}</p>
             )}
             {!editProfile && (
               <label className="dialog-checkbox">
@@ -238,9 +230,7 @@ export default function TransportConnectDialog({
                   type="checkbox"
                   checked={save}
                   onChange={(e) => setSave(e.target.checked)}
-                />
-                Save connection
-              </label>
+                />{t("Save connection")}</label>
             )}
             {error && (
               <p className="connection-error" role="alert">
@@ -252,17 +242,13 @@ export default function TransportConnectDialog({
                 type="button"
                 className="dialog-btn dialog-btn-cancel"
                 onClick={onCancel}
-              >
-                Cancel
-              </button>
+              >{t("Cancel")}</button>
               {(save || editProfile) && (
                 <button
                   type="submit"
                   value="save"
                   className="dialog-btn dialog-btn-save"
-                >
-                  Save
-                </button>
+                >{t("Save")}</button>
               )}
               <button
                 type="submit"
@@ -270,10 +256,10 @@ export default function TransportConnectDialog({
                 className="dialog-btn dialog-btn-connect"
               >
                 {busy
-                  ? "Saving…"
+                  ? t("Saving…")
                   : save || editProfile
-                    ? "Save & Connect"
-                    : "Connect"}
+                    ? t("Save & Connect")
+                    : t("Connect")}
               </button>
             </div>
           </fieldset>

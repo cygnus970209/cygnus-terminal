@@ -1,3 +1,4 @@
+import { t, useLocale } from "../../../i18n";
 import { useTheme } from "../../../hooks/useTheme";
 import type { TerminalTheme } from "../../../themes";
 import "./ThemeTab.css";
@@ -16,14 +17,13 @@ function pickSwatches(theme: TerminalTheme): string[] {
 }
 
 export default function ThemeTab() {
+  useLocale();
   const { themeId, setThemeId, presets } = useTheme();
 
   return (
     <div className="settings-section">
-      <h3 className="settings-section-title">Terminal Theme</h3>
-      <p className="settings-desc">
-        터미널의 색상 테마를 선택합니다. 변경 즉시 모든 터미널 탭에 반영됩니다.
-      </p>
+      <h3 className="settings-section-title">{t("Terminal Theme")}</h3>
+      <p className="settings-desc">{t("터미널의 색상 테마를 선택합니다. 변경 즉시 모든 터미널 탭에 반영됩니다.")}</p>
       <div className="theme-grid" role="radiogroup">
         {presets.map((preset) => {
           const selected = preset.id === themeId;

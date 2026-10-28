@@ -216,6 +216,16 @@ const MIGRATIONS: &[Migration] = &[
         version: 13,
         sql: "CREATE TABLE mcp_oauth_state (id INTEGER PRIMARY KEY CHECK(id = 1), value TEXT NOT NULL);",
     },
+    Migration {
+        version: 14,
+        sql: "CREATE TABLE winrm_profiles (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            group_name TEXT NOT NULL DEFAULT '',
+            config TEXT NOT NULL,
+            password TEXT
+        );",
+    },
 ];
 
 impl Database {

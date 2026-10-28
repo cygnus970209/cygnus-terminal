@@ -1,3 +1,4 @@
+import { t, useLocale } from "../i18n";
 import { useEffect, useState } from "react";
 import { Channel } from "@tauri-apps/api/core";
 import { invoke } from "../services/secureInvoke";
@@ -25,6 +26,7 @@ type ConnectState =
  * create_ssh_session → sftp_open → sftp_get_home_dir 순으로 세션을 띄운다.
  */
 export default function SftpConnectView({ onConnected }: Props) {
+  useLocale();
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [state, setState] = useState<ConnectState>({ kind: "loading" });
   const [search, setSearch] = useState("");
@@ -118,29 +120,27 @@ export default function SftpConnectView({ onConnected }: Props) {
   return (
     <div className="sc-view">
       <div className="sc-head">
-        <h2 className="sc-title">Connect via SFTP</h2>
-        <p className="sc-sub">
-          Pick a saved profile to start a new SFTP session in this window.
-        </p>
+        <h2 className="sc-title">{t("Connect via SFTP")}</h2>
+        <p className="sc-sub">{t("Pick a saved profile to start a new SFTP session in this window.")}</p>
       </div>
 
       <input
         className="sc-search"
         type="text"
-        placeholder="Search by name, host, user..."
+        placeholder={t("Search by name, host, user...")}
         value={search}
         onChange={(e) => setSearch(e.target.value)}
       />
 
       {state.kind === "loading" && (
-        <div className="sc-msg">Loading profiles...</div>
+        <div className="sc-msg">{t("Loading profiles...")}</div>
       )}
 
       {state.kind !== "loading" && filtered.length === 0 && (
         <div className="sc-msg">
           {profiles.length === 0
-            ? "No saved profiles yet. Add one from the Connections tab in the main window."
-            : "No profile matches your search."}
+            ? t("No saved profiles yet. Add one from the Connections tab in the main window.")
+            : t("No profile matches your search.")}
         </div>
       )}
 
@@ -170,7 +170,7 @@ export default function SftpConnectView({ onConnected }: Props) {
                 disabled={connecting}
                 onClick={() => handleConnect(p)}
               >
-                {connecting ? "Connecting..." : "Connect"}
+                {connecting ? t("Connecting...") : t("Connect")}
               </button>
             </div>
           );
@@ -178,9 +178,7 @@ export default function SftpConnectView({ onConnected }: Props) {
       </div>
 
       <div className="sc-foot">
-        <span className="mono">Tip:</span> once connected, use the dropdown at
-        the top of each panel to add another server or switch to Local.
-      </div>
+        <span className="mono">{t("Tip:")}</span>{t(" once connected, use the dropdown at the top of each panel to add another server or switch to Local.")}</div>
     </div>
   );
 }

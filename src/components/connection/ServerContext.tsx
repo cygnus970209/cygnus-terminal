@@ -1,3 +1,4 @@
+import { t, useLocale } from "../../i18n";
 import { useCallback, useState } from "react";
 import HistoryTab from "./serverContext/HistoryTab";
 import CommandsTab from "./serverContext/CommandsTab";
@@ -20,6 +21,7 @@ export default function ServerContext({
   onExecuteCommand,
   onCaptureCurrentPath,
 }: ServerContextProps) {
+  useLocale();
   const [activeTab, setActiveTab] = useState<TabType>("history");
   const [toast, setToast] = useState<string | null>(null);
 
@@ -34,27 +36,19 @@ export default function ServerContext({
         <button
           className={`sc-tab ${activeTab === "history" ? "sc-tab-active" : ""}`}
           onClick={() => setActiveTab("history")}
-        >
-          History
-        </button>
+        >{t("History")}</button>
         <button
           className={`sc-tab ${activeTab === "commands" ? "sc-tab-active" : ""}`}
           onClick={() => setActiveTab("commands")}
-        >
-          Commands
-        </button>
+        >{t("Commands")}</button>
         <button
           className={`sc-tab ${activeTab === "paths" ? "sc-tab-active" : ""}`}
           onClick={() => setActiveTab("paths")}
-        >
-          Paths
-        </button>
+        >{t("Paths")}</button>
         <button
           className={`sc-tab ${activeTab === "forwards" ? "sc-tab-active" : ""}`}
           onClick={() => setActiveTab("forwards")}
-        >
-          Ports
-        </button>
+        >{t("Ports")}</button>
       </div>
 
       <div className="sc-content">

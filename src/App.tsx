@@ -1,6 +1,10 @@
+import { useEscapeDismiss } from "./hooks/useEscapeDismiss";
 import type { ConnectionChoice } from "./types/connection";
 import type { RdpLaunch, RdpProfile } from "./types/rdp";
 import RdpConnectDialog from "./components/connection/RdpConnectDialog";
+import WinrmConnectDialog from "./components/connection/WinrmConnectDialog";
+import WinrmSession from "./components/terminal/WinrmSession";
+import type { WinrmLaunch, WinrmProfile } from "./types/winrm";
 import { useState, useCallback, useRef, useEffect } from "react";
 import { invoke, keychainNotice } from "./services/secureInvoke";
 import { emit, listen } from "@tauri-apps/api/event";
@@ -62,11 +66,16 @@ import FileTree from "./components/files/FileTree";
 import SnippetsView from "./components/snippets/SnippetsView";
 import VaultView from "./components/vault/VaultView";
 import SftpView from "./components/sftp/SftpView";
+import { t, useLocale } from "./i18n";
 import "./App.css";
 
 let tabCounter = 1;
 
 function App() {
+  const locale = useLocale();
+  useEffect(() => {
+    void invoke("set_app_language", { language: locale }).catch(console.error);
+  }, [locale]);
   const [tabs, setTabs] = useState<(Tab & { sshConfig?: SshConfig })[]>([]);
   const [activeTabId, setActiveTabId] = useState<string | null>("connections");
   const mcpSlots = useRef(new Map<string, ExecutionSummary>());
@@ -106,6 +115,7 @@ function App() {
   const [showConnectDialog, setShowConnectDialog] = useState(false);
   const [editProfile, setEditProfile] = useState<Profile | null>(null);
   const [editRdpProfile, setEditRdpProfile] = useState<RdpProfile | null>(null);
+  const [editWinrmProfile, setEditWinrmProfile] = useState<WinrmProfile | null>(null);
   const [sessionMap, setSessionMap] = useState<Record<string, string>>({});
   const [sftpSessions, setSftpSessions] = useState<
     Record<string, { sftpId: string; homePath: string }>
@@ -131,8 +141,10 @@ function App() {
   const [rightCollapsed, setRightCollapsed] = useState(false);
   const [drawerTab, setDrawerTab] = useState<DrawerTab>(null);
   const [showSettings, setShowSettings] = useState(false);
+  const [settingsTab, setSettingsTab] = useState("general");
   const [showPalette, setShowPalette] = useState(false);
   const [showSnippets, setShowSnippets] = useState(false);
+  useEscapeDismiss(() => setShowSnippets(false), showSnippets, 2500);
   const [showVault, setShowVault] = useState(false);
   const [connectionProtocol, setConnectionProtocol] =
     useState<ConnectionChoice>("ssh");
@@ -150,7 +162,7 @@ function App() {
   // e.code 사용 — 한영 IME 상태와 무관하게 물리 K 키를 잡는다.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (keychainNotice.getSnapshot() || document.querySelector(".mcp-oauth-dialog")) return;
+      if (keychainNotice.getSnapshot() || document.querySelector(".mcp-oauth-dialog, .hkp-modal")) return;
       if ((e.metaKey || e.ctrlKey) && e.code === "KeyK") {
         e.preventDefault();
         e.stopPropagation();
@@ -168,7 +180,7 @@ function App() {
   }, [showPalette, reloadPaletteSnippets]);
 
   // macOS 메뉴 "Preferences" + View 서브메뉴 이벤트 수신
-  useTauriListener("open-settings", () => setShowSettings(true));
+  useTauriListener("open-settings", () => { setSettingsTab("general"); setShowSettings(true); });
   useTauriListener("toggle-server-ctx", () => {
     setContextOpen(true);
     setLeftCollapsed((value) => !value);
@@ -210,12 +222,12 @@ function App() {
           `New fingerprint:    ${p.new_fingerprint}\n\n` +
           `This may indicate a man-in-the-middle attack. The connection was refused.\n\n` +
           `If you know the server key was rotated legitimately, remove the old entry from the known hosts DB and reconnect.`,
-        { title: "SSH Host Key Changed", kind: "error" },
+        { title: t("SSH Host Key Changed"), kind: "error" },
       ).catch(() => {});
     } else if (p.reason === "db_error") {
       message(
         `Could not verify host key for ${p.host}:${p.port} (${p.detail}). Connection refused.`,
-        { title: "SSH Verification Failed", kind: "error" },
+        { title: t("SSH Verification Failed"), kind: "error" },
       ).catch(() => {});
     }
     // user_rejected_or_timeout 은 사용자 의도이므로 별도 알림 없음.
@@ -326,12 +338,12 @@ function App() {
   );
   const displayTabs = tabs.map((tab) => ({
     ...tab,
-    title: tab.type === "mcp" ? tab.title :
+    title: tab.type === "local" && tab.title === "Local Shell" ? t("Local Shell") : tab.type === "mcp" ? tab.title :
       knownProfiles.find(
         (profile) => profile.id === (tab.profileId ?? tab.sshConfig?.profileId),
       )?.name ?? tab.title,
   }));
-  const activeTitle = activeTab?.type === "mcp" ? activeTab.title : activeProfile?.name ?? activeTab?.title ?? "Connections";
+  const activeTitle = activeTab?.type === "mcp" ? activeTab.title : activeProfile?.name ?? activeTab?.title ?? t("Connections");
   const activeStatus = activeTabId
     ? (sessionStatuses[activeTabId] ?? "connecting")
     : "ended";
@@ -349,6 +361,25 @@ function App() {
     const id = `tab-${++tabCounter}`;
     setTabs((previous) => [...previous, { id, title: launch ? `RDP · ${launch.name || launch.config.host}` : "Remote desktop", type: "rdp", rdpLaunch: launch, rdpProfileId: launch?.profileId }]);
     setActiveTabId(id);
+  }, []);
+
+  const createWinrmTab = useCallback((launch: WinrmLaunch) => {
+    const id = `tab-${++tabCounter}`;
+    setTabs(previous => [...previous, { id, title: `WinRM · ${launch.name || launch.config.host}`, type: "winrm", winrmLaunch: launch }]);
+    setActiveTabId(id); setShowConnectDialog(false); setEditWinrmProfile(null);
+  }, []);
+  const handleWinrmConnect = useCallback((profile: WinrmProfile) => {
+    createWinrmTab({ name: profile.name, config: profile.config, profileId: profile.id, hasPassword: profile.has_password });
+  }, [createWinrmTab]);
+  const handleWinrmEdit = useCallback((profile: WinrmProfile) => {
+    setEditWinrmProfile(profile); setConnectionProtocol("winrm"); setShowConnectDialog(true);
+  }, []);
+  const handleNewWinrm = useCallback(() => {
+    setEditWinrmProfile(null); setConnectionProtocol("winrm"); setShowConnectDialog(true);
+  }, []);
+  const handleWinrmCredentialsUsed = useCallback((tabId: string) => {
+    setTabs(previous => previous.map(tab => tab.id === tabId && tab.winrmLaunch?.password
+      ? { ...tab, winrmLaunch: { ...tab.winrmLaunch, password: undefined } } : tab));
   }, []);
 
   const createSshTab = useCallback((config: SshConfig) => {
@@ -656,12 +687,12 @@ function App() {
       setConnectionProtocol(fullProfile.protocol ?? "ssh");
       setShowConnectDialog(true);
     } catch (err) {
-      alert(`Could not open connection settings: ${String(err)}`);
+      alert(t("Could not open connection settings: {v0}", { v0: String(err) }));
     }
   }, []);
 
   const handleNewProfile = useCallback(() => {
-    setEditProfile(null); setEditRdpProfile(null);
+    setEditProfile(null); setEditRdpProfile(null); setEditWinrmProfile(null);
     setConnectionProtocol("ssh");
     setShowConnectDialog(true);
   }, []);
@@ -709,58 +740,77 @@ function App() {
     [activeTabId, sessionMap, tabs],
   );
 
+  useTauriListener<string>("app-menu-action", ({ payload: action }) => {
+    // A menu action must not move input away from an approval or password dialog.
+    if (document.querySelector('[aria-modal="true"]')) return;
+    switch (action) {
+      case "new-local": createLocalTab(); break;
+      case "new-ssh": case "new-rdp": case "new-telnet": case "new-serial": case "new-winrm":
+        setEditProfile(null); setEditRdpProfile(null); setEditWinrmProfile(null);
+        setConnectionProtocol(action.slice(4) as ConnectionChoice);
+        setShowConnectDialog(true); break;
+      case "open-connections": setActiveTabId("connections"); break;
+      case "open-sftp": void openSftpPopout(sshActive ? activeTabId : null, activeTitle); break;
+      case "open-snippets": setShowSnippets(true); break;
+      case "open-vault": setShowVault(true); break;
+      case "open-mcp": setSettingsTab("mcp"); setShowSettings(true); break;
+      case "open-palette": setShowPalette(true); break;
+    }
+  });
+
   // Command Palette 에 노출할 항목 — actions / tabs / snippets 를 하나의 검색 가능한 리스트로
   const paletteItems: PaletteItem[] = [
+    { id: "action:new-winrm", kind: "action", title: t("New WinRM connection"), onSelect: handleNewWinrm },
     {
       id: "action:new-ssh",
       kind: "action",
-      title: "New SSH connection",
+      title: t("New SSH connection"),
       hint: "⌘N",
       onSelect: handleNewProfile,
     },
     {
       id: "action:new-local",
       kind: "action",
-      title: "New Local shell",
+      title: t("New Local shell"),
       onSelect: createLocalTab,
     },
     {
       id: "action:new-rdp",
       kind: "action",
-      title: "New RDP desktop (Beta)",
+      title: t("New RDP desktop (Beta)"),
       onSelect: createRdpTab,
     },
     {
       id: "action:connections",
       kind: "action",
-      title: "Open Connections",
+      title: t("Open Connections"),
       onSelect: () => setActiveTabId("connections"),
     },
     {
       id: "action:manage-snippets",
       kind: "action",
-      title: "Manage Snippets...",
+      title: t("Manage Snippets..."),
       onSelect: () => setShowSnippets(true),
     },
     {
       id: "action:manage-vault",
       kind: "action",
-      title: "Manage Vault...",
+      title: t("Manage Vault..."),
       onSelect: () => setShowVault(true),
     },
     {
       id: "action:open-settings",
       kind: "action",
-      title: "Open Settings",
+      title: t("Open Settings"),
       hint: "⌘,",
       onSelect: () => setShowSettings(true),
     },
-    ...tabs.map<PaletteItem>((t) => ({
-      id: `tab:${t.id}`,
+    ...tabs.map<PaletteItem>((tab) => ({
+      id: `tab:${tab.id}`,
       kind: "tab",
-      title: `Switch to: ${t.title}`,
-      hint: t.type,
-      onSelect: () => setActiveTabId(t.id),
+      title: t("Switch to: {name}", { name: tab.title }),
+      hint: tab.type,
+      onSelect: () => setActiveTabId(tab.id),
     })),
     ...paletteSnippets.map<PaletteItem>((s) => ({
       id: `snippet:${s.id}`,
@@ -786,34 +836,32 @@ function App() {
         >
           <aside
             className="connections-sidebar"
-            aria-label="Connections sidebar"
+            aria-label={t("Connections sidebar")}
           >
             <div className="sidebar-brand">
               <Icon name="terminal" size={19} />
               <button onClick={() => setActiveTabId("connections")}>
-                Cygnus <span>Terminal</span>
+                Cygnus <span>{t("Terminal")}</span>
               </button>
             </div>
             {canShowContext && (
-              <nav className="sidebar-section-switch" aria-label="Sidebar view">
+              <nav className="sidebar-section-switch" aria-label={t("Sidebar view")}>
                 <button
                   aria-pressed={!contextOpen}
                   onClick={() => setContextOpen(false)}
                 >
-                  <Icon name="server" size={14} /> Connections
-                </button>
+                  <Icon name="server" size={14} />{t(" Connections")}</button>
                 <button
                   aria-pressed={contextOpen}
                   onClick={() => setContextOpen(true)}
                 >
-                  <Icon name="terminal" size={14} /> Server tools
-                </button>
+                  <Icon name="terminal" size={14} />{t(" Server tools")}</button>
               </nav>
             )}
             {showingContext ? (
               <section
                 className="sidebar-server-tools"
-                aria-label="Server tools"
+                aria-label={t("Server tools")}
               >
                 <div className="sidebar-server-name" title={activeTitle}>
                   {activeTitle}
@@ -836,6 +884,9 @@ function App() {
                 onEdit={handleEditProfile}
                 onNew={handleNewProfile}
                 onRdpConnect={handleRdpConnect} onRdpEdit={handleRdpEdit}
+                  onWinrmConnect={handleWinrmConnect} onWinrmEdit={handleWinrmEdit}
+                  activeWinrmProfileId={activeTab?.winrmLaunch?.profileId}
+                  connectedWinrmProfileIds={tabs.filter(tab => tab.type === "winrm" && tab.winrmLaunch?.profileId && sessionStatuses[tab.id] === "connected").map(tab => tab.winrmLaunch!.profileId!)}
                 activeRdpProfileId={activeTab?.rdpProfileId}
                 connectedRdpProfileIds={tabs.filter((tab) => tab.type === "rdp" && sessionStatuses[tab.id] === "connected").flatMap((tab) => tab.rdpProfileId === undefined ? [] : [tab.rdpProfileId])}
                 reloadKey={profileReloadKey}
@@ -850,10 +901,9 @@ function App() {
                   .map((tab) => (tab.profileId ?? tab.sshConfig?.profileId)!)}
               />
             )}
-            <nav className="sidebar-tools" aria-label="Workspace tools">
+            <nav className="sidebar-tools" aria-label={t("Workspace tools")}>
               <button onClick={() => setActiveTabId("connections")}>
-                <Icon name="server" />
-                Connections<span>All servers</span>
+                <Icon name="server" />{t("Connections")}<span>{t("All servers")}</span>
               </button>
               <button
                 onClick={() =>
@@ -864,20 +914,14 @@ function App() {
                 }
               >
                 <Icon name="transfer" />
-                SFTP<span>Open window</span>
+                SFTP<span>{t("Open window")}</span>
               </button>
               <button onClick={() => setShowSnippets(true)}>
-                <Icon name="snippets" />
-                Snippets
-              </button>
+                <Icon name="snippets" />{t("Snippets")}</button>
               <button onClick={() => setShowVault(true)}>
-                <Icon name="vault" />
-                Vault
-              </button>
+                <Icon name="vault" />{t("Vault")}</button>
               <button onClick={() => setShowSettings(true)}>
-                <Icon name="settings" />
-                Settings
-              </button>
+                <Icon name="settings" />{t("Settings")}</button>
             </nav>
           </aside>
         </ResizablePanel>
@@ -892,6 +936,7 @@ function App() {
             onMoveTab={reorderTab}
             onNewLocalTab={createLocalTab}
             onNewRdpTab={createRdpTab}
+            onNewWinrmTab={handleNewWinrm}
             onNewSshTab={handleNewProfile}
             onNewSerialTab={() => {
               setEditProfile(null);
@@ -922,8 +967,8 @@ function App() {
                     {environment
                       ? environmentLabel(environment)
                       : environmentError
-                        ? "Unknown environment"
-                        : "Checking environment…"}
+                        ? t("Unknown environment")
+                        : t("Checking environment…")}
                   </span>
                 )}
                 {activeProfile?.group_name && (
@@ -955,10 +1000,10 @@ function App() {
                       className={!rightCollapsed ? "is-active" : ""}
                       aria-pressed={!rightCollapsed && sshActive}
                       onClick={() => setRightCollapsed((value) => !value)}
-                      title="Browse remote files via SFTP"
+                      title={t("Browse remote files via SFTP")}
                     >
                       <Icon name="folder" />
-                      <span>SFTP Files</span>
+                      <span>{t("SFTP Files")}</span>
                     </button>
                     <button
                       disabled={!canShowContext}
@@ -976,12 +1021,12 @@ function App() {
                       }}
                       title={
                         canShowContext
-                          ? "History, commands, paths and ports"
-                          : "Server tools require a connected saved profile"
+                          ? t("History, commands, paths and ports")
+                          : t("Server tools require a connected saved profile")
                       }
                     >
                       <Icon name="history" />
-                      <span>Server tools</span>
+                      <span>{t("Server tools")}</span>
                     </button>
                     <button
                       disabled={!monitorAvailable}
@@ -992,17 +1037,17 @@ function App() {
                           v === "monitor" ? null : "monitor",
                         )
                       }
-                      title={monitorAvailable ? "Toggle monitor" : unavailableReason}
+                      title={monitorAvailable ? t("Toggle monitor") : unavailableReason}
                     >
                       <Icon name="monitor" />
-                      <span>Monitor</span>
+                      <span>{t("Monitor")}</span>
                     </button>
                     {showIis && <button
                       disabled={!iisAvailable}
                       className={visibleDrawer === "iis" ? "is-active" : ""}
                       aria-pressed={visibleDrawer === "iis"}
                       onClick={() => setDrawerTab((v) => v === "iis" ? null : "iis")}
-                      title={iisAvailable ? "IIS & Windows events (Beta)" : "A verified Windows PowerShell runtime is required"}
+                      title={iisAvailable ? t("IIS & Windows events (Beta)") : t("A verified Windows PowerShell runtime is required")}
                     >
                       <Icon name="server" />
                       <span>IIS</span>
@@ -1011,8 +1056,8 @@ function App() {
                 )}
                 <button
                   onClick={() => setShowPalette(true)}
-                  title="Command palette (⌘/Ctrl K)"
-                  aria-label="Open command palette"
+                  title={t("Command palette (⌘/Ctrl K)")}
+                  aria-label={t("Open command palette")}
                 >
                   <Icon name="search" />
                 </button>
@@ -1030,6 +1075,9 @@ function App() {
                   onEdit={handleEditProfile}
                   onNew={handleNewProfile}
                   onRdpConnect={handleRdpConnect} onRdpEdit={handleRdpEdit}
+                  onWinrmConnect={handleWinrmConnect} onWinrmEdit={handleWinrmEdit}
+                  activeWinrmProfileId={activeTab?.winrmLaunch?.profileId}
+                  connectedWinrmProfileIds={tabs.filter(tab => tab.type === "winrm" && tab.winrmLaunch?.profileId && sessionStatuses[tab.id] === "connected").map(tab => tab.winrmLaunch!.profileId!)}
                   activeRdpProfileId={activeTab?.rdpProfileId}
                   connectedRdpProfileIds={tabs.filter((tab) => tab.type === "rdp" && sessionStatuses[tab.id] === "connected").flatMap((tab) => tab.rdpProfileId === undefined ? [] : [tab.rdpProfileId])}
                   onLocalShell={createLocalTab}
@@ -1045,24 +1093,18 @@ function App() {
                 >
                   <nav
                     className="ssh-workspace-tools"
-                    aria-label="Workspace tools"
+                    aria-label={t("Workspace tools")}
                   >
                     <button onClick={() => openSftpPopout()}>
                       <Icon name="transfer" />
                       SFTP
                     </button>
                     <button onClick={() => setShowSnippets(true)}>
-                      <Icon name="snippets" />
-                      Snippets
-                    </button>
+                      <Icon name="snippets" />{t("Snippets")}</button>
                     <button onClick={() => setShowVault(true)}>
-                      <Icon name="vault" />
-                      Vault
-                    </button>
+                      <Icon name="vault" />{t("Vault")}</button>
                     <button onClick={() => setShowSettings(true)}>
-                      <Icon name="settings" />
-                      Settings
-                    </button>
+                      <Icon name="settings" />{t("Settings")}</button>
                   </nav>
                 </ConnectionsView>
               )}
@@ -1096,9 +1138,7 @@ function App() {
                   />
                 )}
               {activeTab?.type === "sftp" && (!activeTab.linkedSessionId || !sessionMap[activeTab.linkedSessionId]) && (
-                <p className="disconnected-tab-notice">
-                  The linked SSH session has closed. Open SFTP from a connected session to continue.
-                </p>
+                <p className="disconnected-tab-notice">{t("The linked SSH session has closed. Open SFTP from a connected session to continue.")}</p>
               )}
               <div
                 style={{
@@ -1110,7 +1150,7 @@ function App() {
                 }}
               >
                 {tabs
-                  .filter((t) => t.type !== "sftp" && t.type !== "mcp" && t.type !== "rdp")
+                  .filter((t) => t.type !== "sftp" && t.type !== "mcp" && t.type !== "rdp" && t.type !== "winrm")
                   .map((tab) => (
                     <Terminal
                       key={tab.id}
@@ -1132,6 +1172,10 @@ function App() {
                 {tabs.filter((tab) => tab.type === "mcp" && tab.execution).map((tab) => (
                   <McpTerminal key={tab.id} tabId={tab.id} job={tab.execution!}
                     isActive={tab.id === activeTabId} onSessionStatus={handleSessionStatus} onJobStatus={handleMcpJobStatus} />
+                ))}
+                {tabs.filter(tab => tab.type === "winrm" && tab.winrmLaunch).map(tab => (
+                  <WinrmSession key={tab.id} tabId={tab.id} launch={tab.winrmLaunch!} isActive={tab.id === activeTabId}
+                    onSessionStatus={handleSessionStatus} onCredentialsUsed={handleWinrmCredentialsUsed} />
                 ))}
                 {tabs.filter((tab) => tab.type === "rdp").map((tab) => (
                   <RdpSession key={tab.id} tabId={tab.id} isActive={tab.id === activeTabId}
@@ -1174,9 +1218,9 @@ function App() {
           sshActive
             ? activeTitle
             : activeTab?.type === "rdp"
-              ? `${activeTitle} · ${activeStatus}`
+              ? `${activeTitle} · ${t(activeStatus)}`
             : activeTab?.type === "local"
-              ? `Local · ${activeStatus}`
+              ? `${t("Local")} · ${t(activeStatus)}`
               : null
         }
         sshActive={sshActive}
@@ -1227,7 +1271,7 @@ function App() {
         />
       )}
       {showSettings && (
-        <SettingsDialog onClose={() => setShowSettings(false)} />
+        <SettingsDialog initialTab={settingsTab} onClose={() => setShowSettings(false)} />
       )}
       <McpOAuthApprovalNotice profiles={knownProfiles} />
 
@@ -1238,10 +1282,11 @@ function App() {
         >
           <div
             className="sn-modal-body"
+            role="dialog" aria-modal="true" aria-label={t("Snippets")}
             onMouseDown={(e) => e.stopPropagation()}
           >
             <div className="sn-modal-head">
-              <span className="sn-modal-title">Snippets</span>
+              <span className="sn-modal-title">{t("Snippets")}</span>
               <button
                 className="sn-modal-close"
                 onClick={() => setShowSnippets(false)}
@@ -1272,6 +1317,10 @@ function App() {
           onProtocolChange={setConnectionProtocol} onSaved={handleProfileSaved} onConnect={createRdpTab}
           onCancel={() => { setShowConnectDialog(false); setEditRdpProfile(null); }} />
       )}
+      {showConnectDialog && connectionProtocol === "winrm" && (
+        <WinrmConnectDialog key={editWinrmProfile?.id ?? "new"} profile={editWinrmProfile} onProtocolChange={setConnectionProtocol}
+          onSaved={handleProfileSaved} onConnect={createWinrmTab} onCancel={() => { setShowConnectDialog(false); setEditWinrmProfile(null); }} />
+      )}
       {showConnectDialog && (connectionProtocol === "telnet" || connectionProtocol === "serial") && (
         <TransportConnectDialog
           key={`${connectionProtocol}-${editProfile?.id ?? "new"}`}
@@ -1297,6 +1346,7 @@ function App() {
 
       {hostKeyPrompts.length > 0 && (
         <HostKeyPrompt
+          key={hostKeyPrompts[0].id}
           prompt={hostKeyPrompts[0]}
           onClose={() => setHostKeyPrompts((prev) => prev.slice(1))}
         />

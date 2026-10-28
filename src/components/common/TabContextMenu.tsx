@@ -1,3 +1,4 @@
+import { t, useLocale } from "../../i18n";
 import { useEffect, useLayoutEffect, useRef } from "react";
 import { createPortal } from "react-dom";
 import type { Tab } from "../../types";
@@ -15,6 +16,7 @@ interface Props {
 }
 
 export default function TabContextMenu({ tab, tabs, x, y, onClose, onCloseTabs, onTogglePin }: Props) {
+  useLocale();
   const ref = useRef<HTMLDivElement>(null);
   useLayoutEffect(() => {
     const menu = ref.current!;
@@ -39,7 +41,7 @@ export default function TabContextMenu({ tab, tabs, x, y, onClose, onCloseTabs, 
   }, [onClose]);
 
   return createPortal(
-    <div ref={ref} className="tab-context-menu" role="menu" aria-label={`Tab actions: ${tab.title}`}
+    <div ref={ref} className="tab-context-menu" role="menu" aria-label={t("Tab actions: {v0}", { v0: tab.title })}
       style={{ left: x, top: y }} onContextMenu={(event) => event.preventDefault()}
       onKeyDown={(event) => {
         if (event.key === "Escape" || event.key === "Tab") {
@@ -57,7 +59,7 @@ export default function TabContextMenu({ tab, tabs, x, y, onClose, onCloseTabs, 
       }}>
       <button role="menuitem" onClick={() => { onTogglePin(tab.id); onClose(true); }}>
         <Icon name="pin" size={14} />
-        <span>{tab.pinned ? "Unpin tab" : "Pin tab"}</span><kbd>F10</kbd>
+        <span>{tab.pinned ? t("Unpin tab") : t("Pin tab")}</span><kbd>F10</kbd>
       </button>
       <div role="separator" className="tab-menu-divider" />
       {([
@@ -66,10 +68,10 @@ export default function TabContextMenu({ tab, tabs, x, y, onClose, onCloseTabs, 
       ] as const).map(([action, label]) => (
         <button key={action} role="menuitem" disabled={!tabsToClose(tabs, tab.id, action).size}
           onClick={() => { onCloseTabs(tab.id, action); onClose(true); }}>
-          <span>{label}</span>
+          <span>{t(label)}</span>
         </button>
       ))}
-      <p className="tab-menu-hint">Pinned tabs stay open when closing other tabs.</p>
+      <p className="tab-menu-hint">{t("Pinned tabs stay open when closing other tabs.")}</p>
     </div>, document.body,
   );
 }

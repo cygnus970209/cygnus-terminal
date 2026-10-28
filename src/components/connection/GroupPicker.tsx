@@ -1,3 +1,4 @@
+import { t, useLocale } from "../../i18n";
 import Select from "../common/Select";
 import { useEffect, useId, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export default function GroupPicker({ value, onChange }: Props) {
+  useLocale();
   const id = useId();
   const [groups, setGroups] = useState<string[]>([]);
   const [creating, setCreating] = useState(false);
@@ -16,8 +18,9 @@ export default function GroupPicker({ value, onChange }: Props) {
 
   useEffect(() => {
     let cancelled = false;
-    invoke<Profile[]>("list_profiles")
-      .then((profiles) => {
+    Promise.all([invoke<Profile[]>("list_profiles"), invoke<{ group_name: string }[]>("winrm_list_profiles")])
+      .then(([terminal, winrm]) => {
+        const profiles = [...terminal, ...winrm];
         if (!cancelled) {
           setGroups(
             [
@@ -43,7 +46,7 @@ export default function GroupPicker({ value, onChange }: Props) {
   );
   return (
     <div className="dialog-row">
-      <label htmlFor={id}>Group</label>
+      <label htmlFor={id}>{t("Group")}</label>
       <Select
         id={id}
         value={creating ? "new" : `group:${value}`}
@@ -53,18 +56,18 @@ export default function GroupPicker({ value, onChange }: Props) {
           onChange(next === "new" ? "" : next.slice(6));
         }}
       >
-        <option value="group:">No group</option>
+        <option value="group:">{t("No group")}</option>
         {options.map((group) => (
           <option key={group} value={`group:${group}`}>
             {group}
           </option>
         ))}
-        <option value="new">+ New group</option>
+        <option value="new">{t("+ New group")}</option>
       </Select>
       {creating && (
         <input
-          aria-label="New group name"
-          placeholder="New group name"
+          aria-label={t("New group name")}
+          placeholder={t("New group name")}
           value={value}
           onChange={(event) => onChange(event.target.value)}
           required
@@ -73,9 +76,7 @@ export default function GroupPicker({ value, onChange }: Props) {
         />
       )}
       {error && (
-        <span className="transport-note" role="status">
-          Could not load groups. You can still enter a group name.
-        </span>
+        <span className="transport-note" role="status">{t("Could not load groups. You can still enter a group name.")}</span>
       )}
     </div>
   );

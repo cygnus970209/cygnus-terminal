@@ -1,3 +1,4 @@
+import { t, useLocale } from "../../i18n";
 import {
   useCallback,
   useEffect,
@@ -121,6 +122,7 @@ function LogLine({
   searchQuery: string;
   alerted: boolean;
 }) {
+  useLocale();
   const { lineClass, segments } = renderLine(line, searchQuery, alerted);
   return (
     <div className={lineClass}>
@@ -143,6 +145,7 @@ export default function LogViewer({
   fullHeight,
   onPopout,
 }: LogViewerProps) {
+  useLocale();
   const { environment, error: environmentError } = useServerEnvironment(sessionId);
   const tailAvailable = !!environment?.capabilities.file_logs;
   const journalAvailable = !!environment?.capabilities.journal;
@@ -437,13 +440,13 @@ export default function LogViewer({
   return (
     <div className={`logviewer ${fullHeight ? "logviewer-full" : ""}`}>
       <div className="lv-header">
-        <span className="lv-title">Log Viewer</span>
+        <span className="lv-title">{t("Log Viewer")}</span>
 
         <input
           ref={searchInputRef}
           type="text"
           className="lv-search"
-          placeholder="Search... (⌘F)"
+          placeholder={t("Search... (⌘F)")}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           onKeyDown={handleSearchKeyDown}
@@ -457,7 +460,7 @@ export default function LogViewer({
               onClick={() =>
                 setLevelFilter((prev) => ({ ...prev, [c.key]: !prev[c.key] }))
               }
-              title={`Toggle ${c.label}`}
+              title={t("Toggle {v0}", { v0: c.label })}
             >
               {c.label}
             </button>
@@ -473,42 +476,33 @@ export default function LogViewer({
         <button
           className={`lv-btn ${showAlerts ? "lv-btn-on" : ""}`}
           onClick={() => setShowAlerts(!showAlerts)}
-          title="Manage alert rules"
-        >
-          Alerts ({alertRules.length})
+          title={t("Manage alert rules")}
+        >{t("Alerts (")}{alertRules.length})
         </button>
         <button
           className={`lv-btn ${addMode === "tail" ? "lv-btn-on" : ""}`}
           onClick={() => setAddMode(addMode === "tail" ? "none" : "tail")}
           disabled={!tailAvailable}
-          title={tailAvailable ? "Follow a remote log file" : unavailableReason}
-        >
-          + Tail
-        </button>
+          title={tailAvailable ? t("Follow a remote log file") : unavailableReason}
+        >{t("+ Tail")}</button>
         <button
           className={`lv-btn ${addMode === "journal" ? "lv-btn-on" : ""}`}
           onClick={() => setAddMode(addMode === "journal" ? "none" : "journal")}
           disabled={!journalAvailable}
-          title={journalAvailable ? "Follow the system journal" : unavailableReason}
-        >
-          + Journal
-        </button>
+          title={journalAvailable ? t("Follow the system journal") : unavailableReason}
+        >{t("+ Journal")}</button>
         <label className="lv-auto-scroll">
           <input
             type="checkbox"
             checked={autoScroll}
             onChange={(e) => setAutoScroll(e.target.checked)}
-          />
-          Auto-scroll
-        </label>
+          />{t("Auto-scroll")}</label>
         {onPopout && (
           <button
             className="lv-btn"
             onClick={onPopout}
-            title="Open in separate window"
-          >
-            Pop out
-          </button>
+            title={t("Open in separate window")}
+          >{t("Pop out")}</button>
         )}
         <button className="lv-close" onClick={onClose}>
           ×
@@ -525,9 +519,7 @@ export default function LogViewer({
             onKeyDown={(e) => e.key === "Enter" && handleAddTail()}
             autoFocus
           />
-          <button className="lv-add-btn" onClick={handleAddTail}>
-            Start
-          </button>
+          <button className="lv-add-btn" onClick={handleAddTail}>{t("Start")}</button>
         </div>
       )}
 
@@ -544,10 +536,8 @@ export default function LogViewer({
           <button
             className="lv-add-btn"
             onClick={handleAddJournal}
-            title="Run: journalctl <args>"
-          >
-            Start
-          </button>
+            title={t("Run: journalctl <args>")}
+          >{t("Start")}</button>
         </div>
       )}
 
@@ -556,14 +546,14 @@ export default function LogViewer({
           <div className="lv-alerts-form">
             <input
               type="text"
-              placeholder="Pattern (regex, e.g. 5\d\d|timeout)"
+              placeholder={t("Pattern (regex, e.g. 5\\d\\d|timeout)")}
               value={newAlertPattern}
               onChange={(e) => setNewAlertPattern(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleAddAlertRule()}
             />
             <input
               type="text"
-              placeholder="Label (optional)"
+              placeholder={t("Label (optional)")}
               value={newAlertLabel}
               onChange={(e) => setNewAlertLabel(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleAddAlertRule()}
@@ -572,14 +562,10 @@ export default function LogViewer({
               className="lv-add-btn"
               onClick={handleAddAlertRule}
               disabled={!isValidPattern(newAlertPattern)}
-            >
-              Add
-            </button>
+            >{t("Add")}</button>
           </div>
           {alertRules.length === 0 ? (
-            <div className="lv-alerts-empty">
-              No alerts yet. Patterns matching new lines will show a toast.
-            </div>
+            <div className="lv-alerts-empty">{t("No alerts yet. Patterns matching new lines will show a toast.")}</div>
           ) : (
             <div className="lv-alerts-list">
               {alertRules.map((r) => (
@@ -643,15 +629,15 @@ export default function LogViewer({
           ) : (
             <div className="lv-empty">
               {activeStream.lines.length === 0
-                ? "Waiting for log lines..."
-                : "No lines match the current filter."}
+                ? t("Waiting for log lines...")
+                : t("No lines match the current filter.")}
             </div>
           )
         ) : (
           <div className="lv-empty">
             {streams.length === 0
-              ? 'Click "+ Tail" to start monitoring a log file.'
-              : "Select a tab above."}
+              ? t("Click \"+ Tail\" to start monitoring a log file.")
+              : t("Select a tab above.")}
           </div>
         )}
       </div>

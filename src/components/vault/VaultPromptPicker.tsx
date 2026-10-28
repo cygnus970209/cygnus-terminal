@@ -1,3 +1,5 @@
+import { t, useLocale } from "../../i18n";
+import { useEscapeDismiss } from "../../hooks/useEscapeDismiss";
 import Icon from "../common/Icon";
 import {
   useState,
@@ -53,6 +55,7 @@ export default function VaultPromptPicker({
   onClose,
   onInjected,
 }: VaultPromptPickerProps) {
+  useLocale();
   const [items, setItems] = useState<VaultItem[]>([]);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
@@ -143,7 +146,7 @@ export default function VaultPromptPicker({
   const submitPassword = async () => {
     if (!onSubmitPassword || injectingRef.current || !password) return;
     if (new TextEncoder().encode(password).length > 65535 || /[\p{Cc}]/u.test(password)) {
-      setError("줄바꿈 없는 65535바이트 이하의 비밀번호를 입력하세요.");
+      setError(t("줄바꿈 없는 65535바이트 이하의 비밀번호를 입력하세요."));
       return;
     }
     injectingRef.current = true;
@@ -157,7 +160,7 @@ export default function VaultPromptPicker({
       onInjected();
       onClose();
     } catch {
-      if (mounted.current) setError("전송하지 못했습니다. 터미널 상태를 확인한 뒤 다시 입력하세요.");
+      if (mounted.current) setError(t("전송하지 못했습니다. 터미널 상태를 확인한 뒤 다시 입력하세요."));
     } finally {
       injectingRef.current = false;
       if (mounted.current) setInjecting(false);
@@ -171,7 +174,7 @@ export default function VaultPromptPicker({
     try {
       await invoke("vault_create", {
         req: {
-          label: newLabel.trim() || "비밀번호",
+          label: newLabel.trim() || t("비밀번호"),
           kind: "password",
           source: "cygnus",
           value: newValue,
@@ -194,26 +197,15 @@ export default function VaultPromptPicker({
     }
   }, [newLabel, newValue, serverId, saving, reload]);
 
+  useEscapeDismiss(onClose, true, 1000);
+
   // 키보드 — window capture 로 확실히 가로챈다 (input focus 누수/xterm 간섭 회피).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (keychainNotice.getSnapshot()) return;
+      if (keychainNotice.getSnapshot() || e.key === "Escape") return;
       if (e.isComposing || e.keyCode === 229) return;
-      if (mode !== "list") {
-        if (e.key === "Escape") {
-          e.preventDefault();
-          e.stopPropagation();
-          setPassword("");
-          setError(null);
-          setMode("list");
-        }
-        return; // 나머지 키는 폼 input 으로 통과.
-      }
-      if (e.key === "Escape") {
-        e.preventDefault();
-        e.stopPropagation();
-        onClose();
-      } else if (e.key === "ArrowDown") {
+      if (mode !== "list") return;
+      if (e.key === "ArrowDown") {
         e.preventDefault();
         e.stopPropagation();
         setActive((i) => Math.min(i + 1, sorted.length - 1));
@@ -270,20 +262,18 @@ export default function VaultPromptPicker({
         className="vpp"
         role="dialog"
         aria-modal="true"
-        aria-label="Vault password input"
+        aria-label={t("Vault password input")}
         style={{ top: pos.top, left: pos.left }}
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="vpp-header" onMouseDown={onHeaderMouseDown}>
           <span className="vpp-grip">⠿</span>
           <span className="vpp-title">
-            <Icon name="vault" size={16} />
-            Vault
-          </span>
+            <Icon name="vault" size={16} />{t("Vault")}</span>
           <span className="vpp-sub">
-            {mode === "add" ? "새 비밀번호" : mode === "manual" ? "직접 입력" : promptLabel}
+            {mode === "add" ? t("새 비밀번호") : mode === "manual" ? t("직접 입력") : promptLabel}
           </span>
-          <button className="vpp-x" onClick={onClose} title="닫기 (Esc)">
+          <button className="vpp-x" onClick={onClose} title={t("닫기 (Esc)")}>
             ×
           </button>
         </div>
@@ -293,8 +283,8 @@ export default function VaultPromptPicker({
             <input
               ref={searchRef}
               className="vpp-search"
-              aria-label="볼트 검색"
-              placeholder="비밀번호 검색…"
+              aria-label={t("볼트 검색")}
+              placeholder={t("비밀번호 검색…")}
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               spellCheck={false}
@@ -302,9 +292,7 @@ export default function VaultPromptPicker({
             <div className="vpp-list">
               {error && <div className="vpp-error">{error}</div>}
               {!error && sorted.length === 0 && (
-                <div className="vpp-empty">
-                  저장된 항목이 없어요. 아래에서 추가하세요.
-                </div>
+                <div className="vpp-empty">{t("저장된 항목이 없어요. 아래에서 추가하세요.")}</div>
               )}
               {sorted.map((item, idx) => (
                 <button
@@ -317,37 +305,35 @@ export default function VaultPromptPicker({
                   onClick={() => void inject(item)}
                 >
                   <span className="vpp-label">{item.label}</span>
-                  {isMapped(item) && <span className="vpp-badge">매핑됨</span>}
+                  {isMapped(item) && <span className="vpp-badge">{t("매핑됨")}</span>}
                   <span className="vpp-kind">{item.kind}</span>
                 </button>
               ))}
             </div>
             <div className="vpp-foot">
-              <button className="vpp-add-btn" onClick={() => setMode("add")}>
-                + 새 비밀번호
-              </button>
+              <button className="vpp-add-btn" onClick={() => setMode("add")}>{t("+ 새 비밀번호")}</button>
               {onSubmitPassword ? (
                 <button className="vpp-add-btn" disabled={injecting}
-                  onClick={() => { setError(null); setMode("manual"); }}>직접 입력</button>
+                  onClick={() => { setError(null); setMode("manual"); }}>{t("직접 입력")}</button>
               ) : <span className="vpp-hint">↑↓ · Enter · Esc</span>}
             </div>
-            {onSubmitPassword && <div className="vpp-note">선택한 비밀번호는 이 서버로 전송됩니다. Esc로 닫으면 터미널에 직접 입력할 수 있어요.</div>}
+            {onSubmitPassword && <div className="vpp-note">{t("선택한 비밀번호는 이 서버로 전송됩니다. Esc로 닫으면 터미널에 직접 입력할 수 있어요.")}</div>}
           </>
         ) : mode === "manual" ? (
           <form className="vpp-add" onSubmit={(event) => { event.preventDefault(); void submitPassword(); }}>
             {error && <div className="vpp-error" role="alert">{error}</div>}
             <label className="vpp-field">
-              <span className="vpp-flabel">비밀번호</span>
+              <span className="vpp-flabel">{t("비밀번호")}</span>
               <input ref={passwordRef} className="vpp-input" type="password" autoComplete="off"
                 spellCheck={false} value={password} disabled={injecting} maxLength={65535}
                 onChange={(event) => setPassword(event.target.value)}
                 onKeyDown={(event) => { if (event.key === "Enter" && event.nativeEvent.isComposing) event.preventDefault(); }} />
             </label>
-            <div className="vpp-note">이번 입력에만 사용하며 Vault에 저장하지 않습니다. 입력 후 출력은 AI 응답·실행기록에서 제외됩니다.</div>
+            <div className="vpp-note">{t("이번 입력에만 사용하며 Vault에 저장하지 않습니다. 입력 후 출력은 AI 응답·실행기록에서 제외됩니다.")}</div>
             <div className="vpp-add-actions">
-              <button type="button" className="vpp-cancel" onClick={() => { setPassword(""); setError(null); setMode("list"); }}>취소</button>
+              <button type="button" className="vpp-cancel" onClick={() => { setPassword(""); setError(null); setMode("list"); }}>{t("취소")}</button>
               <button type="submit" className="vpp-save" disabled={!password || injecting}>
-                {injecting ? "전송 중…" : "전송"}
+                {injecting ? t("전송 중…") : t("전송")}
               </button>
             </div>
           </form>
@@ -355,17 +341,17 @@ export default function VaultPromptPicker({
           <div className="vpp-add">
             {error && <div className="vpp-error">{error}</div>}
             <label className="vpp-field">
-              <span className="vpp-flabel">라벨</span>
+              <span className="vpp-flabel">{t("라벨")}</span>
               <input
                 ref={labelInputRef}
                 className="vpp-input"
                 value={newLabel}
                 onChange={(e) => setNewLabel(e.target.value)}
-                placeholder="예: master sudo"
+                placeholder={t("예: master sudo")}
               />
             </label>
             <label className="vpp-field">
-              <span className="vpp-flabel">비밀번호</span>
+              <span className="vpp-flabel">{t("비밀번호")}</span>
               <div className="vpp-pw">
                 <input
                   className="vpp-input"
@@ -378,32 +364,30 @@ export default function VaultPromptPicker({
                       void handleCreate();
                     }
                   }}
-                  placeholder="비밀번호"
+                  placeholder={t("비밀번호")}
                   autoComplete="off"
                 />
                 <button
                   className="vpp-eye"
                   type="button"
                   onClick={() => setShowValue((v) => !v)}
-                  title={showValue ? "숨기기" : "보기"}
+                  title={showValue ? t("숨기기") : t("보기")}
                 >
-                  {showValue ? "숨기기" : "보기"}
+                  {showValue ? t("숨기기") : t("보기")}
                 </button>
               </div>
             </label>
             {serverId != null && (
-              <div className="vpp-note">이 서버에 자동으로 연결돼요</div>
+              <div className="vpp-note">{t("이 서버에 자동으로 연결돼요")}</div>
             )}
             <div className="vpp-add-actions">
-              <button className="vpp-cancel" onClick={() => setMode("list")}>
-                취소
-              </button>
+              <button className="vpp-cancel" onClick={() => setMode("list")}>{t("취소")}</button>
               <button
                 className="vpp-save"
                 onClick={() => void handleCreate()}
                 disabled={!newValue || saving}
               >
-                {saving ? "저장 중…" : "저장"}
+                {saving ? t("저장 중…") : t("저장")}
               </button>
             </div>
           </div>

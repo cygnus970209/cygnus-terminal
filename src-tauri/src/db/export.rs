@@ -9,6 +9,8 @@ pub struct ExportData {
     pub profiles: Vec<ExportProfile>,
     #[serde(default)]
     pub rdp_profiles: Vec<super::rdp::ProfileData>,
+    #[serde(default)]
+    pub winrm_profiles: Vec<super::winrm::ProfileData>,
     pub command_bookmarks: Vec<ExportCommandBookmark>,
     pub path_bookmarks: Vec<ExportPathBookmark>,
 }
@@ -117,7 +119,13 @@ impl Database {
             .map_err(|e| format!("Export query failed: {e}"))?;
 
         Ok(ExportData {
-            version: 5,
+            version: 6,
+            winrm_profiles: super::winrm::list(&conn)?.into_iter().map(|p| {
+                let mut data = p.data;
+                // Trust is configured locally, never transferred through a backup.
+                data.config.certificate_pin.clear();
+                data
+            }).collect(),
             rdp_profiles: super::rdp::list(&conn)?
                 .into_iter()
                 .map(|p| super::rdp::ProfileData {
@@ -132,7 +140,8 @@ impl Database {
     }
 
     pub fn import_data(&self, data: ExportData, _crypto: &CryptoManager) -> Result<u32, String> {
-        if data.version > 5 || (data.version < 4 && !data.rdp_profiles.is_empty()) {
+        if data.version > 6 || (data.version < 4 && !data.rdp_profiles.is_empty())
+            || (data.version < 6 && !data.winrm_profiles.is_empty()) {
             return Err("Unsupported backup version".into());
         }
         for profile in &data.profiles {
@@ -150,6 +159,8 @@ impl Database {
         for profile in &data.rdp_profiles {
             profile.validate()?;
         }
+        if data.winrm_profiles.len() > 200 { return Err("Backup contains too many WinRM connections".into()); }
+        for profile in &data.winrm_profiles { profile.validate()?; }
         let mut guard = self.conn();
         let conn = guard
             .transaction()
@@ -200,6 +211,17 @@ impl Database {
                 super::rdp::insert(&conn, profile)?;
                 imported += 1;
             }
+        }
+
+        let mut saved_winrm = super::winrm::list(&conn)?;
+        for profile in &data.winrm_profiles {
+            let mut profile = profile.clone();
+            profile.config.certificate_pin.clear();
+            if saved_winrm.iter().any(|p| p.data.config.same_account(&profile.config)
+                && p.data.config.authentication == profile.config.authentication) { continue; }
+            let id = super::winrm::insert(&conn, &profile, None)?;
+            saved_winrm.push(super::winrm::WinrmProfile { id, data: profile, has_password: false });
+            imported += 1;
         }
 
         // profile_name → id 매핑
@@ -270,7 +292,7 @@ mod tests {
             db.create_profile(req, &crypto).unwrap();
         }
         let backup = db.export_data(&crypto).unwrap();
-        assert_eq!(backup.version, 5);
+        assert_eq!(backup.version, 6);
         let json = serde_json::to_string(&backup).unwrap();
         let target = Database::new_in_memory().unwrap();
         assert_eq!(

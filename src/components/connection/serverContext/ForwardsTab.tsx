@@ -1,3 +1,4 @@
+import { t, useLocale } from "../../../i18n";
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useInvokeState } from "../../../hooks/useInvokeState";
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export default function ForwardsTab({ sessionId, showToast }: Props) {
+  useLocale();
   const [showAdd, setShowAdd] = useState(false);
   const [localPort, setLocalPort] = useState("");
   const [remoteHost, setRemoteHost] = useState("localhost");
@@ -58,7 +60,7 @@ export default function ForwardsTab({ sessionId, showToast }: Props) {
     <>
       <div className="sc-header-row">
         <button className="sc-add-btn" onClick={() => setShowAdd(!showAdd)}>
-          {showAdd ? "Cancel" : "+ Add"}
+          {showAdd ? t("Cancel") : t("+ Add")}
         </button>
       </div>
       {showAdd && (
@@ -66,7 +68,7 @@ export default function ForwardsTab({ sessionId, showToast }: Props) {
           <div className="sc-fwd-row">
             <input
               type="text"
-              placeholder="Local port"
+              placeholder={t("Local port")}
               value={localPort}
               onChange={(e) => setLocalPort(e.target.value)}
               style={{ width: 80 }}
@@ -75,7 +77,7 @@ export default function ForwardsTab({ sessionId, showToast }: Props) {
             <span className="sc-fwd-arrow">→</span>
             <input
               type="text"
-              placeholder="Host"
+              placeholder={t("Host")}
               value={remoteHost}
               onChange={(e) => setRemoteHost(e.target.value)}
               style={{ flex: 1 }}
@@ -83,16 +85,14 @@ export default function ForwardsTab({ sessionId, showToast }: Props) {
             <span className="sc-fwd-arrow">:</span>
             <input
               type="text"
-              placeholder="Port"
+              placeholder={t("Port")}
               value={remotePort}
               onChange={(e) => setRemotePort(e.target.value)}
               onKeyDown={(e) => e.key === "Enter" && handleAdd()}
               style={{ width: 60 }}
             />
           </div>
-          <button className="sc-save-btn" onClick={handleAdd}>
-            Start
-          </button>
+          <button className="sc-save-btn" onClick={handleAdd}>{t("Start")}</button>
         </div>
       )}
       <div className="sc-list">
@@ -123,11 +123,7 @@ export default function ForwardsTab({ sessionId, showToast }: Props) {
           </div>
         ))}
         {forwards.length === 0 && !showAdd && (
-          <div className="sc-empty">
-            No port forwards.
-            <br />
-            Click + Add to create one.
-          </div>
+          <div className="sc-empty">{t("No port forwards.")}<br />{t("Click + Add to create one.")}</div>
         )}
       </div>
     </>

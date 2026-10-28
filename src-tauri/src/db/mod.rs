@@ -9,6 +9,7 @@ mod private_files;
 pub mod profile;
 pub mod rdp;
 pub mod snippet;
+pub mod winrm;
 
 use rusqlite::Connection;
 use std::path::PathBuf;
@@ -61,7 +62,7 @@ impl Database {
     /// Avoid silently generating a different master key when encrypted data exists.
     pub fn has_encrypted_credentials(&self) -> Result<bool, String> {
         self.conn().query_row(
-            "SELECT EXISTS(SELECT 1 FROM profiles WHERE length(password) > 0 OR (length(jump_host) > 0 AND substr(ltrim(jump_host), 1, 1) != '{')) OR EXISTS(SELECT 1 FROM vault_items WHERE length(encrypted_value) > 0)",
+            "SELECT EXISTS(SELECT 1 FROM profiles WHERE length(password) > 0 OR (length(jump_host) > 0 AND substr(ltrim(jump_host), 1, 1) != '{')) OR EXISTS(SELECT 1 FROM vault_items WHERE length(encrypted_value) > 0) OR EXISTS(SELECT 1 FROM winrm_profiles WHERE length(password) > 0)",
             [], |row| row.get(0),
         ).map_err(|e| format!("Cannot inspect encrypted credentials: {e}"))
     }

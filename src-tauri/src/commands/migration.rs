@@ -275,6 +275,7 @@ fn save_preview(
     db.import_data(
         ExportData {
             rdp_profiles: Vec::new(),
+            winrm_profiles: Vec::new(),
             version: 2,
             profiles,
             command_bookmarks: vec![],

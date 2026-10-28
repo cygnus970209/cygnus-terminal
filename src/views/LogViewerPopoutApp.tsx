@@ -1,3 +1,4 @@
+import { t, useLocale } from "../i18n";
 import { useEffect, useState } from "react";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { useTauriListener } from "../hooks/useTauriListener";
@@ -26,14 +27,15 @@ export default function LogViewerPopoutApp({
   sshSessionId: initialSessionId,
   label: initialLabel,
 }: Props) {
+  const locale = useLocale();
   const [session, setSession] = useState<ActiveSession | null>(
     initialSessionId ? { id: initialSessionId, label: initialLabel } : null,
   );
   const [available, setAvailable] = useState<AvailableSession[]>([]);
 
   useEffect(() => {
-    document.title = session ? `Logs — ${session.label}` : "Logs";
-  }, [session]);
+    document.title = session ? `${t("Logs")} — ${session.label}` : t("Logs");
+  }, [session, locale]);
 
   // 메인 윈도우의 SSH 세션 broadcast 구독 (SFTP popout 과 동일 채널)
   useTauriListener<AvailableSession[]>("sftp-sessions", (event) => {
@@ -52,11 +54,9 @@ export default function LogViewerPopoutApp({
   if (!session) {
     return (
       <div className="app log-popout-select">
-        <h2>Select SSH Session</h2>
+        <h2>{t("Select SSH Session")}</h2>
         {available.length === 0 ? (
-          <p className="log-popout-empty">
-            No active SSH sessions. Connect first in the main window.
-          </p>
+          <p className="log-popout-empty">{t("No active SSH sessions. Connect first in the main window.")}</p>
         ) : (
           <div className="log-popout-list">
             {available.map((s) => (

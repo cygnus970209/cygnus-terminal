@@ -1,3 +1,4 @@
+import { t, useLocale } from "../../i18n";
 import Icon from "../common/Icon";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
@@ -59,6 +60,7 @@ export default function FileTree({
   transferChannel,
   refreshTrigger,
 }: FileTreeProps) {
+  useLocale();
   const navigateToPathRef = useRef(navigateToPath);
   navigateToPathRef.current = navigateToPath;
   const statusLabel = SHELL_INTEGRATION_LABELS[shellIntegration];
@@ -187,7 +189,7 @@ export default function FileTree({
       if (!sftpId || entry.is_dir) return;
       try {
         const localPath = await save({
-          title: "Save File",
+          title: t("Save File"),
           defaultPath: entry.name,
         });
         if (!localPath) return;
@@ -316,7 +318,7 @@ export default function FileTree({
     return (
       <div className="file-tree">
         <div className="ft-header">
-          <span className="ft-title">SFTP Files</span>
+          <span className="ft-title">{t("SFTP Files")}</span>
         </div>
         <div className="ft-error">{error}</div>
       </div>
@@ -347,7 +349,7 @@ export default function FileTree({
       }}
     >
       <div className="ft-header">
-        <span className="ft-title">SFTP Files</span>
+        <span className="ft-title">{t("SFTP Files")}</span>
         <label className="ft-track-toggle" title={statusLabel.tip}>
           <input
             type="checkbox"
@@ -355,19 +357,19 @@ export default function FileTree({
             disabled={shellIntegration !== "detected"}
             onChange={(e) => onCdTrackingChange(e.target.checked)}
           />
-          <span className="ft-track-label">Follow</span>
+          <span className="ft-track-label">{t("Follow")}</span>
           <span
             className={`ft-track-dot ${statusLabel.dot}`}
-            aria-label={`Shell integration: ${shellIntegration}`}
+            aria-label={t("Shell integration: {v0}", { v0: shellIntegration })}
           />
         </label>
-        <button className="ft-btn" onClick={handleMkdir} title="New Folder">
+        <button className="ft-btn" onClick={handleMkdir} title={t("New Folder")}>
           <Icon name="folder" size={15} />
         </button>
         <button
           className="ft-btn"
           onClick={() => navigateTo(currentPath)}
-          title="Refresh"
+          title={t("Refresh")}
         >
           <Icon name="refresh" size={15} />
         </button>
@@ -375,7 +377,7 @@ export default function FileTree({
           <button
             className="ft-btn"
             onClick={onCollapse}
-            title="Hide file tree"
+            title={t("Hide file tree")}
           >
             <Icon name="close" size={15} />
           </button>
@@ -386,10 +388,10 @@ export default function FileTree({
         <div className="ft-sftp-entry">
           <button onClick={onOpenSftpView} className="ft-open-sftp">
             <Icon name="external" size={15} />
-            <span>Open SFTP window</span>
+            <span>{t("Open SFTP window")}</span>
             <Icon name="chevron" size={14} />
           </button>
-          <p>Browse local and remote files side by side.</p>
+          <p>{t("Browse local and remote files side by side.")}</p>
         </div>
       )}
 
@@ -415,7 +417,7 @@ export default function FileTree({
 
       <div className="ft-list">
         {loading && entries.length === 0 && (
-          <div className="ft-loading">Loading...</div>
+          <div className="ft-loading">{t("Loading...")}</div>
         )}
         {/* 상위 디렉토리 */}
         {currentPath !== "/" && (
@@ -449,28 +451,22 @@ export default function FileTree({
                 navigateTo(contextMenu.entry.path);
                 setContextMenu(null);
               }}
-            >
-              Open
-            </button>
+            >{t("Open")}</button>
           )}
           {!contextMenu.entry.is_dir && (
             <button
               className="ft-context-item"
               onClick={() => handleDownload(contextMenu.entry)}
-            >
-              Download
-            </button>
+            >{t("Download")}</button>
           )}
           <button
             className="ft-context-item ft-context-item-danger"
             onClick={() => handleDelete(contextMenu.entry)}
-          >
-            Delete
-          </button>
+          >{t("Delete")}</button>
         </div>
       )}
 
-      {dragging && <div className="ft-drop-overlay">Drop files to upload</div>}
+      {dragging && <div className="ft-drop-overlay">{t("Drop files to upload")}</div>}
 
       {transferStatus && (
         <div className="ft-transfer-status">{transferStatus}</div>

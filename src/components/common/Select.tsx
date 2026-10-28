@@ -1,3 +1,5 @@
+import { t, useLocale } from "../../i18n";
+import { useEscapeDismiss } from "../../hooks/useEscapeDismiss";
 import {
   Children,
   Fragment,
@@ -80,9 +82,11 @@ export default function Select({
   disabled,
   ...props
 }: Props) {
+  useLocale();
   const options = readOptions(children);
   const selected = options.findIndex((option) => option.value === value);
   const [open, setOpen] = useState(false);
+  useEscapeDismiss(() => setOpen(false), open, 10000);
   const [active, setActive] = useState(0);
   const [position, setPosition] = useState({
     left: 0,
@@ -185,12 +189,6 @@ export default function Select({
         onBlur={() => setOpen(false)}
         onClick={() => (open ? setOpen(false) : show())}
         onKeyDown={(event) => {
-          if (event.key === "Escape" && open) {
-            event.preventDefault();
-            event.stopPropagation();
-            setOpen(false);
-            return;
-          }
           if (event.key === "Tab") {
             setOpen(false);
             return;
@@ -247,7 +245,7 @@ export default function Select({
         }}
       >
         <span className="custom-select-value">
-          {options[selected]?.label ?? "Select…"}
+          {options[selected]?.label ?? t("Select…")}
         </span>
         <svg
           className="custom-select-chevron"
@@ -270,7 +268,7 @@ export default function Select({
             ref={menu}
             id={listId}
             role="listbox"
-            aria-label={props["aria-label"] ?? "Options"}
+            aria-label={props["aria-label"] ?? t("Options")}
             className="custom-select-menu"
             style={position}
             onMouseDown={(event) => {
@@ -305,7 +303,7 @@ export default function Select({
               </Fragment>
             ))}
             {!options.length && (
-              <div className="custom-select-group">No options</div>
+              <div className="custom-select-group">{t("No options")}</div>
             )}
           </div>,
           document.body,

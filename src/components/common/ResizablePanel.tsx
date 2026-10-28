@@ -1,3 +1,4 @@
+import { t, useLocale } from "../../i18n";
 import { useState, useRef, useEffect } from "react";
 import "./ResizablePanel.css";
 
@@ -20,6 +21,7 @@ export default function ResizablePanel({
   collapsed,
   keepMounted = false,
 }: ResizablePanelProps) {
+  useLocale();
   const [width, setWidth] = useState(defaultWidth);
   const dragging = useRef(false);
   const startX = useRef(0);
@@ -65,7 +67,7 @@ export default function ResizablePanel({
       <div
         className={`rp-handle rp-handle-${side}`}
         role="separator"
-        aria-label={`Resize ${side === "left" ? "connections" : "tools"} panel`}
+        aria-label={t("Resize {v0} panel", { v0: side === "left" ? t("Connections") : t("Server tools") })}
         aria-orientation="vertical"
         aria-valuenow={width}
         aria-valuemin={minWidth}

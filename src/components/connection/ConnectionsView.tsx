@@ -1,9 +1,11 @@
+import { t, useLocale } from "../../i18n";
 import MigrationDialog from "./MigrationDialog";
 import Select from "../common/Select";
 import { useState, useEffect, useCallback, useRef, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import type { Profile } from "../../types";
 import type { RdpProfile } from "../../types/rdp";
+import type { WinrmProfile } from "../../types/winrm";
 import { connectionEntries, readConnectionFavorites, type ConnectionEntry, type ConnectionKey } from "../../types/connection";
 import Icon from "../common/Icon";
 import "./ConnectionsView.css";
@@ -19,6 +21,10 @@ interface ConnectionsViewProps {
   onRdpEdit: (profile: RdpProfile) => void;
   activeRdpProfileId?: number;
   connectedRdpProfileIds?: number[];
+  onWinrmConnect: (profile: WinrmProfile) => void;
+  onWinrmEdit: (profile: WinrmProfile) => void;
+  activeWinrmProfileId?: number;
+  connectedWinrmProfileIds?: number[];
   reloadKey?: number;
   activeProfileId?: number | null;
   connectedProfileIds?: number[];
@@ -33,17 +39,20 @@ export default function ConnectionsView({
   onConnect,
   onEdit,
   onNew, onRdpConnect, onRdpEdit, activeRdpProfileId, connectedRdpProfileIds = [],
+  onWinrmConnect, onWinrmEdit, activeWinrmProfileId, connectedWinrmProfileIds = [],
   reloadKey,
   activeProfileId,
   connectedProfileIds = [],
   onProfilesLoaded,
 }: ConnectionsViewProps) {
+  useLocale();
   const [showImport, setShowImport] = useState(false);
   const [protocolFilter, setProtocolFilter] = useState("");
   const [scope, setScope] = useState("all");
   const [groupFilter, setGroupFilter] = useState("");
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [rdpProfiles, setRdpProfiles] = useState<RdpProfile[]>([]);
+  const [winrmProfiles, setWinrmProfiles] = useState<WinrmProfile[]>([]);
   const loadVersion = useRef(0);
   const [searchQuery, setSearchQuery] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -54,15 +63,18 @@ export default function ConnectionsView({
   });
   const loadProfiles = useCallback(async () => {
     const version = ++loadVersion.current;
-    const [terminal, rdp] = await Promise.allSettled([
+    const [terminal, rdp, winrm] = await Promise.allSettled([
       invoke<Profile[]>("list_profiles"), invoke<RdpProfile[]>("rdp_list_profiles"),
+      invoke<WinrmProfile[]>("winrm_list_profiles"),
     ]);
     if (version !== loadVersion.current) return;
     const errors = [];
     if (terminal.status === "fulfilled") { setProfiles(terminal.value); onProfilesLoaded?.(terminal.value); }
-    else errors.push("Could not load terminal connections.");
+    else errors.push(t("Could not load terminal connections."));
     if (rdp.status === "fulfilled") setRdpProfiles(rdp.value);
-    else errors.push("Could not load RDP connections.");
+    else errors.push(t("Could not load RDP connections."));
+    if (winrm.status === "fulfilled") setWinrmProfiles(winrm.value);
+    else errors.push(t("Could not load WinRM connections."));
     setError(errors.length ? errors.join(" ") : null); setLoading(false);
   }, [onProfilesLoaded]);
   useEffect(() => {
@@ -96,29 +108,29 @@ export default function ConnectionsView({
   const handleDelete = async (profile: ConnectionEntry) => {
     if (
       !confirm(
-        `Delete saved connection "${profile.name}"? Open sessions will stay open.`,
+        t("Delete saved connection \"{v0}\"? Open sessions will stay open.", { v0: profile.name }),
       )
     )
       return;
     try {
-      await invoke(profile.kind === "rdp" ? "rdp_delete_profile" : "delete_profile", { id: profile.profile.id });
+      await invoke(profile.kind === "rdp" ? "rdp_delete_profile" : profile.kind === "winrm" ? "winrm_delete_profile" : "delete_profile", { id: profile.profile.id });
       saveFavorites(favorites.filter((key) => key !== profile.key));
       window.dispatchEvent(new Event("cygnus-profiles-changed"));
     } catch {
-      setError("Could not delete this connection. Try again.");
+      setError(t("Could not delete this connection. Try again."));
     }
   };
-  const entries = connectionEntries(profiles, rdpProfiles);
+  const entries = connectionEntries(profiles, rdpProfiles, winrmProfiles);
   const q = searchQuery.trim().toLowerCase();
   const filtered = entries.filter((entry) => entry.search.includes(q));
   const grouped = filtered.reduce<Record<string, ConnectionEntry[]>>((acc, entry) => {
     (acc[entry.group || "Ungrouped"] ??= []).push(entry);
     return acc;
   }, Object.create(null));
-  const connectEntry = (entry: ConnectionEntry) => entry.kind === "rdp" ? onRdpConnect(entry.profile) : onConnect(entry.profile);
-  const editEntry = (entry: ConnectionEntry) => entry.kind === "rdp" ? onRdpEdit(entry.profile) : onEdit(entry.profile);
-  const connected = (entry: ConnectionEntry) => entry.kind === "rdp" ? connectedRdpProfileIds.includes(entry.profile.id) : connectedProfileIds.includes(entry.profile.id);
-  const active = (entry: ConnectionEntry) => entry.kind === "rdp" ? activeRdpProfileId === entry.profile.id : activeProfileId === entry.profile.id;
+  const connectEntry = (entry: ConnectionEntry) => entry.kind === "rdp" ? onRdpConnect(entry.profile) : entry.kind === "winrm" ? onWinrmConnect(entry.profile) : onConnect(entry.profile);
+  const editEntry = (entry: ConnectionEntry) => entry.kind === "rdp" ? onRdpEdit(entry.profile) : entry.kind === "winrm" ? onWinrmEdit(entry.profile) : onEdit(entry.profile);
+  const connected = (entry: ConnectionEntry) => entry.kind === "rdp" ? connectedRdpProfileIds.includes(entry.profile.id) : entry.kind === "winrm" ? connectedWinrmProfileIds.includes(entry.profile.id) : connectedProfileIds.includes(entry.profile.id);
+  const active = (entry: ConnectionEntry) => entry.kind === "rdp" ? activeRdpProfileId === entry.profile.id : entry.kind === "winrm" ? activeWinrmProfileId === entry.profile.id : activeProfileId === entry.profile.id;
   const row = (profile: ConnectionEntry, favoriteSection = false) => (
     <div
       key={profile.key}
@@ -127,7 +139,7 @@ export default function ConnectionsView({
       <button
         className="cv-item-main"
         onClick={() => connectEntry(profile)}
-        title={`Connect to ${profile.endpoint}`}
+        title={t("Connect to {v0}", { v0: profile.endpoint })}
       >
         <span
           className={`cv-item-icon ${connected(profile) ? "cv-connected" : ""}`}
@@ -147,9 +159,9 @@ export default function ConnectionsView({
           className={`cv-action-btn ${favorites.includes(profile.key) ? "cv-favorite" : ""}`}
           onClick={() => toggleFavorite(profile.key)}
           title={
-            favorites.includes(profile.key) ? "Remove favorite" : "Add favorite"
+            favorites.includes(profile.key) ? t("Remove favorite") : t("Add favorite")
           }
-          aria-label={`${favorites.includes(profile.key) ? "Unfavorite" : "Favorite"} ${profile.name}`}
+          aria-label={`${favorites.includes(profile.key) ? t("Unfavorite") : t("Favorite")} ${profile.name}`}
           aria-pressed={favorites.includes(profile.key)}
         >
           <Icon name="star" size={13} />
@@ -157,16 +169,16 @@ export default function ConnectionsView({
         <button
           className="cv-action-btn"
           onClick={() => editEntry(profile)}
-          title={`Edit ${profile.name}`}
-          aria-label={`Edit ${profile.name}`}
+          title={t("Edit {v0}", { v0: profile.name })}
+          aria-label={t("Edit {v0}", { v0: profile.name })}
         >
           <Icon name="edit" size={13} />
         </button>
         <button
           className="cv-action-btn cv-action-danger"
           onClick={() => void handleDelete(profile)}
-          title={`Delete ${profile.name}`}
-          aria-label={`Delete ${profile.name}`}
+          title={t("Delete {v0}", { v0: profile.name })}
+          aria-label={t("Delete {v0}", { v0: profile.name })}
         >
           <Icon name="close" size={13} />
         </button>
@@ -190,31 +202,25 @@ export default function ConnectionsView({
       ...new Set(entries.map((profile) => profile.group || "Ungrouped")),
     ].sort();
     return (
-      <section className="ssh-page" aria-label="Saved connections">
+      <section className="ssh-page" aria-label={t("Saved connections")}>
         {showImport && <MigrationDialog onClose={() => setShowImport(false)} />}
         <header className="ssh-page-header">
           <div>
             <div className="ssh-eyebrow">
               <Icon name="terminal" size={16} /> CYGNUS TERMINAL
             </div>
-            <h1>Connections</h1>
-            <p>SSH, RDP (Beta), Telnet and Serial. Your connections in one place.</p>
+            <h1>{t("Connections")}</h1>
+            <p>{t("SSH, RDP (Beta), WinRM, Telnet and Serial. Your connections in one place.")}</p>
           </div>
           <div className="ssh-header-actions">
             <button
               className="ssh-secondary"
               onClick={() => setShowImport(true)}
-            >
-              Import connections
-            </button>
+            >{t("Import connections")}</button>
             <button className="ssh-secondary" onClick={onLocalShell}>
-              <Icon name="terminal" />
-              Local shell
-            </button>
+              <Icon name="terminal" />{t("Local shell")}</button>
             <button className="ssh-primary" onClick={onNew}>
-              <Icon name="plus" />
-              New connection
-            </button>
+              <Icon name="plus" />{t("New connection")}</button>
           </div>
         </header>
         <div className="ssh-filters">
@@ -222,29 +228,30 @@ export default function ConnectionsView({
             <Icon name="search" />
             <input
               className="cv-search"
-              aria-label="Search connections"
-              placeholder="Search name, address, OS, shell or group…"
+              aria-label={t("Search connections")}
+              placeholder={t("Search name, address, OS, shell or group…")}
               value={searchQuery}
               onChange={(event) => setSearchQuery(event.target.value)}
             />
           </label>
           <Select
-            aria-label="Filter by protocol"
+            aria-label={t("Filter by protocol")}
             value={protocolFilter}
             onValueChange={(value) => setProtocolFilter(value)}
           >
-            <option value="">All protocols</option>
+            <option value="">{t("All protocols")}</option>
             <option value="ssh">SSH</option>
-            <option value="rdp">RDP (Beta)</option>
+            <option value="rdp">{t("RDP (Beta)")}</option>
+            <option value="winrm">WinRM</option>
             <option value="telnet">Telnet</option>
-            <option value="serial">Serial</option>
+            <option value="serial">{t("Serial")}</option>
           </Select>
           <Select
-            aria-label="Filter by server group"
+            aria-label={t("Filter by server group")}
             value={groupFilter}
             onValueChange={(value) => setGroupFilter(value)}
           >
-            <option value="">All groups</option>
+            <option value="">{t("All groups")}</option>
             {groups.map((group) => (
               <option key={group}>{group}</option>
             ))}
@@ -254,7 +261,7 @@ export default function ConnectionsView({
           <div
             className="ssh-scopes"
             role="group"
-            aria-label="Connection filters"
+            aria-label={t("Connection filters")}
           >
             {[
               ["all", "All connections"],
@@ -266,32 +273,32 @@ export default function ConnectionsView({
                 aria-pressed={scope === value}
                 onClick={() => setScope(value)}
               >
-                {label}
+                {t(label)}
               </button>
             ))}
           </div>
           <span>
             {visible.length}{" "}
-            {visible.length === 1 ? "connection" : "connections"}
+            {visible.length === 1 ? t("connection") : t("connections")}
           </span>
         </div>
         {error && (
           <div className="cv-error" role="alert">
             {error}
-            <button onClick={() => void loadProfiles()}>Retry</button>
+            <button onClick={() => void loadProfiles()}>{t("Retry")}</button>
           </div>
         )}
         <div className="ssh-table-wrap">
           <table className="ssh-table">
             <thead>
               <tr>
-                <th aria-label="Favorite" />
-                <th>Connection / Endpoint</th>
-                <th>Group</th>
-                <th>Protocol / Settings</th>
-                <th>Status</th>
+                <th aria-label={t("Favorite")} />
+                <th>{t("Connection / Endpoint")}</th>
+                <th>{t("Group")}</th>
+                <th>{t("Protocol / Settings")}</th>
+                <th>{t("Status")}</th>
                 <th>
-                  <span className="ssh-actions-label">Actions</span>
+                  <span className="ssh-actions-label">{t("Actions")}</span>
                 </th>
               </tr>
             </thead>
@@ -302,7 +309,7 @@ export default function ConnectionsView({
                     <button
                       className={`cv-action-btn ${favorites.includes(profile.key) ? "cv-favorite" : ""}`}
                       onClick={() => toggleFavorite(profile.key)}
-                      aria-label={`${favorites.includes(profile.key) ? "Unfavorite" : "Favorite"} ${profile.name}`}
+                      aria-label={`${favorites.includes(profile.key) ? t("Unfavorite") : t("Favorite")} ${profile.name}`}
                       aria-pressed={favorites.includes(profile.key)}
                     >
                       <Icon name="star" />
@@ -312,7 +319,7 @@ export default function ConnectionsView({
                     <button
                       className="ssh-server-name"
                       onClick={() => connectEntry(profile)}
-                      title={`Connect to ${profile.name}`}
+                      title={t("Connect to {v0}", { v0: profile.name })}
                     >
                       <Icon name={profile.kind === "rdp" ? "monitor" : "server"} />
                       <strong>{profile.name}</strong>
@@ -321,7 +328,7 @@ export default function ConnectionsView({
                   </td>
                   <td>
                     <span className="ssh-group">
-                      {profile.group || "Ungrouped"}
+                      {profile.group || t("Ungrouped")}
                     </span>
                   </td>
                   <td>
@@ -333,7 +340,7 @@ export default function ConnectionsView({
                     </small>
                     {profile.environment && (
                       <small
-                        title={`Saved server environment: ${profile.environment}`}
+                        title={t("Saved server environment: {v0}", { v0: profile.environment })}
                       >
                         {profile.environment}
                       </small>
@@ -345,8 +352,8 @@ export default function ConnectionsView({
                         className={`session-dot ${connected(profile) ? "session-dot-connected" : ""}`}
                       />
                       {connected(profile)
-                        ? "Connected"
-                        : "Not connected"}
+                        ? t("Connected")
+                        : t("Not connected")}
                     </span>
                   </td>
                   <td>
@@ -354,24 +361,22 @@ export default function ConnectionsView({
                       <button
                         className="ssh-connect"
                         onClick={() => connectEntry(profile)}
-                        aria-label={`Connect to ${profile.name}`}
-                      >
-                        Connect
-                        <Icon name="chevron" size={13} />
+                        aria-label={t("Connect to {v0}", { v0: profile.name })}
+                      >{t("Connect")}<Icon name="chevron" size={13} />
                       </button>
                       <button
                         className="cv-action-btn"
                         onClick={() => editEntry(profile)}
-                        aria-label={`Edit ${profile.name}`}
-                        title="Edit connection"
+                        aria-label={t("Edit {v0}", { v0: profile.name })}
+                        title={t("Edit connection")}
                       >
                         <Icon name="edit" />
                       </button>
                       <button
                         className="cv-action-btn cv-action-danger"
                         onClick={() => void handleDelete(profile)}
-                        aria-label={`Delete ${profile.name}`}
-                        title="Delete connection"
+                        aria-label={t("Delete {v0}", { v0: profile.name })}
+                        title={t("Delete connection")}
                       >
                         <Icon name="close" />
                       </button>
@@ -386,17 +391,17 @@ export default function ConnectionsView({
               <Icon name={entries.length ? "search" : "server"} size={30} />
               <h2>
                 {loading
-                  ? "Loading connections…"
+                  ? t("Loading connections…")
                   : entries.length
-                    ? "No matching connections"
-                    : "Add your first connection"}
+                    ? t("No matching connections")
+                    : t("Add your first connection")}
               </h2>
               <p>
                 {loading
                   ? ""
                   : entries.length
-                    ? "Try another search or filter."
-                    : "Choose a protocol and save your connection settings."}
+                    ? t("Try another search or filter.")
+                    : t("Choose a protocol and save your connection settings.")}
               </p>
               {!loading &&
                 (entries.length ? (
@@ -408,21 +413,15 @@ export default function ConnectionsView({
                       setGroupFilter("");
                       setProtocolFilter("");
                     }}
-                  >
-                    Clear filters
-                  </button>
+                  >{t("Clear filters")}</button>
                 ) : (
                   <div className="ssh-header-actions">
                     <button className="ssh-primary" onClick={onNew}>
-                      <Icon name="plus" />
-                      New connection
-                    </button>
+                      <Icon name="plus" />{t("New connection")}</button>
                     <button
                       className="ssh-secondary"
                       onClick={() => setShowImport(true)}
-                    >
-                      Import existing connections
-                    </button>
+                    >{t("Import existing connections")}</button>
                   </div>
                 ))}
             </div>
@@ -440,30 +439,26 @@ export default function ConnectionsView({
           <Icon name="search" size={15} />
           <input
             className="cv-search"
-            aria-label="Search connections"
-            placeholder="Search connections…"
+            aria-label={t("Search connections")}
+            placeholder={t("Search connections…")}
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
           />
         </label>
         <button className="cv-new-btn" onClick={onNew}>
-          <Icon name="plus" size={15} />
-          New connection
-        </button>
+          <Icon name="plus" size={15} />{t("New connection")}</button>
       </div>
-      <button className="cv-new-btn" onClick={() => setShowImport(true)}>
-        Import connections
-      </button>
+      <button className="cv-new-btn" onClick={() => setShowImport(true)}>{t("Import connections")}</button>
       <div className="cv-list">
         {error && (
           <div className="cv-error" role="alert">
             {error}
-            <button onClick={() => void loadProfiles()}>Retry</button>
+            <button onClick={() => void loadProfiles()}>{t("Retry")}</button>
           </div>
         )}
         {filtered.some((p) => favorites.includes(p.key)) && (
-          <section className="cv-group" aria-label="Favorites">
-            <h3 className="cv-group-label">Favorites</h3>
+          <section className="cv-group" aria-label={t("Favorites")}>
+            <h3 className="cv-group-label">{t("Favorites")}</h3>
             {filtered
               .filter((p) => favorites.includes(p.key))
               .map((p) => row(p, true))}
@@ -481,16 +476,16 @@ export default function ConnectionsView({
         {!error && filtered.length === 0 && (
           <div className="cv-empty">
             {loading
-              ? "Loading connections…"
+              ? t("Loading connections…")
               : entries.length === 0
-                ? "Your servers, one place."
-                : "No matching connections."}
+                ? t("Your servers, one place.")
+                : t("No matching connections.")}
             <p>
               {loading
                 ? ""
                 : entries.length === 0
-                  ? "Add a connection to get started."
-                  : "Try a server name, host or group."}
+                  ? t("Add a connection to get started.")
+                  : t("Try a server name, host or group.")}
             </p>
           </div>
         )}

@@ -1,9 +1,11 @@
+import { t, useLocale } from "../../../i18n";
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save, open } from "@tauri-apps/plugin-dialog";
 import ExecutionHistorySettings from "./ExecutionHistorySettings";
 
 export default function DataTab() {
+  useLocale();
   const [status, setStatus] = useState<string | null>(null);
 
   const showStatus = (msg: string, ms = 2500) => {
@@ -14,23 +16,23 @@ export default function DataTab() {
   const handleExport = async () => {
     try {
       const path = await save({
-        title: "Export Data",
+        title: t("Export Data"),
         defaultPath: "cygnus-export.json",
         filters: [{ name: "JSON", extensions: ["json"] }],
       });
       if (!path) return;
 
       await invoke("export_to_file", { path });
-      showStatus("Exported successfully!");
+      showStatus(t("Exported successfully!"));
     } catch (err) {
-      showStatus(`Export failed: ${err}`, 3000);
+      showStatus(t("Export failed: {v0}", { v0: String(err) }), 3000);
     }
   };
 
   const handleImport = async () => {
     try {
       const path = await open({
-        title: "Import Data",
+        title: t("Import Data"),
         filters: [{ name: "JSON", extensions: ["json"] }],
         multiple: false,
       });
@@ -38,27 +40,19 @@ export default function DataTab() {
 
       const count = await invoke<number>("import_from_file", { path });
       window.dispatchEvent(new Event("cygnus-profiles-changed"));
-      showStatus(`Imported ${count} items!`);
+      showStatus(t("Imported {v0} items!", { v0: count }));
     } catch (err) {
-      showStatus(`Import failed: ${err}`, 3000);
+      showStatus(t("Import failed: {v0}", { v0: String(err) }), 3000);
     }
   };
 
   return (
     <div className="settings-section">
-      <h3 className="settings-section-title">Data</h3>
-      <p className="settings-desc">
-        Export or import profiles (including RDP connection settings), command bookmarks, and path bookmarks.
-        <br />
-        Passwords and saved RDP certificate trust are not included. Verify RDP certificates again after importing on another device.
-      </p>
+      <h3 className="settings-section-title">{t("Data")}</h3>
+      <p className="settings-desc">{t("Export or import profiles (including RDP connection settings), command bookmarks, and path bookmarks.")}<br />{t("Passwords and saved RDP certificate trust are not included. Verify RDP certificates again after importing on another device.")}</p>
       <div className="settings-actions">
-        <button className="settings-btn" onClick={handleExport}>
-          Export JSON
-        </button>
-        <button className="settings-btn" onClick={handleImport}>
-          Import JSON
-        </button>
+        <button className="settings-btn" onClick={handleExport}>{t("Export JSON")}</button>
+        <button className="settings-btn" onClick={handleImport}>{t("Import JSON")}</button>
       </div>
       {status && <div className="settings-status">{status}</div>}
       <ExecutionHistorySettings />
