@@ -1,5 +1,7 @@
+import { t, useLocale } from "../../i18n";
+import { useEscapeDismiss } from "../../hooks/useEscapeDismiss";
 import type { ConnectionChoice } from "../../types/connection";
-import { useEffect, useReducer, useState } from "react";
+import { useEffect, useRef, useReducer, useState } from "react";
 import { invoke } from "../../services/secureInvoke";
 import { open } from "@tauri-apps/plugin-dialog";
 import {
@@ -123,6 +125,7 @@ export default function ConnectDialog({
   editProfile,
   onProtocolChange,
 }: ConnectDialogProps) {
+  useLocale();
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [form, dispatch] = useReducer(formReducer, initialFormState);
@@ -135,13 +138,12 @@ export default function ConnectDialog({
     if (editProfile) dispatch({ type: "populate", profile: editProfile });
   }, [editProfile]);
 
+  const dismissed = useRef(false);
   useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape" && !busy) onCancel();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [busy, onCancel]);
+    dismissed.current = false;
+    return () => { dismissed.current = true; };
+  }, []);
+  useEscapeDismiss(() => { dismissed.current = true; onCancel(); });
 
   const buildJumpHostJson = (): string | undefined => {
     if (!form.useJumpHost || !form.jumpHost) return undefined;
@@ -222,7 +224,7 @@ export default function ConnectDialog({
         return created;
       }
     } catch (err) {
-      setError(`Could not save connection: ${String(err)}`);
+      setError(t("Could not save connection: {v0}", { v0: String(err) }));
       return null;
     } finally {
       setBusy(false);
@@ -239,7 +241,7 @@ export default function ConnectDialog({
       Number(form.port) < 1 ||
       Number(form.port) > 65535
     ) {
-      setError("Enter a host, username and a port between 1 and 65535.");
+      setError(t("Enter a host, username and a port between 1 and 65535."));
       return;
     }
 
@@ -247,7 +249,7 @@ export default function ConnectDialog({
     // profileId 가 비면 App 의 ServerContext (left sidebar) 가 conditional render
     // 단계에서 떨어져 첫 접속 시 패널이 안 뜨는 회귀를 만든다.
     const saved = await handleSave();
-    if (form.saveProfile && !saved) return;
+    if (dismissed.current || (form.saveProfile && !saved)) return;
 
     onConnect({
       host: form.host,
@@ -279,10 +281,10 @@ export default function ConnectDialog({
       Number(form.port) < 1 ||
       Number(form.port) > 65535
     ) {
-      setError("Enter a host, username and a port between 1 and 65535.");
+      setError(t("Enter a host, username and a port between 1 and 65535."));
       return;
     }
-    if (await handleSave()) onCancel();
+    if (await handleSave() && !dismissed.current) onCancel();
   };
 
   return (
@@ -296,18 +298,16 @@ export default function ConnectDialog({
       >
         <div className="connection-dialog-heading">
           <div>
-            <span className="connection-dialog-eyebrow">
-              CONNECTION DETAILS
-            </span>
+            <span className="connection-dialog-eyebrow">{t("CONNECTION DETAILS")}</span>
             <h2 id="connection-dialog-title" className="dialog-title">
-              {isEdit ? "Edit SSH connection" : "New SSH connection"}
+              {isEdit ? t("Edit SSH connection") : t("New SSH connection")}
             </h2>
-            <p>Secure access to your server.</p>
+            <p>{t("Secure access to your server.")}</p>
           </div>
           <button
             className="icon-button"
             disabled={busy}
-            aria-label="Close connection dialog"
+            aria-label={t("Close connection dialog")}
             onClick={onCancel}
           >
             <Icon name="close" />
@@ -321,13 +321,13 @@ export default function ConnectDialog({
           <fieldset className="transport-fields" disabled={busy}>
             <div className="dialog-row-pair connection-name-group">
               <div className="dialog-row">
-                <label>Name</label>
+                <label>{t("Name")}</label>
                 <input
-                  aria-label="Name"
+                  aria-label={t("Name")}
                   type="text"
                   value={form.name}
                   onChange={(e) => setField("name", e.target.value)}
-                  placeholder="My Server"
+                  placeholder={t("My Server")}
                   autoFocus
                 />
               </div>
@@ -338,9 +338,9 @@ export default function ConnectDialog({
             </div>
             <div className="dialog-row-pair">
               <div className="dialog-row" style={{ flex: 1 }}>
-                <label>Host</label>
+                <label>{t("Host")}</label>
                 <input
-                  aria-label="Host"
+                  aria-label={t("Host")}
                   type="text"
                   value={form.host}
                   onChange={(e) => setField("host", e.target.value)}
@@ -348,9 +348,9 @@ export default function ConnectDialog({
                 />
               </div>
               <div className="dialog-row" style={{ width: 80 }}>
-                <label>Port</label>
+                <label>{t("Port")}</label>
                 <input
-                  aria-label="Port"
+                  aria-label={t("Port")}
                   type="text"
                   value={form.port}
                   onChange={(e) => setField("port", e.target.value)}
@@ -359,9 +359,9 @@ export default function ConnectDialog({
               </div>
             </div>
             <div className="dialog-row">
-              <label>Username</label>
+              <label>{t("Username")}</label>
               <input
-                aria-label="Username"
+                aria-label={t("Username")}
                 type="text"
                 value={form.username}
                 onChange={(e) => setField("username", e.target.value)}
@@ -369,33 +369,28 @@ export default function ConnectDialog({
               />
             </div>
             <div className="dialog-row">
-              <label>Auth</label>
+              <label>{t("Auth")}</label>
               <div className="dialog-radio-group">
                 <label className="dialog-radio">
                   <input
                     type="radio"
                     checked={form.authType === "password"}
                     onChange={() => setField("authType", "password")}
-                  />
-                  Password
-                </label>
+                  />{t("Password")}</label>
                 <label className="dialog-radio">
                   <input
                     type="radio"
                     checked={form.authType === "key"}
                     onChange={() => setField("authType", "key")}
-                  />
-                  Private Key
-                </label>
+                  />{t("Private Key")}</label>
               </div>
             </div>
             {form.authType === "password" ? (
               <div className="dialog-row">
-                <label>
-                  Password{isEdit && " (leave empty to keep current)"}
+                <label>{t("Password")}{isEdit && t(" (leave empty to keep current)")}
                 </label>
                 <input
-                  aria-label="Password"
+                  aria-label={t("Password")}
                   type="password"
                   value={form.password}
                   onChange={(e) => setField("password", e.target.value)}
@@ -403,10 +398,10 @@ export default function ConnectDialog({
               </div>
             ) : (
               <div className="dialog-row">
-                <label>Key Path</label>
+                <label>{t("Key Path")}</label>
                 <div className="dialog-input-with-btn">
                   <input
-                    aria-label="Key path"
+                    aria-label={t("Key path")}
                     type="text"
                     value={form.keyPath}
                     onChange={(e) => setField("keyPath", e.target.value)}
@@ -417,32 +412,28 @@ export default function ConnectDialog({
                     className="dialog-browse-btn"
                     onClick={async () => {
                       const selected = await open({
-                        title: "Select SSH Private Key",
+                        title: t("Select SSH Private Key"),
                         defaultPath: "~/.ssh",
                         multiple: false,
                         directory: false,
                       });
                       if (selected) setField("keyPath", selected as string);
                     }}
-                  >
-                    Browse
-                  </button>
+                  >{t("Browse")}</button>
                 </div>
               </div>
             )}
             <details className="connection-advanced">
-              <summary>
-                Advanced SSH options
-                <span>Server environment · Jump host · Agent forwarding</span>
+              <summary>{t("Advanced SSH options")}<span>{t("Server environment · Jump host · Agent forwarding")}</span>
               </summary>
               {form.saveProfile && (
                 <div className="dialog-row">
                   <div className="dialog-row-pair">
                     <div className="dialog-row" style={{ flex: 1 }}>
-                      <label htmlFor="connection-target-os">Server OS</label>
+                      <label htmlFor="connection-target-os">{t("Server OS")}</label>
                       <Select
                         id="connection-target-os"
-                        aria-label="Server OS"
+                        aria-label={t("Server OS")}
                         aria-describedby="connection-environment-help"
                         value={form.targetOs}
                         onValueChange={(value) =>
@@ -451,16 +442,16 @@ export default function ConnectDialog({
                       >
                         {Object.entries(SERVER_OS_LABELS).map(([value, label]) => (
                           <option key={value} value={value}>
-                            {label}
+                            {t(label)}
                           </option>
                         ))}
                       </Select>
                     </div>
                     <div className="dialog-row" style={{ flex: 1 }}>
-                      <label htmlFor="connection-remote-shell">Server shell</label>
+                      <label htmlFor="connection-remote-shell">{t("Server shell")}</label>
                       <Select
                         id="connection-remote-shell"
-                        aria-label="Server shell"
+                        aria-label={t("Server shell")}
                         aria-describedby="connection-environment-help"
                         value={form.remoteShell}
                         onValueChange={(value) =>
@@ -469,7 +460,7 @@ export default function ConnectDialog({
                       >
                         {Object.entries(REMOTE_SHELL_LABELS).map(([value, label]) => (
                           <option key={value} value={value}>
-                            {label}
+                            {t(label)}
                           </option>
                         ))}
                       </Select>
@@ -478,11 +469,7 @@ export default function ConnectDialog({
                   <p
                     id="connection-environment-help"
                     className="connection-environment-help"
-                  >
-                    Save environment hints. SSH tools also verify the remote
-                    environment after connecting. Connections use the server’s
-                    default shell.
-                  </p>
+                  >{t("Save environment hints. SSH tools also verify the remote environment after connecting. Connections use the server’s default shell.")}</p>
                 </div>
               )}
               <div className="dialog-row">
@@ -491,9 +478,7 @@ export default function ConnectDialog({
                     type="checkbox"
                     checked={form.useJumpHost}
                     onChange={(e) => setField("useJumpHost", e.target.checked)}
-                  />
-                  Use Jump Host (ProxyJump)
-                </label>
+                  />{t("Use Jump Host (ProxyJump)")}</label>
               </div>
               <div className="dialog-row">
                 <label className="dialog-checkbox">
@@ -501,24 +486,18 @@ export default function ConnectDialog({
                     type="checkbox"
                     checked={form.agentForward}
                     onChange={(e) => setField("agentForward", e.target.checked)}
-                  />
-                  SSH Agent Forwarding
-                </label>
+                  />{t("SSH Agent Forwarding")}</label>
                 {form.agentForward && (
-                  <div className="dialog-warn">
-                    ⚠ Only enable for servers you fully trust. Root on the
-                    remote host can read your SSH agent socket and authenticate
-                    as you to any other server.
-                  </div>
+                  <div className="dialog-warn">{t("⚠ Only enable for servers you fully trust. Root on the remote host can read your SSH agent socket and authenticate as you to any other server.")}</div>
                 )}
               </div>
               {form.useJumpHost && (
                 <div className="dialog-jump-host">
                   <div className="dialog-row-pair">
                     <div className="dialog-row" style={{ flex: 1 }}>
-                      <label>Jump Host</label>
+                      <label>{t("Jump Host")}</label>
                       <input
-                        aria-label="Jump host"
+                        aria-label={t("Jump host")}
                         type="text"
                         value={form.jumpHost}
                         onChange={(e) => setField("jumpHost", e.target.value)}
@@ -526,9 +505,9 @@ export default function ConnectDialog({
                       />
                     </div>
                     <div className="dialog-row" style={{ width: 80 }}>
-                      <label>Port</label>
+                      <label>{t("Port")}</label>
                       <input
-                        aria-label="Jump port"
+                        aria-label={t("Jump port")}
                         type="text"
                         value={form.jumpPort}
                         onChange={(e) => setField("jumpPort", e.target.value)}
@@ -536,9 +515,9 @@ export default function ConnectDialog({
                     </div>
                   </div>
                   <div className="dialog-row">
-                    <label>Username</label>
+                    <label>{t("Username")}</label>
                     <input
-                      aria-label="Jump username"
+                      aria-label={t("Jump username")}
                       type="text"
                       value={form.jumpUsername}
                       onChange={(e) => setField("jumpUsername", e.target.value)}
@@ -546,33 +525,28 @@ export default function ConnectDialog({
                     />
                   </div>
                   <div className="dialog-row">
-                    <label>Auth</label>
+                    <label>{t("Auth")}</label>
                     <div className="dialog-radio-group">
                       <label className="dialog-radio">
                         <input
                           type="radio"
                           checked={form.jumpAuthType === "password"}
                           onChange={() => setField("jumpAuthType", "password")}
-                        />
-                        Password
-                      </label>
+                        />{t("Password")}</label>
                       <label className="dialog-radio">
                         <input
                           type="radio"
                           checked={form.jumpAuthType === "key"}
                           onChange={() => setField("jumpAuthType", "key")}
-                        />
-                        Key
-                      </label>
+                        />{t("Key")}</label>
                     </div>
                   </div>
                   {form.jumpAuthType === "password" ? (
                     <div className="dialog-row">
-                      <label>
-                        Password{isEdit && " (leave empty to keep current)"}
+                      <label>{t("Password")}{isEdit && t(" (leave empty to keep current)")}
                       </label>
                       <input
-                        aria-label="Jump password"
+                        aria-label={t("Jump password")}
                         type="password"
                         value={form.jumpPassword}
                         onChange={(e) =>
@@ -582,9 +556,9 @@ export default function ConnectDialog({
                     </div>
                   ) : (
                     <div className="dialog-row">
-                      <label>Key Path</label>
+                      <label>{t("Key Path")}</label>
                       <input
-                        aria-label="Jump key path"
+                        aria-label={t("Jump key path")}
                         type="text"
                         value={form.jumpKeyPath}
                         onChange={(e) =>
@@ -604,9 +578,7 @@ export default function ConnectDialog({
                     type="checkbox"
                     checked={form.saveProfile}
                     onChange={(e) => setField("saveProfile", e.target.checked)}
-                  />
-                  Save to profiles
-                </label>
+                  />{t("Save to profiles")}</label>
               </div>
             )}
             {error && (
@@ -619,18 +591,14 @@ export default function ConnectDialog({
                 type="button"
                 className="dialog-btn dialog-btn-cancel"
                 onClick={onCancel}
-              >
-                Cancel
-              </button>
+              >{t("Cancel")}</button>
               {form.saveProfile && (
                 <button
                   type="button"
                   disabled={busy}
                   className="dialog-btn dialog-btn-save"
                   onClick={handleSaveOnly}
-                >
-                  Save
-                </button>
+                >{t("Save")}</button>
               )}
               <button
                 type="button"
@@ -639,10 +607,10 @@ export default function ConnectDialog({
                 onClick={() => handleConnect()}
               >
                 {busy
-                  ? "Saving…"
+                  ? t("Saving…")
                   : form.saveProfile
-                    ? "Save & Connect"
-                    : "Connect"}
+                    ? t("Save & Connect")
+                    : t("Connect")}
               </button>
             </div>
           </fieldset>

@@ -1,3 +1,5 @@
+import { t, useLocale } from "../../i18n";
+import { useEscapeDismiss } from "../../hooks/useEscapeDismiss";
 import Select from "./Select";
 import { useEffect, useState } from "react";
 import "./SerialConnectDialog.css";
@@ -16,12 +18,13 @@ interface Props {
 const COMMON_BAUDS = [9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600];
 
 export default function SerialConnectDialog({ ports, onConnect, onCancel }: Props) {
+  useLocale();
+  useEscapeDismiss(onCancel, true, 2500);
   const [selectedPort, setSelectedPort] = useState<string>(ports[0]?.name || "");
   const [baud, setBaud] = useState<number>(115200);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
       if (e.key === "Enter" && selectedPort) onConnect(selectedPort, baud);
     };
     window.addEventListener("keydown", onKey);
@@ -30,13 +33,13 @@ export default function SerialConnectDialog({ ports, onConnect, onCancel }: Prop
 
   return (
     <div className="sd-overlay" onMouseDown={onCancel}>
-      <div className="sd-modal" onMouseDown={(e) => e.stopPropagation()}>
-        <div className="sd-title">Connect Serial Port</div>
+      <div className="sd-modal" role="dialog" aria-modal="true" aria-label={t("Serial connection")} onMouseDown={(e) => e.stopPropagation()}>
+        <div className="sd-title">{t("Connect Serial Port")}</div>
 
-        <label className="sd-label">Port</label>
+        <label className="sd-label">{t("Port")}</label>
         <Select
           className="sd-input"
-          aria-label="Serial port"
+          aria-label={t("Serial port")}
           value={selectedPort}
           onValueChange={(value) => setSelectedPort(value)}
         >
@@ -47,7 +50,7 @@ export default function SerialConnectDialog({ ports, onConnect, onCancel }: Prop
           ))}
         </Select>
 
-        <label className="sd-label">Baud rate</label>
+        <label className="sd-label">{t("Baud rate")}</label>
         <div className="sd-baud-row">
           <input
             className="sd-input sd-baud-input"
@@ -69,16 +72,12 @@ export default function SerialConnectDialog({ ports, onConnect, onCancel }: Prop
         </div>
 
         <div className="sd-actions">
-          <button className="sd-btn sd-btn-secondary" onClick={onCancel}>
-            Cancel
-          </button>
+          <button className="sd-btn sd-btn-secondary" onClick={onCancel}>{t("Cancel")}</button>
           <button
             className="sd-btn sd-btn-primary"
             disabled={!selectedPort}
             onClick={() => onConnect(selectedPort, baud)}
-          >
-            Connect
-          </button>
+          >{t("Connect")}</button>
         </div>
       </div>
     </div>

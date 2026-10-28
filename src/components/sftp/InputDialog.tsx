@@ -1,3 +1,5 @@
+import { t, useLocale } from "../../i18n";
+import { useEscapeDismiss } from "../../hooks/useEscapeDismiss";
 import { useEffect, useRef, useState } from "react";
 import "./InputDialog.css";
 
@@ -21,6 +23,8 @@ export default function InputDialog({
   onConfirm,
   onCancel,
 }: Props) {
+  useLocale();
+  useEscapeDismiss(onCancel, true, 2000);
   const [value, setValue] = useState(initial);
   const inputRef = useRef<HTMLInputElement | null>(null);
 
@@ -29,13 +33,6 @@ export default function InputDialog({
     inputRef.current?.select();
   }, []);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onCancel();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onCancel]);
 
   const submit = () => {
     const trimmed = value.trim();
@@ -45,7 +42,7 @@ export default function InputDialog({
 
   return (
     <div className="input-dialog-overlay" onMouseDown={onCancel}>
-      <div className="input-dialog" onMouseDown={(e) => e.stopPropagation()}>
+      <div className="input-dialog" role="dialog" aria-modal="true" aria-label={t("Input")} onMouseDown={(e) => e.stopPropagation()}>
         <div className="id-title">{title}</div>
         {warning && <div className="id-warn">{warning}</div>}
         <input
@@ -60,9 +57,7 @@ export default function InputDialog({
           }}
         />
         <div className="id-actions">
-          <button className="id-btn id-btn-secondary" onClick={onCancel}>
-            Cancel
-          </button>
+          <button className="id-btn id-btn-secondary" onClick={onCancel}>{t("Cancel")}</button>
           <button className="id-btn id-btn-primary" onClick={submit}>
             {confirmLabel}
           </button>

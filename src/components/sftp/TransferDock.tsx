@@ -1,3 +1,4 @@
+import { t, useLocale } from "../../i18n";
 import { useState, useMemo } from "react";
 import { TransferJob } from "../../types/sftp";
 import { formatBytes, formatEta, formatSpeed } from "../../utils/format";
@@ -16,6 +17,7 @@ function jobEta(job: TransferJob): string {
 }
 
 function JobRow({ job, onCancel }: { job: TransferJob; onCancel: (id: string) => void }) {
+  useLocale();
   const pct =
     job.total_bytes > 0
       ? Math.min(100, Math.floor((job.transferred_bytes / job.total_bytes) * 100))
@@ -58,17 +60,17 @@ function JobRow({ job, onCancel }: { job: TransferJob; onCancel: (id: string) =>
               <span className="td-err">{job.error}</span>
             </>
           )}
-          {job.status === "completed" && <span className="td-done">done</span>}
+          {job.status === "completed" && <span className="td-done">{t("done")}</span>}
           {job.status === "cancelled" && (
-            <span className="td-cancelled">cancelled</span>
+            <span className="td-cancelled">{t("cancelled")}</span>
           )}
-          {job.status === "pending" && <span className="td-pending">queued</span>}
+          {job.status === "pending" && <span className="td-pending">{t("queued")}</span>}
         </span>
         {canCancel && (
           <button
             className="td-cancel"
             onClick={() => onCancel(job.id)}
-            title="Cancel"
+            title={t("Cancel")}
           >
             ✕
           </button>
@@ -86,6 +88,7 @@ function JobRow({ job, onCancel }: { job: TransferJob; onCancel: (id: string) =>
 }
 
 export default function TransferDock({ jobs, onCancel, onClearCompleted, headless }: Props) {
+  useLocale();
   const [collapsed, setCollapsed] = useState(false);
 
   const { active, finished, totalBytes, transferredBytes } = useMemo(() => {
@@ -109,7 +112,7 @@ export default function TransferDock({ jobs, onCancel, onClearCompleted, headles
   const body = (
     <div className="td-body">
       {jobs.length === 0 ? (
-        <div className="td-empty">No transfers yet</div>
+        <div className="td-empty">{t("No transfers yet")}</div>
       ) : (
         <>
           {active.map((j) => (
@@ -133,9 +136,7 @@ export default function TransferDock({ jobs, onCancel, onClearCompleted, headles
             </span>
             <span className="td-mini-label">{overallPct}%</span>
             {finished.length > 0 && (
-              <button className="td-clear-btn" onClick={onClearCompleted}>
-                Clear completed
-              </button>
+              <button className="td-clear-btn" onClick={onClearCompleted}>{t("Clear completed")}</button>
             )}
           </div>
         )}
@@ -149,10 +150,10 @@ export default function TransferDock({ jobs, onCancel, onClearCompleted, headles
       <button
         className="td-header"
         onClick={() => setCollapsed((v) => !v)}
-        title={collapsed ? "Expand transfers" : "Collapse transfers"}
+        title={collapsed ? t("Expand transfers") : t("Collapse transfers")}
       >
         <span className="td-caret">{collapsed ? "▸" : "▾"}</span>
-        <span className="td-title">Transfers</span>
+        <span className="td-title">{t("Transfers")}</span>
         {active.length > 0 && (
           <span className="td-badge">{active.length}</span>
         )}
@@ -176,9 +177,7 @@ export default function TransferDock({ jobs, onCancel, onClearCompleted, headles
               e.stopPropagation();
               onClearCompleted();
             }}
-          >
-            Clear
-          </span>
+          >{t("Clear")}</span>
         )}
       </button>
 

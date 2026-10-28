@@ -1,3 +1,4 @@
+import { t, useLocale } from "../../../i18n";
 import { useCallback, useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useInvokeState } from "../../../hooks/useInvokeState";
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export default function CommandsTab({ profileId, onExecuteCommand }: Props) {
+  useLocale();
   const [newCmd, setNewCmd] = useState("");
   const [newLabel, setNewLabel] = useState("");
   const [showAdd, setShowAdd] = useState(false);
@@ -59,14 +61,14 @@ export default function CommandsTab({ profileId, onExecuteCommand }: Props) {
     <>
       <div className="sc-header-row">
         <button className="sc-add-btn" onClick={() => setShowAdd(!showAdd)}>
-          {showAdd ? "Cancel" : "+ Add"}
+          {showAdd ? t("Cancel") : t("+ Add")}
         </button>
       </div>
       {showAdd && (
         <div className="sc-add-form">
           <input
             type="text"
-            placeholder="Command (e.g. docker ps)"
+            placeholder={t("Command (e.g. docker ps)")}
             value={newCmd}
             onChange={(e) => setNewCmd(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleAdd()}
@@ -74,14 +76,12 @@ export default function CommandsTab({ profileId, onExecuteCommand }: Props) {
           />
           <input
             type="text"
-            placeholder="Label (optional)"
+            placeholder={t("Label (optional)")}
             value={newLabel}
             onChange={(e) => setNewLabel(e.target.value)}
             onKeyDown={(e) => e.key === "Enter" && handleAdd()}
           />
-          <button className="sc-save-btn" onClick={handleAdd}>
-            Save
-          </button>
+          <button className="sc-save-btn" onClick={handleAdd}>{t("Save")}</button>
         </div>
       )}
       <div className="sc-list">
@@ -106,11 +106,7 @@ export default function CommandsTab({ profileId, onExecuteCommand }: Props) {
           </div>
         ))}
         {bookmarks.length === 0 && !showAdd && (
-          <div className="sc-empty">
-            No bookmarked commands.
-            <br />
-            Click + Add to save one.
-          </div>
+          <div className="sc-empty">{t("No bookmarked commands.")}<br />{t("Click + Add to save one.")}</div>
         )}
       </div>
     </>

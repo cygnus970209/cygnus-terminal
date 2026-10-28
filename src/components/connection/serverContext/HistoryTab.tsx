@@ -1,3 +1,4 @@
+import { t, useLocale } from "../../../i18n";
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { writeText } from "@tauri-apps/plugin-clipboard-manager";
@@ -12,6 +13,7 @@ interface Props {
 }
 
 export default function HistoryTab({ profileId, onExecuteCommand, showToast }: Props) {
+  useLocale();
   const [searchQuery, setSearchQuery] = useState("");
   const [history, setHistory] = useState<CommandHistoryEntry[]>([]);
   const [loadError, setLoadError] = useState("");
@@ -77,7 +79,7 @@ export default function HistoryTab({ profileId, onExecuteCommand, showToast }: P
     try {
       const approved = await confirm(
         "Delete all command history for this server, including entries hidden by search? This cannot be undone.",
-        { title: "Delete command history", kind: "warning", okLabel: "Delete all history", cancelLabel: "Cancel" },
+        { title: t("Delete command history"), kind: "warning", okLabel: "Delete all history", cancelLabel: "Cancel" },
       );
       if (!approved) return;
       const deleted = await invoke<number>("clear_command_history", { profileId });
@@ -127,7 +129,7 @@ export default function HistoryTab({ profileId, onExecuteCommand, showToast }: P
       <div className="sc-search">
         <input
           type="text"
-          placeholder="Search commands..."
+          placeholder={t("Search commands...")}
           value={searchQuery}
           disabled={clearing}
           onChange={(e) => setSearchQuery(e.target.value)}
@@ -138,14 +140,12 @@ export default function HistoryTab({ profileId, onExecuteCommand, showToast }: P
           className="sc-add-btn sc-history-clear"
           disabled={clearing}
           onClick={() => void handleClear()}
-        >
-          Delete all…
-        </button>
+        >{t("Delete all…")}</button>
       </div>
       <div className="sc-list">
         {clearError && <div className="sc-history-error" role="alert">{clearError}</div>}
         {loadError && <div className="sc-history-error" role="alert">
-          {loadError} <button className="sc-add-btn" disabled={clearing} onClick={() => void loadHistory()}>Retry</button>
+          {loadError} <button className="sc-add-btn" disabled={clearing} onClick={() => void loadHistory()}>{t("Retry")}</button>
         </div>}
         {history.map((entry) => (
           <div
@@ -174,7 +174,7 @@ export default function HistoryTab({ profileId, onExecuteCommand, showToast }: P
           </div>
         ))}
         {history.length === 0 && !loadError && (
-          <div className="sc-empty">{searchQuery ? "No matching commands." : "No command history yet."}</div>
+          <div className="sc-empty">{searchQuery ? t("No matching commands.") : t("No command history yet.")}</div>
         )}
       </div>
 
@@ -187,30 +187,22 @@ export default function HistoryTab({ profileId, onExecuteCommand, showToast }: P
           <button
             className="sc-context-menu-item"
             onClick={() => void handleCopy(contextMenu.entry.command)}
-          >
-            Copy
-          </button>
+          >{t("Copy")}</button>
           <button
             className="sc-context-menu-item"
             onClick={() => handleSaveToBookmarks(contextMenu.entry.command)}
-          >
-            Save to Commands
-          </button>
+          >{t("Save to Commands")}</button>
           <button
             className="sc-context-menu-item sc-context-menu-item-danger"
             onClick={() => {
               handleDelete(contextMenu.entry.id);
               setContextMenu(null);
             }}
-          >
-            Delete
-          </button>
+          >{t("Delete")}</button>
           <button
             className="sc-context-menu-item sc-context-menu-item-danger"
             onClick={() => void handleClear()}
-          >
-            Delete all history…
-          </button>
+          >{t("Delete all history…")}</button>
         </div>
       )}
     </>

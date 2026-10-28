@@ -1,3 +1,4 @@
+import { t } from "../i18n";
 import {
   REMOTE_SHELL_LABELS,
   SERVER_OS_LABELS,
@@ -17,8 +18,8 @@ export interface ServerEnvironment {
 }
 
 export function environmentLabel(env: ServerEnvironment): string {
-  const os = env.os === "unknown" ? "Unknown OS" : SERVER_OS_LABELS[env.os];
-  const shell = env.shell === "unknown" ? "Unknown shell" : REMOTE_SHELL_LABELS[env.shell];
+  const os = env.os === "unknown" ? t("Unknown OS") : SERVER_OS_LABELS[env.os];
+  const shell = env.shell === "unknown" ? t("Unknown shell") : REMOTE_SHELL_LABELS[env.shell];
   return `${os} · ${shell}`;
 }
 
@@ -36,8 +37,8 @@ export function capabilityReason(
   error: string | null,
   connected: boolean,
 ): string {
-  if (!connected) return "Connect an SSH session first";
-  if (error) return "Remote environment could not be verified. Reconnect to try again.";
-  if (!env) return "Checking the remote environment…";
-  return env.notice ?? "The required tools were not found in this SSH command environment.";
+  if (!connected) return t("Connect an SSH session first");
+  if (error) return t("Remote environment could not be verified. Reconnect to try again.");
+  if (!env) return t("Checking the remote environment…");
+  return env.notice ?? t("The required tools were not found in this SSH command environment.");
 }

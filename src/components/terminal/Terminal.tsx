@@ -1,3 +1,4 @@
+import { t, useLocale } from "../../i18n";
 import { useEffect, useRef, useCallback, useState } from "react";
 import { Terminal as XTerm } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
@@ -93,7 +94,7 @@ async function sendCompletionNotification(command: string, elapsedMs: number) {
     const truncated =
       command.length > 60 ? command.slice(0, 60) + "..." : command;
     sendNotification({
-      title: "Command completed",
+      title: t("Command completed"),
       body: `${truncated}  ·  ${formatElapsed(elapsedMs)}`,
     });
   } catch (err) {
@@ -116,6 +117,7 @@ export default function Terminal({
   onCwdChanged,
   onShellIntegrationChange,
 }: TerminalProps) {
+  useLocale();
   const terminalRef = useRef<HTMLDivElement>(null);
   const xtermRef = useRef<XTerm | null>(null);
   const scheduleLayoutRef = useRef<(() => void) | null>(null);

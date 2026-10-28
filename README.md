@@ -2,7 +2,7 @@
   <img src="src-tauri/icons/128x128.png" width="72" alt="Cygnus Terminal icon" />
   <h1>Cygnus Terminal</h1>
   <p><strong>서버에 접속하고, 파일을 옮기고, 반복 작업을 기억하는 터미널.</strong></p>
-  <p>Rust · Tauri 2 · SSH · Telnet · Serial · SFTP · Credential Vault</p>
+  <p>Rust · Tauri 2 · SSH · WinRM · Telnet · Serial · SFTP · Credential Vault</p>
   <p><strong>한국어</strong> · <a href="README.en.md">English</a></p>
   <p><a href="https://github.com/cygnus970209/cygnus-terminal/releases/latest">다운로드</a> · <a href="#주요-기능">주요 기능</a> · <a href="#로드맵">로드맵</a> · <a href="CHANGELOG.md">업데이트 내역</a></p>
 </div>
@@ -41,6 +41,22 @@ SSH·Telnet·Serial의 그룹은 한 번 연결에 저장하면 다음부터 목
 탭을 드래그해 순서를 바꾸고, 우클릭 메뉴에서 **이 탭을 제외하고 닫기 / 왼쪽 닫기 / 오른쪽 닫기 / 고정**을 사용할 수 있습니다. **F10**은 활성 탭의 고정을 전환합니다(Mac 키보드 설정에 따라 **Fn+F10**). 고정 탭은 왼쪽에 모이고 일괄 닫기에서 제외되며, 해당 탭의 닫기 버튼이나 **Close tab**으로 직접 닫을 수 있습니다. 고정·일반 탭은 각각의 영역 안에서 정렬합니다. 탭에 포커스를 두고 **Shift+F10**을 누르면 같은 메뉴가 열립니다.
 
 Connections는 사이드바 하단의 **Connections** 또는 명령 팔레트의 **Open Connections**에서 엽니다. 탭 줄 왼쪽의 패널 버튼으로 사이드바를 접거나 펼칠 수 있습니다. Connections로 돌아가도 세션은 유지됩니다.
+
+## WinRM 연결
+
+**새 연결 → WinRM**, 탭의 **+ → WinRM 연결**, 상단 **연결 → 새 WinRM 연결**에서 Windows 관리 연결을 추가합니다. SSH 서버 설치와는 별도로 대상 Windows의 WinRM 리스너, 계정 권한, 방화벽 설정이 필요합니다. [Microsoft 설정 문서](https://learn.microsoft.com/en-us/windows/win32/winrm/installation-and-configuration-for-windows-remote-management)를 참고하세요.
+
+- 기본값은 **HTTPS / 5986 / NTLM**입니다. HTTP / 5985는 NTLM 메시지 암호화를 사용하며 신뢰할 수 있는 네트워크에서만 사용하세요. Basic은 HTTPS에서만 선택할 수 있고 서버에서도 활성화되어 있어야 합니다. Kerberos·CredSSP는 현재 제공하지 않습니다.
+- 도메인은 사용자 이름과 별도 입력합니다. HTTPS는 시스템에서 신뢰하는 인증서를 검증하며, 자체 서명 인증서는 별도로 확인한 SHA-256 지문을 지정할 수 있습니다. 지정한 지문은 서버 인증서를 직접 신뢰하므로 인증서 교체 시 갱신해야 합니다.
+- 암호를 입력해 저장하면 앱의 기존 암호화 저장 방식을 사용합니다. 비워 두고 연결 시마다 입력할 수도 있습니다. 편집에서 빈 암호는 기존 값을 유지하지만 호스트·포트·계정·전송 방식이 바뀌면 기존 암호를 제거합니다. 백업에는 암호와 인증서 지문을 포함하지 않습니다.
+- 연결 탭에서 PowerShell 스크립트를 작성하고 **실행** 또는 **Ctrl/⌘+Enter**로 실행합니다. **중지**, 연결 해제, 탭 닫기는 실행 중인 원격 명령의 종료와 셸 정리를 요청합니다. 네트워크가 끊어졌을 때 원격 정리를 보장할 수는 없습니다.
+- 각 실행은 새 비대화형 PowerShell 프로세스입니다. 변수·현재 디렉터리는 다음 실행에 유지되지 않으며 대화형 입력, 전체 화면 프로그램, SFTP는 제공하지 않습니다. 명령은 최대 5분, 출력은 1 MiB, 탭에는 최근 실행 5개를 보관합니다.
+
+## 메뉴와 언어 설정
+
+상단 **연결** 메뉴에서 SSH·로컬 셸·RDP·WinRM·Telnet·시리얼 연결을 열 수 있습니다. **도구** 메뉴에는 SFTP, 스니펫, 보관함, MCP 설정, 명령 팔레트가 있습니다. **Esc**는 맨 위 대화상자나 열린 선택 목록을 닫습니다. 호스트 키·권한 승인창에서는 요청을 거절합니다.
+
+**설정 → 일반 → 언어**에서 English / 한국어를 선택하세요. 모든 창에 즉시 적용되고 다음 실행에도 유지됩니다. 처음에는 시스템 언어를 따르며, 한국어 이외에는 영어를 사용합니다. 서버 출력과 사용자 데이터는 번역하지 않습니다.
 
 ## 자격 증명을 기억하는 Vault
 
@@ -135,7 +151,7 @@ Ansible처럼 서버 그룹을 대상으로 명령·설정 변경·배포를 실
 
 React·TypeScript·xterm.js 화면과 Rust 백엔드를 Tauri 2로 연결합니다. 데이터는 로컬 SQLite에 저장합니다.
 
-Rust stable, Node.js 22.12+, 운영체제별 Tauri 빌드 도구가 필요합니다. 아래 예시는 패키지 관리에 Bun을 사용합니다.
+Rust 1.98.0 (`rust-toolchain.toml`로 고정), Node.js 22.12+, 운영체제별 Tauri 빌드 도구가 필요합니다. 아래 예시는 패키지 관리에 Bun을 사용합니다.
 
 ```sh
 bun install --frozen-lockfile

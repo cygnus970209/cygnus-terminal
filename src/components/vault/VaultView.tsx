@@ -1,3 +1,5 @@
+import { t, useLocale } from "../../i18n";
+import { useEscapeDismiss } from "../../hooks/useEscapeDismiss";
 import Select from "../common/Select";
 import Icon from "../common/Icon";
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
@@ -35,10 +37,12 @@ const KINDS: { value: VaultKind; label: string }[] = [
   { value: "ssh-key", label: "SSH key" },
 ];
 const kindLabel = (kind: VaultKind) =>
-  KINDS.find((item) => item.value === kind)?.label ?? kind;
+  t(KINDS.find((item) => item.value === kind)?.label ?? kind);
 type Filter = "all" | "password" | "key" | "token";
 
 export default function VaultView({ onClose }: { onClose?: () => void }) {
+  useLocale();
+  useEscapeDismiss(() => onClose?.(), !!onClose, 200);
   const [items, setItems] = useState<VaultItem[]>([]);
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
@@ -74,7 +78,7 @@ export default function VaultView({ onClose }: { onClose?: () => void }) {
       setItems(vault);
       setProfiles(servers);
     } catch (err) {
-      setError(`Could not load credentials: ${String(err)}`);
+      setError(t("Could not load credentials: {v0}", { v0: String(err) }));
     } finally {
       setLoading(false);
     }
@@ -178,7 +182,7 @@ export default function VaultView({ onClose }: { onClose?: () => void }) {
       setEditing(false);
       await loadAll();
     } catch (err) {
-      setError(`Could not save credential: ${String(err)}`);
+      setError(t("Could not save credential: {v0}", { v0: String(err) }));
     } finally {
       busy.current = false;
       setSaving(false);
@@ -194,7 +198,7 @@ export default function VaultView({ onClose }: { onClose?: () => void }) {
       setDeleteId(null);
       await loadAll();
     } catch (err) {
-      setError(`Could not delete credential: ${String(err)}`);
+      setError(t("Could not delete credential: {v0}", { v0: String(err) }));
     } finally {
       busy.current = false;
       setSaving(false);
@@ -216,12 +220,6 @@ export default function VaultView({ onClose }: { onClose?: () => void }) {
         aria-labelledby="vault-title"
         onKeyDown={(e) => {
           if (e.defaultPrevented) return;
-          if (e.key === "Escape") {
-            e.preventDefault();
-            e.stopPropagation();
-            if (editing) back();
-            else close();
-          }
           if (e.key === "Tab" && !document.querySelector('[role="listbox"]')) {
             const nodes = Array.from(
               dialogRef.current?.querySelectorAll<HTMLElement>(
@@ -245,12 +243,12 @@ export default function VaultView({ onClose }: { onClose?: () => void }) {
             <Icon name="vault" size={22} />
           </div>
           <div className="vault-heading">
-            <h2 id="vault-title">Vault</h2>
-            <p>Credentials for your servers, in one place.</p>
+            <h2 id="vault-title">{t("Vault")}</h2>
+            <p>{t("Credentials for your servers, in one place.")}</p>
           </div>
           <button
             className="vault-icon-btn"
-            aria-label="Close vault"
+            aria-label={t("Close vault")}
             onClick={close}
             disabled={saving}
           >
@@ -264,9 +262,7 @@ export default function VaultView({ onClose }: { onClose?: () => void }) {
               <button
                 onClick={() => void loadAll()}
                 disabled={loading || saving}
-              >
-                Retry
-              </button>
+              >{t("Retry")}</button>
             )}
           </div>
         )}
@@ -284,21 +280,18 @@ export default function VaultView({ onClose }: { onClose?: () => void }) {
                 className="vault-back"
                 onClick={back}
                 disabled={saving}
-              >
-                ← Back to vault
-              </button>
-              <h3>{editId !== null ? "Edit credential" : "New credential"}</h3>
+              >{t("← Back to vault")}</button>
+              <h3>{editId !== null ? t("Edit credential") : t("New credential")}</h3>
               <p>
                 {editId !== null
-                  ? "Update details or replace the stored value."
-                  : "Save a credential and choose where to use it."}
+                  ? t("Update details or replace the stored value.")
+                  : t("Save a credential and choose where to use it.")}
               </p>
             </div>
             <fieldset disabled={saving} className="vault-fields">
               <div className="vault-field-row">
                 <label className="vault-field">
-                  <span>
-                    Name <span className="vault-required">*</span>
+                  <span>{t("Name ")}<span className="vault-required">*</span>
                   </span>
                   <input
                     ref={labelRef}
@@ -306,22 +299,22 @@ export default function VaultView({ onClose }: { onClose?: () => void }) {
                     required
                     value={label}
                     onChange={(e) => setLabel(e.target.value)}
-                    placeholder="e.g. Production sudo"
+                    placeholder={t("e.g. Production sudo")}
                     autoComplete="off"
                   />
                 </label>
                 <div className="vault-field">
-                  <label htmlFor="vault-kind">Type</label>
+                  <label htmlFor="vault-kind">{t("Type")}</label>
                   <Select
                     id="vault-kind"
-                    aria-label="Credential type"
+                    aria-label={t("Credential type")}
                     value={kind}
                     onValueChange={(v) => setKind(v as VaultKind)}
                     disabled={saving}
                   >
                     {KINDS.map((k) => (
                       <option key={k.value} value={k.value}>
-                        {k.label}
+                        {t(k.label)}
                       </option>
                     ))}
                   </Select>
@@ -329,7 +322,7 @@ export default function VaultView({ onClose }: { onClose?: () => void }) {
               </div>
               <label className="vault-field" htmlFor="vault-value">
                 <span>
-                  {editId !== null ? "Replace value" : "Secret value"}
+                  {editId !== null ? t("Replace value") : t("Secret value")}
                 </span>
               </label>
               <div className="vault-secret">
@@ -343,43 +336,41 @@ export default function VaultView({ onClose }: { onClose?: () => void }) {
                   spellCheck={false}
                   placeholder={
                     editId !== null
-                      ? "Leave empty to keep the current value"
-                      : "Enter credential value"
+                      ? t("Leave empty to keep the current value")
+                      : t("Enter credential value")
                   }
                 />
                 <button
                   type="button"
-                  aria-label={showValue ? "Hide value" : "Show value"}
+                  aria-label={showValue ? t("Hide value") : t("Show value")}
                   aria-pressed={showValue}
                   onClick={() => setShowValue(!showValue)}
                 >
-                  {showValue ? "Hide" : "Show"}
+                  {showValue ? t("Hide") : t("Show")}
                 </button>
               </div>
               <p className="vault-field-hint">
                 {editId !== null
-                  ? "The stored value is never loaded into this form."
-                  : "Stored values are encrypted on this device."}
+                  ? t("The stored value is never loaded into this form.")
+                  : t("Stored values are encrypted on this device.")}
               </p>
               <section className="vault-server-section">
                 <div className="vault-section-heading">
-                  <h4>Linked servers</h4>
-                  <span>{serverIds.length} selected</span>
+                  <h4>{t("Linked servers")}</h4>
+                  <span>{serverIds.length}{t(" selected")}</span>
                 </div>
                 <input
                   className="vault-input"
-                  aria-label="Search servers"
-                  placeholder="Find a server…"
+                  aria-label={t("Search servers")}
+                  placeholder={t("Find a server…")}
                   value={serverQuery}
                   onChange={(e) => setServerQuery(e.target.value)}
                 />
                 {scope && (
                   <p className="vault-field-hint">
                     {scope === "global"
-                      ? "This credential is available to all servers."
-                      : "This credential is scoped to local terminals."}{" "}
-                    Server selections are retained.
-                  </p>
+                      ? t("This credential is available to all servers.")
+                      : t("This credential is scoped to local terminals.")}{" "}{t("Server selections are retained.")}</p>
                 )}
                 <div className="vault-server-grid">
                   {profiles
@@ -411,14 +402,12 @@ export default function VaultView({ onClose }: { onClose?: () => void }) {
                           <small>{p.host}</small>
                         </span>
                         {p.environment === "production" && (
-                          <span className="vault-badge">Production</span>
+                          <span className="vault-badge">{t("Production")}</span>
                         )}
                       </label>
                     ))}
                   {profiles.length === 0 && (
-                    <p className="vault-field-hint">
-                      No saved servers yet. You can link this credential later.
-                    </p>
+                    <p className="vault-field-hint">{t("No saved servers yet. You can link this credential later.")}</p>
                   )}
                   {profiles.length > 0 &&
                     !profiles.some((p) =>
@@ -426,36 +415,34 @@ export default function VaultView({ onClose }: { onClose?: () => void }) {
                         .toLowerCase()
                         .includes(serverQuery.toLowerCase()),
                     ) && (
-                      <p className="vault-field-hint">
-                        No servers match your search.
-                      </p>
+                      <p className="vault-field-hint">{t("No servers match your search.")}</p>
                     )}
                 </div>
               </section>
               <details className="vault-advanced">
-                <summary>Advanced options</summary>
+                <summary>{t("Advanced options")}</summary>
                 <div className="vault-field-row">
                   <div className="vault-field">
-                    <label htmlFor="vault-scope">Scope</label>
+                    <label htmlFor="vault-scope">{t("Scope")}</label>
                     <Select
                       id="vault-scope"
-                      aria-label="Credential scope"
+                      aria-label={t("Credential scope")}
                       value={scope}
                       onValueChange={(v) => setScope(v as typeof scope)}
                       disabled={saving}
                     >
-                      <option value="">Linked servers</option>
-                      <option value="local">Local terminals</option>
-                      <option value="global">All servers</option>
+                      <option value="">{t("Linked servers")}</option>
+                      <option value="local">{t("Local terminals")}</option>
+                      <option value="global">{t("All servers")}</option>
                     </Select>
                   </div>
                   <label className="vault-field">
-                    <span>Pair ID</span>
+                    <span>{t("Pair ID")}</span>
                     <input
                       className="vault-input"
                       value={pairId}
                       onChange={(e) => setPairId(e.target.value)}
-                      placeholder="Link a PAT username and password"
+                      placeholder={t("Link a PAT username and password")}
                     />
                   </label>
                 </div>
@@ -464,9 +451,7 @@ export default function VaultView({ onClose }: { onClose?: () => void }) {
                     type="checkbox"
                     checked={sensitive}
                     onChange={(e) => setSensitive(e.target.checked)}
-                  />
-                  Mark as sensitive
-                </label>
+                  />{t("Mark as sensitive")}</label>
               </details>
             </fieldset>
             <footer className="vault-editor-footer">
@@ -475,19 +460,17 @@ export default function VaultView({ onClose }: { onClose?: () => void }) {
                 className="vault-secondary"
                 onClick={back}
                 disabled={saving}
-              >
-                Cancel
-              </button>
+              >{t("Cancel")}</button>
               <button
                 type="submit"
                 className="vault-primary"
                 disabled={saving || !label.trim()}
               >
                 {saving
-                  ? "Saving…"
+                  ? t("Saving…")
                   : editId !== null
-                    ? "Save changes"
-                    : "Save credential"}
+                    ? t("Save changes")
+                    : t("Save credential")}
               </button>
             </footer>
           </form>
@@ -498,8 +481,8 @@ export default function VaultView({ onClose }: { onClose?: () => void }) {
                 <Icon name="search" />
                 <input
                   ref={searchRef}
-                  aria-label="Search credentials"
-                  placeholder="Search credentials or servers…"
+                  aria-label={t("Search credentials")}
+                  placeholder={t("Search credentials or servers…")}
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
                 />
@@ -509,11 +492,9 @@ export default function VaultView({ onClose }: { onClose?: () => void }) {
                 onClick={() => openEditor()}
                 disabled={loading || saving}
               >
-                <Icon name="plus" />
-                New credential
-              </button>
+                <Icon name="plus" />{t("New credential")}</button>
             </div>
-            <div className="vault-filters" aria-label="Credential categories">
+            <div className="vault-filters" aria-label={t("Credential categories")}>
               {(
                 [
                   ["all", "All credentials"],
@@ -530,7 +511,7 @@ export default function VaultView({ onClose }: { onClose?: () => void }) {
                     setDeleteId(null);
                   }}
                 >
-                  {name}
+                  {t(name)}
                   <span>
                     {items.filter((item) => matchesFilter(item, id)).length}
                   </span>
@@ -539,14 +520,12 @@ export default function VaultView({ onClose }: { onClose?: () => void }) {
             </div>
             <div className="vault-list" aria-busy={loading}>
               {loading ? (
-                <div className="vault-empty" role="status">
-                  Loading credentials…
-                </div>
+                <div className="vault-empty" role="status">{t("Loading credentials…")}</div>
               ) : error && items.length === 0 ? (
                 <div className="vault-empty">
                   <Icon name="vault" size={30} />
-                  <h3>Credentials unavailable</h3>
-                  <p>Use Retry above to load your vault again.</p>
+                  <h3>{t("Credentials unavailable")}</h3>
+                  <p>{t("Use Retry above to load your vault again.")}</p>
                 </div>
               ) : filtered.length === 0 ? (
                 <div className="vault-empty">
@@ -556,21 +535,19 @@ export default function VaultView({ onClose }: { onClose?: () => void }) {
                   />
                   <h3>
                     {items.length === 0
-                      ? "Your credentials, ready when you need them"
-                      : "No matching credentials"}
+                      ? t("Your credentials, ready when you need them")
+                      : t("No matching credentials")}
                   </h3>
                   <p>
                     {items.length === 0
-                      ? "Save passwords, SSH keys and tokens, then link them to your servers."
-                      : "Try a different name, server or credential type."}
+                      ? t("Save passwords, SSH keys and tokens, then link them to your servers.")
+                      : t("Try a different name, server or credential type.")}
                   </p>
                   {items.length === 0 ? (
                     <button
                       className="vault-primary"
                       onClick={() => openEditor()}
-                    >
-                      Add your first credential
-                    </button>
+                    >{t("Add your first credential")}</button>
                   ) : (
                     <button
                       className="vault-secondary"
@@ -578,16 +555,14 @@ export default function VaultView({ onClose }: { onClose?: () => void }) {
                         setQuery("");
                         setFilter("all");
                       }}
-                    >
-                      Clear filters
-                    </button>
+                    >{t("Clear filters")}</button>
                   )}
                 </div>
               ) : (
                 <>
                   <div className="vault-list-labels">
-                    <span>Credential</span>
-                    <span>Available on</span>
+                    <span>{t("Credential")}</span>
+                    <span>{t("Available on")}</span>
                     <span />
                   </div>
                   {filtered.map((item) => {
@@ -597,10 +572,10 @@ export default function VaultView({ onClose }: { onClose?: () => void }) {
                       .join(", ");
                     const destination =
                       item.scope === "global"
-                        ? "All servers"
+                        ? t("All servers")
                         : item.scope === "local"
-                          ? "Local terminals"
-                          : servers || "No linked servers";
+                          ? t("Local terminals")
+                          : servers || t("No linked servers");
                     return (
                       <div className="vault-item" key={item.id}>
                         <div className="vault-item-name">
@@ -618,12 +593,12 @@ export default function VaultView({ onClose }: { onClose?: () => void }) {
                             <strong title={item.label}>{item.label}</strong>
                             <span>
                               {kindLabel(item.kind)}
-                              {item.sensitive && " · Sensitive"}
+                              {item.sensitive && t(" · Sensitive")}
                               {item.source !== "cygnus" &&
                                 ` · ${item.source === "op" ? "1Password" : "Bitwarden"}`}
                               {!item.has_value &&
                                 item.source === "cygnus" &&
-                                " · No stored value"}
+                                t(" · No stored value")}
                             </span>
                           </div>
                         </div>
@@ -639,31 +614,25 @@ export default function VaultView({ onClose }: { onClose?: () => void }) {
                         <div className="vault-item-actions">
                           {deleteId === item.id ? (
                             <>
-                              <span className="vault-delete-label">
-                                Delete permanently?
-                              </span>
+                              <span className="vault-delete-label">{t("Delete permanently?")}</span>
                               <button
                                 className="vault-secondary"
                                 disabled={saving}
                                 onClick={() => setDeleteId(null)}
-                              >
-                                Cancel
-                              </button>
+                              >{t("Cancel")}</button>
                               <button
                                 className="vault-danger"
                                 disabled={saving}
                                 onClick={() => void remove(item.id)}
-                              >
-                                Delete
-                              </button>
+                              >{t("Delete")}</button>
                             </>
                           ) : (
                             <>
                               <button
                                 className="vault-icon-btn"
                                 disabled={saving}
-                                aria-label={`Edit ${item.label}`}
-                                title="Edit credential"
+                                aria-label={t("Edit {v0}", { v0: item.label })}
+                                title={t("Edit credential")}
                                 onClick={() => openEditor(item)}
                               >
                                 <Icon name="edit" />
@@ -671,8 +640,8 @@ export default function VaultView({ onClose }: { onClose?: () => void }) {
                               <button
                                 className="vault-icon-btn vault-delete"
                                 disabled={saving}
-                                aria-label={`Delete ${item.label}`}
-                                title="Delete credential"
+                                aria-label={t("Delete {v0}", { v0: item.label })}
+                                title={t("Delete credential")}
                                 onClick={() => setDeleteId(item.id)}
                               >
                                 <Icon name="trash" />
@@ -688,12 +657,9 @@ export default function VaultView({ onClose }: { onClose?: () => void }) {
             </div>
             <footer className="vault-footer">
               <span>
-                <Icon name="vault" size={13} />
-                Local values are encrypted
-              </span>
+                <Icon name="vault" size={13} />{t("Local values are encrypted")}</span>
               <span>
-                {filtered.length} of {items.length} credentials
-              </span>
+                {filtered.length}{t(" of ")}{items.length}{t(" credentials")}</span>
             </footer>
           </>
         )}

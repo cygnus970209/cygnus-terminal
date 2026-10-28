@@ -1,4 +1,6 @@
-import { useEffect, useState } from "react";
+import { t, useLocale } from "../../i18n";
+import { useEscapeDismiss } from "../../hooks/useEscapeDismiss";
+import { useState } from "react";
 import "./ConflictDialog.css";
 
 export type ConflictAction = "replace" | "keep-both" | "skip";
@@ -15,26 +17,17 @@ interface Props {
 }
 
 export default function ConflictDialog({ fileName, remaining, onResolve }: Props) {
+  useLocale();
   const [applyToAll, setApplyToAll] = useState(false);
+  useEscapeDismiss(() => onResolve({ action: "skip", applyToAll }), true, 2000);
 
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        onResolve({ action: "skip", applyToAll });
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [applyToAll, onResolve]);
 
   return (
     <div className="conflict-overlay">
-      <div className="conflict-dialog">
-        <div className="cd-title">File already exists</div>
+      <div className="conflict-dialog" role="dialog" aria-modal="true" aria-label={t("File conflict")}>
+        <div className="cd-title">{t("File already exists")}</div>
         <div className="cd-message">
-          <span className="cd-filename">&quot;{fileName}&quot;</span> already exists at
-          the destination.
-        </div>
+          <span className="cd-filename">&quot;{fileName}&quot;</span>{t(" already exists at the destination.")}</div>
 
         {remaining > 0 && (
           <label className="cd-apply-all">
@@ -43,7 +36,7 @@ export default function ConflictDialog({ fileName, remaining, onResolve }: Props
               checked={applyToAll}
               onChange={(e) => setApplyToAll(e.target.checked)}
             />
-            <span>Apply to all ({remaining} more pending)</span>
+            <span>{t("Apply to all (")}{remaining}{t(" more pending)")}</span>
           </label>
         )}
 
@@ -51,21 +44,15 @@ export default function ConflictDialog({ fileName, remaining, onResolve }: Props
           <button
             className="cd-btn cd-btn-skip"
             onClick={() => onResolve({ action: "skip", applyToAll })}
-          >
-            Skip
-          </button>
+          >{t("Skip")}</button>
           <button
             className="cd-btn cd-btn-keep"
             onClick={() => onResolve({ action: "keep-both", applyToAll })}
-          >
-            Keep Both
-          </button>
+          >{t("Keep Both")}</button>
           <button
             className="cd-btn cd-btn-replace"
             onClick={() => onResolve({ action: "replace", applyToAll })}
-          >
-            Replace
-          </button>
+          >{t("Replace")}</button>
         </div>
       </div>
     </div>

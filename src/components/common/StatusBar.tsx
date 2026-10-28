@@ -1,3 +1,4 @@
+import { t, useLocale } from "../../i18n";
 import { ReactNode } from "react";
 import Icon from "./Icon";
 import { ServerStats } from "../../hooks/useServerStats";
@@ -45,18 +46,19 @@ export default function StatusBar({
   onOpenPalette,
   children,
 }: Props) {
+  useLocale();
   const activeCount = transferJobs.filter(
     (j) => j.status === "running" || j.status === "pending",
   ).length;
 
   const drawerTitle =
     activeDrawer === "monitor"
-      ? "Monitor"
+      ? t("Monitor")
       : activeDrawer === "transfers"
-        ? `Transfers${activeCount > 0 ? ` (${activeCount})` : ""}`
+        ? `${t("Transfers")}${activeCount > 0 ? ` (${activeCount})` : ""}`
         : activeDrawer === "logs"
-          ? "Logs"
-          : activeDrawer === "iis" ? "IIS & Windows events (Beta)" : "";
+          ? t("Logs")
+          : activeDrawer === "iis" ? t("IIS & Windows events (Beta)") : "";
 
   const handleTabClick = (tab: Exclude<DrawerTab, null>) => {
     onToggleDrawer(activeDrawer === tab ? null : tab);
@@ -71,7 +73,7 @@ export default function StatusBar({
             <button
               className="sb-drawer-close"
               onClick={() => onToggleDrawer(null)}
-              title="Close"
+              title={t("Close")}
             >
               <Icon name="close" size={14} />
             </button>
@@ -109,41 +111,34 @@ export default function StatusBar({
             className={`sb-tab ${activeDrawer === "iis" ? "active" : ""}`}
             onClick={() => handleTabClick("iis")}
             disabled={!iisAvailable}
-            title={iisAvailable ? "IIS & Windows events (Beta)" : "A verified Windows PowerShell runtime is required"}
+            title={iisAvailable ? t("IIS & Windows events (Beta)") : t("A verified Windows PowerShell runtime is required")}
           >IIS</button>}
           <button
             className={`sb-tab ${activeDrawer === "monitor" ? "active" : ""}`}
             onClick={() => handleTabClick("monitor")}
             disabled={!monitorAvailable}
-            title={monitorAvailable ? "Monitor (Cmd+1)" : unavailableReason}
-          >
-            Monitor
-          </button>
+            title={monitorAvailable ? t("Monitor (Cmd+1)") : unavailableReason}
+          >{t("Monitor")}</button>
           <button
             className={`sb-tab ${activeDrawer === "transfers" ? "active" : ""}`}
             onClick={() => handleTabClick("transfers")}
-            title="Transfers (Cmd+2)"
-          >
-            Transfers
-            {activeCount > 0 && <span className="sb-badge">{activeCount}</span>}
+            title={t("Transfers (Cmd+2)")}
+          >{t("Transfers")}{activeCount > 0 && <span className="sb-badge">{activeCount}</span>}
           </button>
           <button
             className={`sb-tab ${activeDrawer === "logs" ? "active" : ""}`}
             onClick={() => handleTabClick("logs")}
             disabled={!logsAvailable}
-            title={logsAvailable ? "Logs (Cmd+3)" : unavailableReason}
-          >
-            Logs
-          </button>
+            title={logsAvailable ? t("Logs (Cmd+3)") : unavailableReason}
+          >{t("Logs")}</button>
         </div>
 
         <div className="sb-right">
           <button
             className="sb-hint"
             onClick={onOpenPalette}
-            title="Open command palette (⌘/Ctrl K)"
-          >
-            Commands <kbd>⌘ / Ctrl K</kbd>
+            title={t("Open command palette (⌘/Ctrl K)")}
+          >{t("Commands ")}<kbd>⌘ / Ctrl K</kbd>
           </button>
         </div>
       </div>

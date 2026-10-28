@@ -24,3 +24,6 @@ pub use iis::*;
 
 mod rdp;
 pub use rdp::*;
+
+mod winrm;
+pub use winrm::*;

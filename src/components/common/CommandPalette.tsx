@@ -1,3 +1,5 @@
+import { t, useLocale } from "../../i18n";
+import { useEscapeDismiss } from "../../hooks/useEscapeDismiss";
 import { useEffect, useMemo, useRef, useState } from "react";
 import "./CommandPalette.css";
 
@@ -71,8 +73,10 @@ export default function CommandPalette({
   isOpen,
   onClose,
   items,
-  placeholder = "Search snippets, tabs, actions... (⌘K)",
+  placeholder = t("Search snippets, tabs, actions... (⌘K)"),
 }: Props) {
+  useLocale();
+  useEscapeDismiss(onClose, isOpen, 3000);
   const [query, setQuery] = useState("");
   const [selectedIdx, setSelectedIdx] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -113,6 +117,7 @@ export default function CommandPalette({
   if (!isOpen) return null;
 
   const handleKey = (e: React.KeyboardEvent) => {
+    if (e.nativeEvent.isComposing || e.keyCode === 229) return;
     if (e.key === "ArrowDown") {
       e.preventDefault();
       setSelectedIdx((i) => Math.min(filtered.length - 1, i + 1));
@@ -126,9 +131,6 @@ export default function CommandPalette({
         item.onSelect();
         onClose();
       }
-    } else if (e.key === "Escape") {
-      e.preventDefault();
-      onClose();
     }
   };
 
@@ -136,6 +138,7 @@ export default function CommandPalette({
     <div className="cp-overlay" onMouseDown={onClose}>
       <div
         className="cp-modal"
+        role="dialog" aria-modal="true" aria-label={t("Command palette")}
         onMouseDown={(e) => e.stopPropagation()}
         onKeyDown={handleKey}
       >
@@ -149,7 +152,7 @@ export default function CommandPalette({
         />
         <div className="cp-list" ref={listRef}>
           {filtered.length === 0 ? (
-            <div className="cp-empty">No matches</div>
+            <div className="cp-empty">{t("No matches")}</div>
           ) : (
             filtered.map((item, i) => (
               <div
@@ -173,7 +176,7 @@ export default function CommandPalette({
                 <div className="cp-meta">
                   {item.hint && <span className="cp-hint">{item.hint}</span>}
                   <span className={`cp-kind cp-kind-${item.kind}`}>
-                    {KIND_LABEL[item.kind]}
+                    {t(KIND_LABEL[item.kind])}
                   </span>
                 </div>
               </div>
@@ -181,10 +184,7 @@ export default function CommandPalette({
           )}
         </div>
         <div className="cp-foot">
-          <span className="cp-kbd">↑↓</span> navigate
-          <span className="cp-kbd">⏎</span> select
-          <span className="cp-kbd">esc</span> close
-        </div>
+          <span className="cp-kbd">↑↓</span>{t(" navigate")}<span className="cp-kbd">⏎</span>{t(" select")}<span className="cp-kbd">esc</span>{t(" close")}</div>
       </div>
     </div>
   );

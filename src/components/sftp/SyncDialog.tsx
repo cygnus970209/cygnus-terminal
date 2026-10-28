@@ -1,3 +1,5 @@
+import { t, useLocale } from "../../i18n";
+import { useEscapeDismiss } from "../../hooks/useEscapeDismiss";
 import { useState, useCallback } from "react";
 import { invoke, Channel } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
@@ -29,6 +31,8 @@ interface SyncDialogProps {
 }
 
 export default function SyncDialog({ sftpId, remoteBasePath, onClose }: SyncDialogProps) {
+  useLocale();
+  useEscapeDismiss(onClose);
   const [localPath, setLocalPath] = useState("");
   const [remotePath, setRemotePath] = useState(remoteBasePath);
   const [direction, setDirection] = useState<"upload" | "download" | "both">("upload");
@@ -41,7 +45,7 @@ export default function SyncDialog({ sftpId, remoteBasePath, onClose }: SyncDial
 
   const handleBrowseLocal = async () => {
     const path = await openDialog({
-      title: "Select Local Folder",
+      title: t("Select Local Folder"),
       directory: true,
       multiple: false,
     });
@@ -80,7 +84,7 @@ export default function SyncDialog({ sftpId, remoteBasePath, onClose }: SyncDial
         if (event.type === "Progress") {
           setProgress(event.data);
         } else if (event.type === "Completed") {
-          setResult(`Done! Uploaded: ${event.data.uploaded}, Downloaded: ${event.data.downloaded}`);
+          setResult(t("Done! Uploaded: {v0}, Downloaded: {v1}", { v0: event.data.uploaded, v1: event.data.downloaded }));
           setProgress(null);
         } else if (event.type === "Error") {
           setError(event.data);
@@ -103,15 +107,15 @@ export default function SyncDialog({ sftpId, remoteBasePath, onClose }: SyncDial
 
   return (
     <div className="dialog-overlay" onClick={onClose}>
-      <div className="sync-dialog" onClick={(e) => e.stopPropagation()}>
+      <div className="sync-dialog" role="dialog" aria-modal="true" aria-label={t("Folder sync")} onClick={(e) => e.stopPropagation()}>
         <div className="sync-header">
-          <h2 className="sync-title">Folder Sync</h2>
+          <h2 className="sync-title">{t("Folder Sync")}</h2>
           <button className="sync-close" onClick={onClose}>×</button>
         </div>
 
         <div className="sync-content">
           <div className="sync-field">
-            <label>Local Folder</label>
+            <label>{t("Local Folder")}</label>
             <div className="sync-input-row">
               <input
                 type="text"
@@ -119,12 +123,12 @@ export default function SyncDialog({ sftpId, remoteBasePath, onClose }: SyncDial
                 onChange={(e) => setLocalPath(e.target.value)}
                 placeholder="/Users/you/project"
               />
-              <button className="sync-browse" onClick={handleBrowseLocal}>Browse</button>
+              <button className="sync-browse" onClick={handleBrowseLocal}>{t("Browse")}</button>
             </div>
           </div>
 
           <div className="sync-field">
-            <label>Remote Folder</label>
+            <label>{t("Remote Folder")}</label>
             <input
               type="text"
               value={remotePath}
@@ -133,20 +137,14 @@ export default function SyncDialog({ sftpId, remoteBasePath, onClose }: SyncDial
           </div>
 
           <div className="sync-field">
-            <label>Direction</label>
+            <label>{t("Direction")}</label>
             <div className="sync-direction">
               <label className="sync-radio">
-                <input type="radio" checked={direction === "upload"} onChange={() => setDirection("upload")} />
-                Upload (Local → Remote)
-              </label>
+                <input type="radio" checked={direction === "upload"} onChange={() => setDirection("upload")} />{t("Upload (Local → Remote)")}</label>
               <label className="sync-radio">
-                <input type="radio" checked={direction === "download"} onChange={() => setDirection("download")} />
-                Download (Remote → Local)
-              </label>
+                <input type="radio" checked={direction === "download"} onChange={() => setDirection("download")} />{t("Download (Remote → Local)")}</label>
               <label className="sync-radio">
-                <input type="radio" checked={direction === "both"} onChange={() => setDirection("both")} />
-                Bidirectional (newer wins)
-              </label>
+                <input type="radio" checked={direction === "both"} onChange={() => setDirection("both")} />{t("Bidirectional (newer wins)")}</label>
             </div>
           </div>
 
@@ -155,7 +153,7 @@ export default function SyncDialog({ sftpId, remoteBasePath, onClose }: SyncDial
             onClick={handlePreview}
             disabled={!localPath || !remotePath || loading}
           >
-            {loading ? "Scanning..." : "Preview Changes"}
+            {loading ? t("Scanning...") : t("Preview Changes")}
           </button>
 
           {error && <div className="sync-error">{error}</div>}
@@ -163,7 +161,7 @@ export default function SyncDialog({ sftpId, remoteBasePath, onClose }: SyncDial
           {plan && (
             <div className="sync-plan">
               <div className="sync-plan-summary">
-                {plan.total_files} files, {formatBytes(plan.total_bytes)}
+                {plan.total_files}{t(" files, ")}{formatBytes(plan.total_bytes)}
               </div>
               <div className="sync-plan-list">
                 {plan.entries.map((e) => (
@@ -177,7 +175,7 @@ export default function SyncDialog({ sftpId, remoteBasePath, onClose }: SyncDial
                   </div>
                 ))}
                 {plan.entries.length === 0 && (
-                  <div className="sync-empty">Everything is in sync!</div>
+                  <div className="sync-empty">{t("Everything is in sync!")}</div>
                 )}
               </div>
 
@@ -187,7 +185,7 @@ export default function SyncDialog({ sftpId, remoteBasePath, onClose }: SyncDial
                   onClick={handleSync}
                   disabled={syncing}
                 >
-                  {syncing ? "Syncing..." : `Sync ${plan.total_files} files`}
+                  {syncing ? t("Syncing...") : `Sync ${plan.total_files} files`}
                 </button>
               )}
             </div>

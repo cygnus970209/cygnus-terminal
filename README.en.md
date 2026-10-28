@@ -2,7 +2,7 @@
   <img src="src-tauri/icons/128x128.png" width="72" alt="Cygnus Terminal icon" />
   <h1>Cygnus Terminal</h1>
   <p><strong>Connect to servers, move files, and remember your workflow.</strong></p>
-  <p>Rust · Tauri 2 · SSH · Telnet · Serial · SFTP · Credential Vault</p>
+  <p>Rust · Tauri 2 · SSH · WinRM · Telnet · Serial · SFTP · Credential Vault</p>
   <p><a href="README.md">한국어</a> · <strong>English</strong></p>
   <p><a href="https://github.com/cygnus970209/cygnus-terminal/releases/latest">Download</a> · <a href="#features">Features</a> · <a href="#roadmap">Roadmap</a> · <a href="CHANGELOG.md">Changelog</a></p>
 </div>
@@ -41,6 +41,22 @@ Once a group is saved with an SSH, Telnet, or Serial connection, select it from 
 Drag tabs to reorder them, or right-click for **Close other tabs / Close tabs to the left / Close tabs to the right / Pin tab**. **F10** toggles the active tab’s pin (**Fn+F10** on some Mac keyboards). Pinned tabs stay on the left and survive bulk closing; their close button or **Close tab** still closes them directly. Dragging reorders within the pinned or regular group. Focus a tab and press **Shift+F10** to open its menu with the keyboard.
 
 Open Connections from **Connections** at the bottom of the sidebar or **Open Connections** in the command palette. The panel button at the left of the tab strip collapses or expands the sidebar. Returning to Connections keeps sessions open.
+
+## WinRM connections
+
+Use **New connection → WinRM**, the tab **+ → WinRM connection**, or **Connection → New WinRM Connection** to add a Windows management connection. The target needs a WinRM listener, account permissions, and firewall configuration independently of SSH. See [Microsoft’s setup documentation](https://learn.microsoft.com/en-us/windows/win32/winrm/installation-and-configuration-for-windows-remote-management).
+
+- Defaults: **HTTPS / 5986 / NTLM**. HTTP / 5985 uses NTLM message encryption and is intended for trusted networks. Basic is restricted to HTTPS and must also be enabled on the server. Kerberos and CredSSP are not currently exposed.
+- Enter the domain separately from the username. HTTPS validates certificates against system trust. For a self-signed listener, optionally enter its independently verified SHA-256 fingerprint. A pin directly trusts that certificate and must be updated when it changes.
+- Saved passwords use the app’s existing encrypted storage; you may also leave the password unsaved and enter it at connection time. An empty password while editing preserves the existing one unless the endpoint, account, or transport changes. Backups omit passwords and certificate pins.
+- Write a PowerShell script and press **Run script** or **Ctrl/⌘+Enter**. Stop, disconnect, and closing the tab request remote command termination and shell cleanup. Cleanup cannot be guaranteed after network loss.
+- Each run starts a new non-interactive PowerShell process. Variables and the current directory do not persist; interactive prompts, full-screen applications, and SFTP are unavailable. Execution is limited to five minutes and 1 MiB of output, with the last five runs kept in the tab.
+
+## Menus and language settings
+
+Use **Connection** in the menu bar for SSH, local shell, RDP, WinRM, Telnet, and Serial sessions. **Tools** provides SFTP, Snippets, Vault, MCP settings, and the command palette. **Esc** closes the top dialog or open selection list. Host-key and permission prompts reject the request.
+
+Choose English or 한국어 in **Settings → General → Language**. Changes apply immediately across windows and persist on restart. The initial language follows the system preference, using English for languages other than Korean. Server output and user data remain unchanged.
 
 ## A Vault that knows your servers
 
@@ -136,7 +152,7 @@ We plan Ansible-style workflows for running commands, applying configuration cha
 
 Tauri 2 connects a React, TypeScript, and xterm.js frontend to the Rust backend. Application data is stored locally in SQLite.
 
-Use Rust stable, Node.js 22.12+, and the platform-specific Tauri build prerequisites. The examples below use Bun as the package manager.
+Use Rust 1.98.0 (pinned in `rust-toolchain.toml`), Node.js 22.12+, and the platform-specific Tauri build prerequisites. The examples below use Bun as the package manager.
 
 ```sh
 bun install --frozen-lockfile

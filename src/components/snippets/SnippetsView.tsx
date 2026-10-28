@@ -1,3 +1,4 @@
+import { t, useLocale } from "../../i18n";
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import "./SnippetsView.css";
@@ -17,6 +18,7 @@ interface SnippetsViewProps {
 }
 
 export default function SnippetsView({ onExecute }: SnippetsViewProps) {
+  useLocale();
   const [snippets, setSnippets] = useState<Snippet[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [showAdd, setShowAdd] = useState(false);
@@ -110,7 +112,7 @@ export default function SnippetsView({ onExecute }: SnippetsViewProps) {
         <input
           className="snip-search"
           type="text"
-          placeholder="Search snippets..."
+          placeholder={t("Search snippets...")}
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
         />
@@ -121,7 +123,7 @@ export default function SnippetsView({ onExecute }: SnippetsViewProps) {
             else setShowAdd(true);
           }}
         >
-          {showAdd ? "Cancel" : "+ New Snippet"}
+          {showAdd ? t("Cancel") : t("+ New Snippet")}
         </button>
       </div>
 
@@ -129,13 +131,13 @@ export default function SnippetsView({ onExecute }: SnippetsViewProps) {
         <div className="snip-form">
           <input
             type="text"
-            placeholder="Title"
+            placeholder={t("Title")}
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             autoFocus
           />
           <textarea
-            placeholder="Command (supports multi-line)"
+            placeholder={t("Command (supports multi-line)")}
             value={command}
             onChange={(e) => setCommand(e.target.value)}
             rows={3}
@@ -143,21 +145,21 @@ export default function SnippetsView({ onExecute }: SnippetsViewProps) {
           <div className="snip-form-row">
             <input
               type="text"
-              placeholder="Category"
+              placeholder={t("Category")}
               value={category}
               onChange={(e) => setCategory(e.target.value)}
               style={{ flex: 1 }}
             />
             <input
               type="text"
-              placeholder="Description (optional)"
+              placeholder={t("Description (optional)")}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               style={{ flex: 2 }}
             />
           </div>
           <button className="snip-save-btn" onClick={handleSave}>
-            {editId ? "Update" : "Save"}
+            {editId ? t("Update") : t("Save")}
           </button>
         </div>
       )}
@@ -187,14 +189,14 @@ export default function SnippetsView({ onExecute }: SnippetsViewProps) {
                   <button
                     className="snip-action-btn"
                     onClick={() => handleEdit(s)}
-                    title="Edit"
+                    title={t("Edit")}
                   >
                     ✎
                   </button>
                   <button
                     className="snip-action-btn snip-action-danger"
                     onClick={() => handleDelete(s.id)}
-                    title="Delete"
+                    title={t("Delete")}
                   >
                     ×
                   </button>
@@ -204,9 +206,7 @@ export default function SnippetsView({ onExecute }: SnippetsViewProps) {
           </div>
         ))}
         {snippets.length === 0 && !showAdd && (
-          <div className="snip-empty">
-            No snippets yet. Click "+ New Snippet" to create one.
-          </div>
+          <div className="snip-empty">{t("No snippets yet. Click \"+ New Snippet\" to create one.")}</div>
         )}
       </div>
     </div>

@@ -1,3 +1,4 @@
+import { t, useLocale } from "../../../i18n";
 import { useEffect, useRef, useState } from "react";
 import {
   clearExecutionHistory, getExecutionHistorySettings, updateExecutionHistorySettings,
@@ -6,6 +7,7 @@ import type { ExecutionHistorySettings as HistorySettings } from "../../../types
 import "./ExecutionHistorySettings.css";
 
 export default function ExecutionHistorySettings() {
+  useLocale();
   const [saved, setSaved] = useState<HistorySettings | null>(null);
   const [enabled, setEnabled] = useState(false);
   const [days, setDays] = useState("7");
@@ -59,39 +61,37 @@ export default function ExecutionHistorySettings() {
 
   return (
     <section className="execution-history-settings" aria-labelledby="execution-history-heading">
-      <h3 id="execution-history-heading">Execution history</h3>
-      <p>Controls commands and output from MCP and automated SSH jobs. Terminal command history has separate storage.</p>
+      <h3 id="execution-history-heading">{t("Execution history")}</h3>
+      <p>{t("Controls commands and output from MCP and automated SSH jobs. Terminal command history has separate storage.")}</p>
       {error && <div className="execution-history-error" role="alert">{error}</div>}
-      {notice && <div role="status">{notice}</div>}
+      {notice && <div role="status">{t(notice)}</div>}
       {!saved ? <>
-        {error ? <button className="settings-btn" onClick={() => { setError(""); setReload((value) => value + 1); }}>Retry</button> : <p>Loading…</p>}
+        {error ? <button className="settings-btn" onClick={() => { setError(""); setReload((value) => value + 1); }}>{t("Retry")}</button> : <p>{t("Loading…")}</p>}
       </> : <>
         <label className="execution-history-toggle">
           <input type="checkbox" checked={enabled} disabled={disabled} onChange={(e) => {
             setEnabled(e.target.checked);
             if (!e.target.checked) setDays(String(saved.retention_days));
           }} />
-          <span>Save execution history on this computer</span>
+          <span>{t("Save execution history on this computer")}</span>
         </label>
-        <p>Saved commands and output are not encrypted and may contain secrets. Turning this off deletes saved history and completed temporary results.</p>
-        <label className="execution-history-days" htmlFor="execution-history-days">
-          Keep history for (days)
-          <input id="execution-history-days" type="number" min="1" max="365" step="1" value={days} disabled={disabled || !enabled} onChange={(e) => setDays(e.target.value)} aria-describedby="execution-history-retention" />
+        <p>{t("Saved commands and output are not encrypted and may contain secrets. Turning this off deletes saved history and completed temporary results.")}</p>
+        <label className="execution-history-days" htmlFor="execution-history-days">{t("Keep history for (days)")}<input id="execution-history-days" type="number" min="1" max="365" step="1" value={days} disabled={disabled || !enabled} onChange={(e) => setDays(e.target.value)} aria-describedby="execution-history-retention" />
         </label>
-        <p id="execution-history-retention">1–365 days from submission. A shorter period immediately removes expired completed jobs.</p>
-        <p>Without saved history, completed results remain in memory for up to 15 minutes, limited to 32 jobs and 64 MiB. Closing the app removes them. Running jobs remain available until they finish.</p>
+        <p id="execution-history-retention">{t("1–365 days from submission. A shorter period immediately removes expired completed jobs.")}</p>
+        <p>{t("Without saved history, completed results remain in memory for up to 15 minutes, limited to 32 jobs and 64 MiB. Closing the app removes them. Running jobs remain available until they finish.")}</p>
         <div className="settings-actions">
           <button className="settings-btn" disabled={disabled || !changed || !validDays} onClick={() => {
             if ((saved.enabled && !enabled) || (enabled && Number(days) < saved.retention_days)) setConfirmation("save");
             else void perform("save");
-          }}>Save history settings</button>
-          <button className="settings-btn execution-history-delete" disabled={disabled} onClick={() => setConfirmation("clear")}>Delete execution history…</button>
+          }}>{t("Save history settings")}</button>
+          <button className="settings-btn execution-history-delete" disabled={disabled} onClick={() => setConfirmation("clear")}>{t("Delete execution history…")}</button>
         </div>
-        {confirmation && <div ref={confirmationRef} className="execution-history-confirm" role="group" aria-label="Confirm history deletion">
-          <p>{confirmation === "clear" ? "Delete all saved history and completed temporary results? Running jobs continue, and their results will only be kept temporarily. New jobs follow your saved settings." : !enabled ? "Disable recording and delete all saved history and completed temporary results? Running jobs continue with temporary results only." : "Apply this shorter period and delete expired history?"} This cannot be undone.</p>
+        {confirmation && <div ref={confirmationRef} className="execution-history-confirm" role="group" aria-label={t("Confirm history deletion")}>
+          <p>{confirmation === "clear" ? t("Delete all saved history and completed temporary results? Running jobs continue, and their results will only be kept temporarily. New jobs follow your saved settings.") : !enabled ? t("Disable recording and delete all saved history and completed temporary results? Running jobs continue with temporary results only.") : t("Apply this shorter period and delete expired history?")}{t(" This cannot be undone.")}</p>
           <div className="settings-actions">
-            <button className="settings-btn execution-history-delete" onClick={() => void perform(confirmation)}>Confirm deletion</button>
-            <button className="settings-btn" onClick={() => setConfirmation(null)}>Cancel</button>
+            <button className="settings-btn execution-history-delete" onClick={() => void perform(confirmation)}>{t("Confirm deletion")}</button>
+            <button className="settings-btn" onClick={() => setConfirmation(null)}>{t("Cancel")}</button>
           </div>
         </div>}
       </>}

@@ -1,3 +1,4 @@
+import { t, useLocale } from "../../i18n";
 import { DEFAULT_RDP_CONFIG, type RdpLaunch } from "../../types/rdp";
 import { useCallback, useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { Channel, invoke } from "@tauri-apps/api/core";
@@ -24,6 +25,7 @@ interface Props {
   onTitleChange: (id: string, title: string) => void;
 }
 export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleChange, initialConnection, onProfileChange }: Props) {
+  useLocale();
   const [config, setConfig] = useState<RdpConfig>(() => ({ ...(initialConnection?.config ?? DEFAULT_RDP_CONFIG) }));
   const [phase, setPhase] = useState<Phase>("idle");
   const [sessionId, setSessionId] = useState<string | null>(null);
@@ -258,41 +260,41 @@ export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleCh
   }
   const busy = ["reconnecting", "closing", "connecting", "certificate", "authenticating", "connected"].includes(phase);
   const reconnect = () => { if (lastConnection) void connect(lastConnection.config, lastConnection.name, lastConnection.profileId); };
-  return <section className="rdp-session" style={{ display: isActive ? "flex" : "none" }} aria-label="RDP session">
+  return <section className="rdp-session" style={{ display: isActive ? "flex" : "none" }} aria-label={t("RDP session")}>
     <div className="rdp-toolbar">
-      <span>Remote desktop <span className="rdp-note">Beta</span></span>
-      {phase === "connected" && <span className="rdp-note">{size.width} × {size.height} · Ctrl+Alt+Shift releases input</span>}
+      <span>{t("Remote desktop ")}<span className="rdp-note">{t("Beta")}</span></span>
+      {phase === "connected" && <span className="rdp-note">{size.width} × {size.height}{t(" · Ctrl+Alt+Shift releases input")}</span>}
       {phase === "connected" && <>
-        <Select aria-label="RDP display view" value={viewMode} onValueChange={(value) => setViewMode(value as "fit" | "pixels")}>
-          <option value="fit">Fit to window</option><option value="pixels">1:1 pixels</option>
+        <Select aria-label={t("RDP display view")} value={viewMode} onValueChange={(value) => setViewMode(value as "fit" | "pixels")}>
+          <option value="fit">{t("Fit to window")}</option><option value="pixels">{t("1:1 pixels")}</option>
         </Select>
-        <button aria-pressed={clipboard.open} onClick={clipboard.toggle}>Clipboard</button>
-        <button disabled={resizing} aria-pressed={textInput} onClick={() => setTextInput((open) => !open)}>Text input / 한글</button>
+        <button aria-pressed={clipboard.open} onClick={clipboard.toggle}>{t("Clipboard")}</button>
+        <button disabled={resizing} aria-pressed={textInput} onClick={() => setTextInput((open) => !open)}>{t("Text input / 한글")}</button>
       </>}
       {phase === "connected" && <button disabled={resizing} onClick={() => {
         for (const down of [true, false]) for (const code of (down ? [0x1d, 0x38, 0x153] : [0x153, 0x38, 0x1d])) inputs.current?.push({ type: "key", code, down });
         canvas.current?.focus();
       }}>Ctrl+Alt+Del</button>}
-      {phase === "connected" && <button onClick={reconnect}>Reconnect</button>}
-      {busy && <button ref={disconnectButton} disabled={phase === "closing"} onClick={() => disconnect()}>{phase === "connected" ? "Disconnect" : phase === "closing" ? "Disconnecting…" : "Cancel connection"}</button>}
+      {phase === "connected" && <button onClick={reconnect}>{t("Reconnect")}</button>}
+      {busy && <button ref={disconnectButton} disabled={phase === "closing"} onClick={() => disconnect()}>{phase === "connected" ? t("Disconnect") : phase === "closing" ? t("Disconnecting…") : t("Cancel connection")}</button>}
     </div>
     {phase === "connected" && <div className="rdp-resolution">
-      <label>Remote resolution <Select aria-label="Remote resolution" value={resolution} disabled={!displayArea || resizing} onValueChange={setResolution}>
+      <label>{t("Remote resolution ")}<Select aria-label={t("Remote resolution")} value={resolution} disabled={!displayArea || resizing} onValueChange={setResolution}>
         {!["640x480", "1280x720", "1600x900", "1920x1080"].includes(resolution) && <option value={resolution}>{resolution.replace("x", " × ")}</option>}
         {[[640, 480], [1280, 720], [1600, 900], [1920, 1080]].map(([width, height]) => <option key={width} value={`${width}x${height}`} disabled={width * height > displayArea}>{width} × {height}</option>)}
       </Select></label>
-      <button disabled={!displayArea || resizing || resolution === `${size.width}x${size.height}`} onClick={() => void resizeRemote()}>{resizing ? "Applying…" : "Apply resolution"}</button>
-      <span className="rdp-note" role="status">{resizing ? "Waiting for the server. Remote input is paused…" : resizeNotice ?? (displayArea ? "Changes this session only. Saved profiles stay unchanged." : "The server has not enabled live resolution changes. Reconnect to change desktop size.")}</span>
+      <button disabled={!displayArea || resizing || resolution === `${size.width}x${size.height}`} onClick={() => void resizeRemote()}>{resizing ? t("Applying…") : t("Apply resolution")}</button>
+      <span className="rdp-note" role="status">{resizing ? t("Waiting for the server. Remote input is paused…") : resizeNotice ?? (displayArea ? t("Changes this session only. Saved profiles stay unchanged.") : t("The server has not enabled live resolution changes. Reconnect to change desktop size."))}</span>
     </div>}
     {phase === "connected" && isActive && clipboard.open && <RdpClipboardPanel clipboard={clipboard} />}
     {phase === "connected" && isActive && textInput && <RdpTextInput onClose={closeTextInput} onSend={(text) => {
       inputs.current?.push({ type: "text", text });
     }} />}
     {phase === "connected" ? <div ref={screen} className={`rdp-screen rdp-screen-${viewMode}${resizing ? " rdp-resizing" : ""}`}>
-      {!hasFrame && <p className="rdp-wait" role="status">Waiting for the remote desktop…</p>}
+      {!hasFrame && <p className="rdp-wait" role="status">{t("Waiting for the remote desktop…")}</p>}
       <div className="rdp-surface" style={displaySize}>
       <canvas ref={canvas} tabIndex={resizing ? -1 : 0} aria-disabled={resizing}
-        aria-label="Remote desktop. Click to focus. Ctrl Alt Shift releases input."
+        aria-label={t("Remote desktop. Click to focus. Ctrl Alt Shift releases input.")}
         onKeyDown={(event) => key(event, true)} onKeyUp={(event) => key(event, false)}
         onBlur={() => inputs.current?.release()} onContextMenu={(event) => event.preventDefault()}
         onPointerDown={(event) => { if (event.button > 2 || resizePending.current) return; event.preventDefault(); event.currentTarget.focus(); event.currentTarget.setPointerCapture(event.pointerId); inputs.current?.push({ type: "pointer", ...point(event.clientX, event.clientY), button: event.button, down: true }); }}
@@ -303,18 +305,18 @@ export default function RdpSession({ tabId, isActive, onSessionStatus, onTitleCh
     </div> : null}
     <div className="rdp-content" style={{ display: phase === "connected" ? "none" : undefined }}>
       {error && <p className="rdp-error" role="alert">{error}</p>}
-      {phase === "ended" && <p className="rdp-note rdp-ended" role="status">RDP connection ended.</p>}
+      {phase === "ended" && <p className="rdp-note rdp-ended" role="status">{t("RDP connection ended.")}</p>}
       {!busy && lastConnection && <div className="rdp-reconnect rdp-notice">
-        <p>Reconnect to <strong>{lastConnection.name || lastConnection.config.host}</strong></p>
+        <p>{t("Reconnect to ")}<strong>{lastConnection.name || lastConnection.config.host}</strong></p>
         <p className="rdp-note">{lastConnection.config.host}:{lastConnection.config.port} · {lastConnection.config.username}</p>
-        <p className="rdp-note">Use the last connection settings. Review the server certificate and enter your password again.</p>
-        <button onClick={reconnect}>Reconnect</button>
+        <p className="rdp-note">{t("Use the last connection settings. Review the server certificate and enter your password again.")}</p>
+        <button onClick={reconnect}>{t("Reconnect")}</button>
       </div>}
       {phase === "certificate" && certificate && <RdpCertificateForm certificate={certificate}
         endpoint={`${lastConnection?.config.host}:${lastConnection?.config.port}`} sessionId={sessionId}
         onApprove={(approval) => void authenticate(approval)} onForgotten={() => { if (currentId.current === sessionId) disconnect(); }} />}
-      {(phase === "connecting" || phase === "authenticating") && <p role="status">{phase === "connecting" ? "Connecting and reading the server certificate…" : "Authenticating with the RDP server…"}</p>}
-      {(phase === "reconnecting" || phase === "closing") && <p role="status">{phase === "reconnecting" ? "Closing the previous connection before reconnecting…" : "Closing the RDP connection…"}</p>}
+      {(phase === "connecting" || phase === "authenticating") && <p role="status">{phase === "connecting" ? t("Connecting and reading the server certificate…") : t("Authenticating with the RDP server…")}</p>}
+      {(phase === "reconnecting" || phase === "closing") && <p role="status">{phase === "reconnecting" ? t("Closing the previous connection before reconnecting…") : t("Closing the RDP connection…")}</p>}
       <div style={{ display: busy ? "none" : "contents" }}>
         <RdpConnectionForm config={config} onChange={setConfig} onConnect={(event, name, profileId) => { event.preventDefault(); void connect(config, name, profileId); }} />
       </div>

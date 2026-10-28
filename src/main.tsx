@@ -1,3 +1,4 @@
+import { t } from "./i18n";
 import ReactDOM from "react-dom/client";
 import KeychainNotice from "./components/common/KeychainNotice";
 import App from "./App";
@@ -29,7 +30,7 @@ if (view === "sftp") {
       <KeychainNotice />
       <LogViewerPopoutApp
         sshSessionId={params.get("sshSessionId") || ""}
-        label={params.get("label") || "Logs"}
+        label={params.get("label") || t("Logs")}
       />
     </>,
   );

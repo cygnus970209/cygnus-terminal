@@ -1,3 +1,4 @@
+import { t, useLocale } from "../../i18n";
 import Icon from "../common/Icon";
 import Select from "../common/Select";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -49,8 +50,9 @@ export default function SftpView({
   sftpId,
   homePath,
   availableSessions,
-  sourceLabel = "Remote",
+  sourceLabel = t("Remote"),
 }: SftpViewProps) {
+  const locale = useLocale();
   const [localHome, setLocalHome] = useState<string>("/");
   useEffect(() => {
     invoke<string>("get_local_home_dir")
@@ -83,7 +85,7 @@ export default function SftpView({
     mode: "local",
     sftpId: null,
     homePath: "/",
-    label: "Local",
+    label: t("Local"),
   }));
   useEffect(() => {
     // localHome 로드 완료 후 오른쪽이 local이면 경로 보정
@@ -214,7 +216,7 @@ export default function SftpView({
   // 소스 변경 셀렉터
   const sessionsList = useMemo(() => {
     const list: PanelSource[] = [
-      { mode: "local", sftpId: null, homePath: localHome, label: "Local" },
+      { mode: "local", sftpId: null, homePath: localHome, label: t("Local") },
       { mode: "remote", sftpId, homePath, label: sourceLabel },
     ];
     if (availableSessions) {
@@ -229,7 +231,7 @@ export default function SftpView({
       }
     }
     return list;
-  }, [localHome, sftpId, homePath, availableSessions, sourceLabel]);
+  }, [localHome, sftpId, homePath, availableSessions, sourceLabel, locale]);
 
   // 프로필에서 on-demand 로 SSH+SFTP 세션을 만들고 해당 side 에 attach.
   const connectProfile = useCallback(
@@ -597,7 +599,7 @@ export default function SftpView({
         return;
       }
       const confirmed = await ask(`Delete ${selected.length} item(s)?`, {
-        title: "Confirm Delete",
+        title: t("Confirm Delete"),
         kind: "warning",
       });
       if (!confirmed) return;
@@ -854,7 +856,7 @@ export default function SftpView({
 
       if (single && !single.is_dir && src.mode === "remote" && src.sftpId) {
         items.push({
-          label: "Open in editor",
+          label: t("Open in editor"),
           icon: "✎",
           onClick: () => handleFileAction("open", single, side),
         });
@@ -862,7 +864,7 @@ export default function SftpView({
 
       if (src.mode === "remote" && selection.length > 0) {
         items.push({
-          label: "Download to other panel",
+          label: t("Download to other panel"),
           icon: "↓",
           onClick: () => downloadFromSide(side),
         });
@@ -871,12 +873,12 @@ export default function SftpView({
       if (single && !single.is_dir && src.mode === "remote" && src.sftpId) {
         const srcSftpId = src.sftpId;
         items.push({
-          label: "Save to...",
+          label: t("Save to..."),
           icon: "💾",
           onClick: async () => {
             try {
               const localPath = await save({
-                title: "Save File",
+                title: t("Save File"),
                 defaultPath: single.name,
               });
               if (!localPath) return;
@@ -897,7 +899,7 @@ export default function SftpView({
         // macOS 제약상 native drag session 은 사용자 마우스 제스처 안에서만 열리기 때문에
         // 2 단계 (Prepare → Drag) UX.
         items.push({
-          label: "Drag to desktop (prepare)",
+          label: t("Drag to desktop (prepare)"),
           icon: "🡭",
           onClick: async () => {
             try {
@@ -921,7 +923,7 @@ export default function SftpView({
       }
       if (src.mode === "local" && selection.length > 0) {
         items.push({
-          label: "Upload to other panel",
+          label: t("Upload to other panel"),
           icon: "↑",
           onClick: () => uploadFromSide(side),
         });
@@ -931,7 +933,7 @@ export default function SftpView({
 
       if (single) {
         items.push({
-          label: "Copy path",
+          label: t("Copy path"),
           icon: "⎘",
           onClick: () => {
             navigator.clipboard.writeText(single.path).catch(() => {});
@@ -942,7 +944,7 @@ export default function SftpView({
 
       if (single) {
         items.push({
-          label: "Rename",
+          label: t("Rename"),
           icon: "✎",
           onClick: () => renameInSide(side),
         });
@@ -958,7 +960,7 @@ export default function SftpView({
       }
 
       if (items.length === 0) {
-        items.push({ label: "Refresh", icon: "↻", onClick: handleRefresh });
+        items.push({ label: t("Refresh"), icon: "↻", onClick: handleRefresh });
       }
 
       setCtxMenu({ x: pos.x, y: pos.y, items });
@@ -998,13 +1000,11 @@ export default function SftpView({
         <div className="sftp-workspace-title">
           <Icon name="transfer" size={20} />
           <div>
-            <h1>SFTP Files</h1>
-            <p>Browse, transfer and organize your files.</p>
+            <h1>{t("SFTP Files")}</h1>
+            <p>{t("Browse, transfer and organize your files.")}</p>
           </div>
         </div>
-        <span className="sftp-workspace-hint">
-          Drag files between panels to transfer
-        </span>
+        <span className="sftp-workspace-hint">{t("Drag files between panels to transfer")}</span>
       </header>
       <Toolbar
         selectedCount={selectedCount}
@@ -1021,15 +1021,15 @@ export default function SftpView({
       <div className="sftp-dual-header">
         <div className="sftp-panel-header">
           <span className="sftp-panel-label">
-            {leftSrc.mode === "local" ? "Local" : "Remote"}
+            {leftSrc.mode === "local" ? t("Local") : t("Remote")}
           </span>
           <Select
             className="sftp-source-select"
-            aria-label="Left file source"
+            aria-label={t("Left file source")}
             value={srcKey(leftSrc)}
             onValueChange={(value) => handleSourceChange("left", value)}
           >
-            <optgroup label="Active">
+            <optgroup label={t("Active")}>
               {sessionsList.map((s) => (
                 <option key={srcKey(s)} value={srcKey(s)}>
                   {s.label}
@@ -1037,7 +1037,7 @@ export default function SftpView({
               ))}
             </optgroup>
             {profiles.length > 0 && (
-              <optgroup label="Connect to...">
+              <optgroup label={t("Connect to...")}>
                 {profiles.map((p) => (
                   <option key={`profile:${p.id}`} value={`profile:${p.id}`}>
                     {p.name} — {p.username}@{p.host}
@@ -1051,15 +1051,15 @@ export default function SftpView({
         <div className="sftp-panel-divider" />
         <div className="sftp-panel-header">
           <span className="sftp-panel-label">
-            {rightSrc.mode === "local" ? "Local" : "Remote"}
+            {rightSrc.mode === "local" ? t("Local") : t("Remote")}
           </span>
           <Select
             className="sftp-source-select"
-            aria-label="Right file source"
+            aria-label={t("Right file source")}
             value={srcKey(rightSrc)}
             onValueChange={(value) => handleSourceChange("right", value)}
           >
-            <optgroup label="Active">
+            <optgroup label={t("Active")}>
               {sessionsList.map((s) => (
                 <option key={srcKey(s)} value={srcKey(s)}>
                   {s.label}
@@ -1067,7 +1067,7 @@ export default function SftpView({
               ))}
             </optgroup>
             {profiles.length > 0 && (
-              <optgroup label="Connect to...">
+              <optgroup label={t("Connect to...")}>
                 {profiles.map((p) => (
                   <option key={`profile:${p.id}`} value={`profile:${p.id}`}>
                     {p.name} — {p.username}@{p.host}
@@ -1087,7 +1087,7 @@ export default function SftpView({
           mode={leftSrc.mode}
           sftpId={leftSrc.sftpId}
           initialPath={leftSrc.homePath}
-          sourceLabel={leftSrc.label}
+          sourceLabel={leftSrc.mode === "local" ? t("Local") : leftSrc.label}
           isFocused={focused === "left"}
           onFocus={() => setFocused("left")}
           registerHandle={registerLeftHandle}
@@ -1105,7 +1105,7 @@ export default function SftpView({
           mode={rightSrc.mode}
           sftpId={rightSrc.sftpId}
           initialPath={rightSrc.homePath}
-          sourceLabel={rightSrc.label}
+          sourceLabel={rightSrc.mode === "local" ? t("Local") : rightSrc.label}
           isFocused={focused === "right"}
           onFocus={() => setFocused("right")}
           registerHandle={registerRightHandle}
